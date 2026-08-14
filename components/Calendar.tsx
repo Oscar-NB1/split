@@ -13,7 +13,6 @@ type Session = {
 };
 type WeekData = {
   week_start: string; users: User[]; sessions: Session[]; unplanned: Session[];
-  wellness: { user_id: string; local_date: string; recovery: number | null; strain: number | null }[];
   streaks: Record<string, number>;
   challenge: { metric: string; label: string; scores: { user_id: string; score: number }[] };
 };
@@ -281,25 +280,6 @@ export default function Calendar({ me, other }: { me: User; other: User | null }
             )}
           </div>
 
-          <div className="card">
-            <h3>Recovery</h3>
-            <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 44 }}>
-              {DOW.map((d, i) => {
-                const date = addDays(monday, i);
-                const w = data?.wellness.find((x) => x.user_id === me.id && x.local_date === date);
-                const v = w?.recovery ?? 0;
-                return (
-                  <div key={d} style={{ flex: 1, background: "var(--panel2)", position: "relative", borderRadius: 1 }}>
-                    <i style={{
-                      position: "absolute", left: 0, right: 0, bottom: 0, height: `${v}%`,
-                      background: v >= 67 ? "var(--good)" : v >= 34 ? "var(--a)" : "var(--warn)",
-                      borderRadius: 1, display: "block",
-                    }} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
         </aside>
       </div>
 

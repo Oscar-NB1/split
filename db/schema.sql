@@ -14,7 +14,7 @@ create table if not exists users (
 -- ------------------------------------------------------------- connections
 create table if not exists oauth_accounts (
   user_id           uuid not null references users(id) on delete cascade,
-  provider          text not null,            -- strava | whoop | intervals
+  provider          text not null,            -- strava | runna | intervals
   provider_user_id  text not null,
   access_token      text not null,
   refresh_token     text,
@@ -119,18 +119,10 @@ create table if not exists challenges (
   rule        text
 );
 
-create table if not exists wellness (
-  user_id     uuid not null references users(id) on delete cascade,
-  local_date  date not null,
-  recovery    int,
-  hrv         numeric,
-  rhr         numeric,
-  strain      numeric,
-  sleep_hours numeric,
-  primary key (user_id, local_date)
-);
-
 -- ------------------------------------------------------------------ migrations
+-- Whoop was removed (2026-08-14). Nothing else ever wrote `wellness`, so the
+-- table is dropped rather than left as an orphan nothing reads.
+drop table if exists wellness;
 -- This file is idempotent: run it again after pulling and it upgrades in place.
 -- Adding to a table above? Add the matching `add column if not exists` here.
 alter table planned_sessions add column if not exists intervals_event_id  text;

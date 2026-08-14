@@ -1,7 +1,7 @@
 # SPLIT
 
 Two athletes, one calendar. A private training app for exactly two people:
-planned sessions on one side, real Garmin/Whoop data on the other, and a
+planned sessions on one side, real Garmin/Strava data on the other, and a
 competitive layer over the top.
 
 This drop is the **spine**: database, auth, Strava OAuth, history backfill,
@@ -158,7 +158,6 @@ Deliberate, and worth knowing before you build on top:
 
 1. Wire the prototype calendar to `planned_sessions` and `activities`.
 2. Session actions: move, scale down, skip with reason.
-3. Whoop OAuth — same shape as Strava, fills the `wellness` table.
 4. Runna iCal feed → `planned_sessions` where `source = 'runna'`.
 5. Template engine: materialise `horizon` weeks ahead, regenerate on rule change.
 6. intervals.icu push, so programmed sessions land on the watch.

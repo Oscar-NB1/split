@@ -20,7 +20,7 @@ Then check it holds together before you touch a browser:
 
 ```bash
 npm run typecheck
-npm test                       # 35 tests, runs in Europe/Berlin on purpose
+npm test                       # 37 tests, runs in Europe/Berlin on purpose
 ```
 
 ## 2. Secrets
@@ -96,19 +96,14 @@ npx tsx scripts/backfill-strava.ts her@example.com
 
 Every activity Strava holds, paced under the rate limit. Safe to re-run.
 
-## 7. Whoop
 
-[developer-dashboard.whoop.com](https://developer-dashboard.whoop.com) → create
-an app → redirect URI `https://your-domain/api/whoop/callback`. Both of you
-connect from Settings. Six months backfills on connect.
-
-## 8. Runna
+## 7. Runna
 
 Runna app → Profile → Sync to calendar → copy the subscription URL → paste it
 into Settings. Swap `webcal://` for `https://` if it isn't done for you.
 The hourly cron mirrors future runs in and never touches ones you've moved.
 
-## 9. intervals.icu → watch
+## 8. intervals.icu → watch
 
 1. intervals.icu → Settings → Developer → athlete ID + API key → paste into Settings.
 2. intervals.icu → Connections → Garmin → tick **Upload planned workouts**.
@@ -117,7 +112,7 @@ Programmed runs then reach Garmin Connect and sync to the watch. Note: write
 recoveries as time or distance — rest-to-heart-rate degrades to a plain timer
 on Garmin.
 
-## 10. Install on both phones
+## 9. Install on both phones
 
 Open the URL in Safari or Chrome → Share → **Add to Home Screen**. That's the
 "download": full screen, own icon, no App Store.
@@ -140,8 +135,6 @@ Open the URL in Safari or Chrome → Share → **Add to Home Screen**. That's th
   and is tested; a template has to be inserted by hand for now.
 - **An unplanned activity can't be paired to a session by hand.** It shows on
   the day marked "off plan"; the one-tap re-pair from the brief isn't built.
-- **The Whoop v2 endpoint shapes** are written from the current API; if a
-  field name has moved, `lib/whoop.ts` is the only file to change.
 - **Zone 2 minutes** are approximated from average HR per activity, not from
   HR streams. Good enough for a weekly challenge, wrong for training analysis.
 - **No push notifications.** The service worker is offline-shell only.

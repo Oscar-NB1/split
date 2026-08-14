@@ -39,17 +39,6 @@ export default function Connections({
         </div>
 
         <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 3 }}>
-          <h3>Recovery</h3>
-          <span className={`chip ${connected.whoop ? "on" : ""}`}><s />Whoop</span>
-          <p className="note" style={{ marginTop: 8 }}>
-            Recovery, HRV, strain and sleep. Backfills six months on connect.
-          </p>
-          <a className="act" href="/api/whoop/connect" style={{ display: "block", textDecoration: "none" }}>
-            {connected.whoop ? "Reconnect Whoop" : "Connect Whoop"}
-          </a>
-        </div>
-
-        <div className="card" style={{ border: "1px solid var(--line)", borderRadius: 3 }}>
           <h3>Runna plan</h3>
           <span className={`chip ${connected.runna ? "on" : ""}`}><s />Calendar feed</span>
           <p className="note" style={{ marginTop: 8 }}>

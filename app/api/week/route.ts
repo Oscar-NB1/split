@@ -50,17 +50,11 @@ export const GET = route(async (req: NextRequest) => {
     await Promise.all(users.map(async (u) => [u.id, await streakFor(u.id)])),
   );
 
-  const wellness = await sql`
-    select user_id, local_date::text as local_date, recovery, strain, sleep_hours
-    from wellness where local_date >= ${ws} and local_date < ${end}
-  `;
-
   return NextResponse.json({
     week_start: ws,
     users,
     sessions,
     unplanned,
-    wellness,
     streaks,
     challenge: { metric, label: METRICS[metric], scores },
   });

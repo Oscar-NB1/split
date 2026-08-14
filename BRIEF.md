@@ -4,7 +4,7 @@
 
 A private training app for two people. One athlete is self-coached and racing
 Hyrox doubles; the other is being coached by the first. Both wear Garmin
-watches, both are on Whoop, both are on Strava. Right now that means training
+watches and both are on Strava. Right now that means training
 data lives in three apps and the plan lives in a fourth, and neither person can
 see what the other is doing without asking.
 
@@ -17,8 +17,7 @@ Three things it has to do:
    able to write to either. Runna handles the running spine for the
    self-coached athlete; everything else is programmed by hand.
 2. **Pull in what actually happened.** Strava for activities (Garmin arrives
-   through it), Whoop for recovery and strain — automatically, with no
-   copying anything anywhere.
+   through it) — automatically, with no copying anything anywhere.
 3. **Make it competitive.** Effort points, adherence streaks, and a weekly
    head-to-head challenge that changes metric each week.
 
@@ -74,13 +73,14 @@ Both are detours around the same closed door.
 ## Data model
 
 Seven tables. `users` (two rows). `oauth_accounts` holds every external
-credential keyed by provider — Strava and Whoop tokens, but also the Runna
-feed URL and the intervals.icu key, which aren't OAuth but live there to keep
-credential handling in one place. `activities` is immutable fact from Strava.
+credential keyed by provider — the Strava tokens, but also the Runna feed URL
+and the intervals.icu key, which aren't OAuth but live there to keep credential
+handling in one place. `activities` is immutable fact from Strava.
 `planned_sessions` is intent, and moves through
 `planned → done | adjusted | skipped | moved`. `session_changes` logs every
 move, scale and skip. `plan_templates` holds week shapes and rules.
-`wellness` is one row per person per day from Whoop.
+`challenges` stores the resolved weekly head-to-head so a finished week keeps
+the metric it was actually scored on.
 
 ## File map
 
@@ -92,7 +92,6 @@ move, scale and skip. `plan_templates` holds week shapes and rules.
 | `session.ts` | Signed cookie sessions. `requireUser()` guards every write route. |
 | `strava.ts` | OAuth, token storage, and refresh. Access tokens live 6 hours; `accessTokenFor()` refreshes anything expiring within 5 minutes and writes the new pair back. **Every Strava call goes through it**, so expiry is handled in exactly one place. |
 | `ingest.ts` | Turns a Strava activity into a row, then pairs it with the day's plan. Also holds `effortPoints()` — weighted by session type so station work isn't undervalued against running. The weights are a starting guess; tune them. |
-| `whoop.ts` | Same shape as `strava.ts`, plus `syncWellness()`. Whoop keys everything to physiological cycles rather than calendar days, so cycles, recovery and sleep get folded into one row per day. |
 | `runna.ts` | A ~40-line iCalendar reader (no dependency — we need four fields) and the mirror into `planned_sessions`. Never touches the past or anything already moved. |
 | `templates.ts` | The plan engine. Materialises `horizon` weeks, applies deloads and the fatigue rule. Idempotent — safe to run hourly forever. |
 | `intervals.ts` | Renders a session into intervals.icu workout syntax and pushes it. Rests are written as time or distance on purpose: rest-to-heart-rate degrades to a plain timer once it reaches a Garmin watch. |
@@ -105,12 +104,11 @@ move, scale and skip. `plan_templates` holds week shapes and rules.
 | `auth/login` | Two access codes from env → a session cookie. The whole auth system. |
 | `strava/connect` · `strava/callback` | The OAuth round trip. The callback rejects a connection missing `activity:read_all`, because without it you only get public activities. |
 | `strava/webhook` | Answers Strava's verification GET, then handles events. **Acknowledges in under 2 seconds and fetches afterwards** — Strava doesn't wait and retries anything slow. |
-| `whoop/connect` · `whoop/callback` | Same round trip; backfills six months on connect. |
 | `sessions` (POST) | Create a session on either calendar. |
 | `sessions/[id]` (PATCH) | The four actions: move, scale, skip, note. This file is where the "what if she can't do it" behaviour actually lives. |
-| `week` | Everything one screen needs — sessions, unmatched activities, wellness, streaks, the challenge — in one round trip. |
+| `week` | Everything one screen needs — sessions, unmatched activities, streaks, the challenge — in one round trip. |
 | `intervals` | Stores the intervals.icu key (POST) and the Runna feed URL (PUT). |
-| `cron` | Hourly: Runna sync, Whoop sync, template materialisation, push to watch. Each wrapped so one broken feed can't stop the others. |
+| `cron` | Hourly: Runna sync, template materialisation, push to watch. Each wrapped so one broken feed can't stop the others. |
 
 ### UI — `app/` and `components/`
 

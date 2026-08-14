@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { syncRunna } from "@/lib/runna";
-import { syncWellness } from "@/lib/whoop";
 import { materialiseAll } from "@/lib/templates";
 import { pushUpcoming } from "@/lib/intervals";
 
@@ -17,7 +16,6 @@ export async function GET(req: NextRequest) {
   }
 
   const log: Record<string, unknown> = {};
-  const since = new Date(Date.now() - 10 * 864e5).toISOString();
 
   const users = await sql<{ id: string; email: string; runna_feed: string | null }[]>`
     select u.id, u.email,
@@ -32,9 +30,6 @@ export async function GET(req: NextRequest) {
         .then((n) => (log[`runna:${u.email}`] = n))
         .catch((e) => (log[`runna:${u.email}`] = String(e)));
     }
-    await syncWellness(u.id, since)
-      .then((n) => (log[`whoop:${u.email}`] = n))
-      .catch((e) => (log[`whoop:${u.email}`] = String(e)));
     await pushUpcoming(u.id)
       .then((n) => (log[`intervals:${u.email}`] = n))
       .catch((e) => (log[`intervals:${u.email}`] = String(e)));
