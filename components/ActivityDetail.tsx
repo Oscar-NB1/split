@@ -35,6 +35,33 @@ type Payload = {
 const PLOT_H = 168;
 const PAD = { l: 44, r: 10, t: 10, b: 20 };
 
+/** A shaded region behind a chart: either a work rep, or a kilometre. */
+type Band = { key: number; start_s: number; end_s: number; label: string };
+
+/**
+ * Kilometre boundaries in elapsed time, read off the distance stream.
+ *
+ * Used when a session has no interval structure to shade — a steady run still
+ * benefits from knowing where each kilometre fell on the HR trace. Alternate
+ * kilometres are shaded, so the bands read as a repeating rhythm rather than as
+ * "these kilometres were special".
+ */
+function kilometreBands(series: NonNullable<Payload["series"]>): Band[] {
+  const out: Band[] = [];
+  let target = 1000;
+  let startT = series.t[0] ?? 0;
+  for (let i = 0; i < series.dist.length; i++) {
+    if (series.dist[i] >= target) {
+      const km = Math.round(target / 1000);
+      // every other kilometre, so consecutive bands don't merge into one block
+      if (km % 2 === 0) out.push({ key: km, start_s: startT, end_s: series.t[i], label: String(km) });
+      startT = series.t[i];
+      target += 1000;
+    }
+  }
+  return out;
+}
+
 export default function ActivityDetail({ id, meId }: { id: string; meId: string }) {
   const [d, setD] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +88,18 @@ export default function ActivityDetail({ id, meId }: { id: string; meId: string 
   const mine = a.user_id === meId;
   const km = a.distance_m ? a.distance_m / 1000 : 0;
   const live = d.segments.filter((s) => s.role !== "stub");
+
+  // Shade the reps if there are reps; otherwise shade alternate kilometres, so a
+  // steady run's HR trace still has something to read distance against.
+  // Computed inline rather than in a hook: this sits after an early return, and
+  // 500 points is not worth a hook-ordering hazard.
+  const workBands: Band[] = live
+    .filter((s) => s.role === "work")
+    .map((s) => ({ key: s.lap_index, start_s: s.start_s, end_s: s.end_s, label: String(s.lap_index) }));
+  const bands = workBands.length > 0
+    ? workBands
+    : d.series && km > 0.1 ? kilometreBands(d.series) : [];
+  const bandNote = workBands.length > 0 ? "work reps" : "alternate km";
 
   return (
     <div className="adet">
@@ -132,7 +171,8 @@ export default function ActivityDetail({ id, meId }: { id: string; meId: string 
           {d.series.hr.some((v) => v != null) && (
             <Chart
               title="Heart rate" unit="bpm" series={d.series} field="hr"
-              segments={live} hover={hover} setHover={setHover}
+              segments={live} bands={bands} bandNote={bandNote}
+              hover={hover} setHover={setHover}
               format={(v) => `${Math.round(v)} bpm`}
             />
           )}
@@ -142,7 +182,8 @@ export default function ActivityDetail({ id, meId }: { id: string; meId: string 
           {km > 0.1 && d.series.speed.some((v) => v != null && v > 0.5) && (
             <Chart
               title="Pace" unit="min/km" series={d.series} field="speed"
-              segments={live} hover={hover} setHover={setHover}
+              segments={live} bands={bands} bandNote={bandNote}
+              hover={hover} setHover={setHover}
               format={(v) => `${pace(v)} /km`} tickFormat={(v) => pace(v)} tickMode="pace"
             />
           )}
@@ -261,12 +302,16 @@ const Row = ({ k, v }: { k: string; v: string }) => (
  * are shared instead, which is what makes them comparable.
  */
 function Chart({
-  title, unit, series, field, segments, hover, setHover, format, tickFormat, tickMode,
+  title, unit, series, field, segments, bands, bandNote, hover, setHover, format,
+  tickFormat, tickMode,
 }: {
   title: string; unit: string;
   series: NonNullable<Payload["series"]>;
   field: "hr" | "speed";
+  /** Only for the hover readout — which segment the pointer is inside. */
   segments: Segment[];
+  bands: Band[];
+  bandNote: string;
   hover: number | null;
   setHover: (i: number | null) => void;
   format: (v: number) => string;
@@ -376,6 +421,7 @@ function Chart({
       <figcaption>
         <span className="chartttl">{title}</span>
         <span className="dimlabel">{unit}</span>
+        {bands.length > 0 && <span className="dimlabel">shaded: {bandNote}</span>}
         {clamped > 0 && (
           <span className="dimlabel" title="Stops and pauses fall outside the axis and are drawn on its edge. Hover still reads the true value.">
             {clamped} point{clamped === 1 ? "" : "s"} off scale
@@ -393,19 +439,19 @@ function Chart({
       <svg viewBox={`0 0 ${w} ${H}`} width="100%" height={H} role="img"
         aria-label={`${title} over time`}
         onPointerMove={onMove} onPointerLeave={() => setHover(null)}>
-        {/* interval structure behind the data. Bands are a surface lift, not a
-            hue, and each carries its lap number — never colour alone. */}
-        {segments.map((s) => {
-          if (s.role !== "work") return null;
-          const x1 = px(s.start_s), x2 = px(Math.min(s.end_s, tMax));
+        {/* Structure behind the data: work reps where there are intervals,
+            kilometres where there aren't. Bands are a surface lift, not a hue,
+            and each carries its number — never colour alone. */}
+        {bands.map((b) => {
+          const x1 = px(b.start_s), x2 = px(Math.min(b.end_s, tMax));
           if (x2 - x1 < 0.5) return null;
           return (
-            <g key={s.lap_index}>
+            <g key={b.key}>
               <rect x={x1} y={PAD.t} width={x2 - x1} height={PLOT_H} className="band" />
               <line x1={x1} y1={PAD.t} x2={x1} y2={PAD.t + PLOT_H} className="bandedge" />
               {x2 - x1 > 14 && (
                 <text x={(x1 + x2) / 2} y={PAD.t + 10} className="bandlab" textAnchor="middle">
-                  {s.lap_index}
+                  {b.label}
                 </text>
               )}
             </g>
