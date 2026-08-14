@@ -1,0 +1,29 @@
+{
+  "name": "split",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "psql $DATABASE_URL -f db/schema.sql",
+    "db:seed": "tsx scripts/seed-users.ts",
+    "strava:backfill": "tsx scripts/backfill-strava.ts",
+    "strava:subscribe": "tsx scripts/subscribe-webhook.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "TZ=Europe/Berlin node --import tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "jose": "^5.9.6",
+    "next": "^15.1.0",
+    "postgres": "^3.4.5",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.2"
+  }
+}
