@@ -7,6 +7,7 @@ import {
   classifySegments, decodePolyline, downsample, statsFor,
   type LapRow, type StreamData,
 } from "@/lib/analysis";
+import { hasBasemap } from "@/lib/map";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -103,6 +104,9 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     )),
     series,
     route: activity.polyline ? decodePolyline(activity.polyline) : [],
+    // whether MAPBOX_TOKEN is configured. The client can't read it (no
+    // NEXT_PUBLIC_ prefix, by design), so the server has to say.
+    basemap: hasBasemap(),
     // lets the view say "still importing" instead of "no data for this run"
     detail_pending: activity.detail_fetched_at == null,
   });

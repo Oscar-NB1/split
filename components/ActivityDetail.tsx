@@ -29,6 +29,8 @@ type Payload = {
   splits: Split[];
   series: { t: number[]; hr: (number | null)[]; speed: (number | null)[]; dist: number[]; alt: (number | null)[] } | null;
   route: [number, number][];
+  /** Whether MAPBOX_TOKEN is set. The client can't see the token itself. */
+  basemap: boolean;
   detail_pending: boolean;
 };
 
@@ -193,7 +195,9 @@ export default function ActivityDetail({ id, meId }: { id: string; meId: string 
       )}
 
       {/* ----------------------------------------------------------- the map */}
-      {d.route.length > 1 && <RouteMap points={d.route} mine={mine} />}
+      {d.route.length > 1 && (
+        <RouteMap points={d.route} mine={mine} activityId={a.id} basemap={d.basemap} />
+      )}
 
       {/* --------------------------------------------------------- the table */}
       {/* one lap is not a segment breakdown — it repeats the headline numbers */}
@@ -487,11 +491,20 @@ function Chart({
 /**
  * The recorded route, from `map.summary_polyline` on the activity.
  *
- * An outline, not a map: tiles would mean an external provider, an API key and
- * a CSP hole, for a shape both athletes recognise without a basemap. Longitude
- * is scaled by cos(latitude) so the route isn't stretched sideways.
+ * Two renderings. With MAPBOX_TOKEN set, a rendered basemap arrives as one PNG
+ * from our own proxy — Mapbox draws the line itself, so there is no mapping
+ * library in the browser. Without a token, or if that request fails, the same
+ * points are drawn as a bare outline: longitude scaled by cos(latitude) so the
+ * shape isn't stretched sideways.
+ *
+ * The fallback is wired to the image's onError rather than only to the token
+ * check, so a Mapbox outage degrades to the outline instead of a broken image.
  */
-function RouteMap({ points, mine }: { points: [number, number][]; mine: boolean }) {
+function RouteMap({
+  points, mine, activityId, basemap,
+}: { points: [number, number][]; mine: boolean; activityId: string; basemap: boolean }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const useBasemap = basemap && !imgFailed;
   const { d, vb } = useMemo(() => {
     const lats = points.map((p) => p[0]);
     const lngs = points.map((p) => p[1]);
@@ -520,12 +533,20 @@ function RouteMap({ points, mine }: { points: [number, number][]; mine: boolean 
     <figure className="chart routebox">
       <figcaption><span className="chartttl">Route</span>
         <span className="dimlabel">{points.length} points</span>
+        {!useBasemap && basemap && <span className="dimlabel">basemap unavailable</span>}
       </figcaption>
-      <svg viewBox={vb} className="routesvg" role="img" aria-label="Route recorded by GPS"
-        preserveAspectRatio="xMidYMid meet">
-        <path d={d} className={`routeline ${mine ? "a" : "b"}`} fill="none"
-          vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-      </svg>
+      {useBasemap ? (
+        // eslint-disable-next-line @next/next/no-img-element -- a proxied PNG of
+        // fixed aspect; next/image would add an optimiser hop for no benefit
+        <img className="routeimg" src={`/api/activity/${activityId}/map`} alt="Route recorded by GPS"
+          onError={() => setImgFailed(true)} />
+      ) : (
+        <svg viewBox={vb} className="routesvg" role="img" aria-label="Route recorded by GPS"
+          preserveAspectRatio="xMidYMid meet">
+          <path d={d} className={`routeline ${mine ? "a" : "b"}`} fill="none"
+            vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+      )}
     </figure>
   );
 }

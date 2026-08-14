@@ -178,6 +178,7 @@ aside{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1
 
 /* route */
 .routesvg{width:100%;height:260px}
+.routeimg{display:block;width:100%;height:auto;border-radius:2px;background:var(--panel2)}
 .routeline{stroke-width:2.5}
 .routeline.a{stroke:var(--a)} .routeline.b{stroke:var(--b)}
 

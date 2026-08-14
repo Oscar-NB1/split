@@ -4,6 +4,7 @@ import {
   classifySegments, decodePolyline, downsample, hms, pace, statsFor,
   type LapRow,
 } from "../lib/analysis";
+import { encodePolyline } from "../lib/map";
 
 /**
  * The lap fixtures below are real rows from the database, not invented ones.
@@ -179,4 +180,32 @@ test("polyline decoding matches Google's reference example", () => {
 
 test("an empty polyline is an empty route, not a crash", () => {
   assert.deepEqual(decodePolyline(""), []);
+});
+
+test("polyline encoding is the exact inverse of decoding", () => {
+  // Google's reference example, encoded from its own decoded form
+  const points: [number, number][] = [[38.5, -120.2], [40.7, -120.95], [43.252, -126.453]];
+  assert.equal(encodePolyline(points), "_p~iF~ps|U_ulLnnqC_mqNvxq`@");
+  assert.deepEqual(decodePolyline(encodePolyline(points)), points);
+});
+
+test("encoding survives a real route round trip", () => {
+  // a short synthetic route with sub-metre deltas, which is where a sign or
+  // shift bug in the varint packing shows up
+  const points: [number, number][] = [];
+  for (let i = 0; i < 200; i++) {
+    points.push([52.5 + i * 0.00012, 13.4 - i * 0.00009]);
+  }
+  const round = decodePolyline(encodePolyline(points));
+  assert.equal(round.length, points.length);
+  round.forEach(([lat, lng], i) => {
+    // 1e-5 degrees is the format's own resolution, about 1m
+    assert.ok(Math.abs(lat - points[i][0]) < 1e-5, `lat ${i}`);
+    assert.ok(Math.abs(lng - points[i][1]) < 1e-5, `lng ${i}`);
+  });
+});
+
+test("a route crossing the equator and prime meridian keeps its signs", () => {
+  const points: [number, number][] = [[0.001, -0.001], [-0.001, 0.001], [0, 0]];
+  assert.deepEqual(decodePolyline(encodePolyline(points)), points);
 });
