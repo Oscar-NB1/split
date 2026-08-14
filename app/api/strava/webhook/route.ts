@@ -2,6 +2,7 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { stravaGet } from "@/lib/strava";
 import { unpairActivity, upsertActivity, type StravaActivity } from "@/lib/ingest";
+import { fetchStreams, saveSplits } from "@/lib/detail";
 
 /**
  * Strava calls this once with GET to verify the subscription, then with
@@ -60,9 +61,20 @@ async function handle(event: Event) {
     return;
   }
 
+  // This is the DETAILED activity, so it already carries splits_metric — the
+  // splits below cost no extra request. Only the streams do.
   const activity = await stravaGet<StravaActivity>(
     userId,
     `/activities/${event.object_id}`,
   );
-  await upsertActivity(userId, activity);
+  const activityId = await upsertActivity(userId, activity);
+
+  await saveSplits(activityId, activity).catch((e) =>
+    console.error("splits", event.object_id, e),
+  );
+  // One extra request. Failing here must not lose the activity itself, which is
+  // already stored and paired — the hourly sweep retries anything missing.
+  await fetchStreams(userId, activityId, String(event.object_id)).catch((e) =>
+    console.error("streams", event.object_id, e),
+  );
 }

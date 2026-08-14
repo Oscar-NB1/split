@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import { syncRunna } from "@/lib/runna";
 import { materialiseAll } from "@/lib/templates";
 import { pushUpcoming } from "@/lib/intervals";
+import { detailGaps, fillDetail } from "@/lib/detail";
 
 /**
  * Hourly housekeeping. Wired in vercel.json.
@@ -38,6 +39,27 @@ export async function GET(req: NextRequest) {
   await materialiseAll()
     .then((n) => (log.templates = n))
     .catch((e) => (log.templates = String(e)));
+
+  // Backstop for splits/streams. The webhook fetches them as a run lands, but a
+  // missed webhook, a Strava blip or a rate-limit rejection would otherwise
+  // leave a permanent hole. Bounded per run: Strava allows 100 requests per 15
+  // minutes and each gap costs up to two, so 30 keeps an hourly sweep well
+  // clear even when the same window is doing token refreshes.
+  const gaps = await detailGaps(30).catch(() => []);
+  let requests = 0;
+  const filled: string[] = [];
+  for (const gap of gaps) {
+    if (requests >= 60) break;
+    try {
+      const r = await fillDetail(gap);
+      requests += r.requests;
+      filled.push(gap.provider_activity_id);
+    } catch (e) {
+      log[`detail:${gap.provider_activity_id}`] = String(e);
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+  }
+  log.detail = { pending: gaps.length, filled: filled.length, requests };
 
   return NextResponse.json(log);
 }

@@ -123,6 +123,36 @@ create table if not exists challenges (
 -- Whoop was removed (2026-08-14). Nothing else ever wrote `wellness`, so the
 -- table is dropped rather than left as an orphan nothing reads.
 drop table if exists wellness;
+
+-- Per-km splits and the time series behind the HR/pace graphs (2026-08-14).
+-- Split rows come free with a detailed activity fetch (the webhook already does
+-- one); streams are a second request per activity, so they are fetched once and
+-- kept. latlng and cadence are deliberately NOT stored: the route is already in
+-- map.summary_polyline on the activity, and latlng alone is ~40% of the payload.
+create table if not exists activity_splits (
+  activity_id      uuid    not null references activities(id) on delete cascade,
+  split            int     not null,          -- 1-based km index from Strava
+  distance_m       numeric,
+  moving_seconds   int,
+  elapsed_seconds  int,
+  avg_speed_ms     numeric,
+  avg_hr           numeric,
+  elevation_diff_m numeric,
+  pace_zone        int,
+  primary key (activity_id, split)
+);
+
+create table if not exists activity_streams (
+  activity_id uuid primary key references activities(id) on delete cascade,
+  keys        text[]      not null,
+  points      int         not null,
+  data        jsonb       not null,
+  fetched_at  timestamptz not null default now()
+);
+
+-- Lets the cron sweep find what is still missing without a full scan.
+create index if not exists activities_detail_gap
+  on activities (start_time desc) where provider = 'strava';
 -- This file is idempotent: run it again after pulling and it upgrades in place.
 -- Adding to a table above? Add the matching `add column if not exists` here.
 alter table planned_sessions add column if not exists intervals_event_id  text;
