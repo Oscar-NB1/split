@@ -53,7 +53,10 @@ async function main() {
     } catch (e) {
       failed++;
       const msg = String(e);
-      console.error(`  ! ${gap.provider_activity_id}: ${msg.slice(0, 120)}`);
+      // 200, not 120: a Strava path is ~110 characters, and the earlier limit
+      // cut the message off exactly at the status code — the one part that says
+      // whether the failure is permanent or worth retrying
+      console.error(`  ! ${gap.provider_activity_id}: ${msg.slice(0, 200)}`);
       // 429 means the 15-minute window is exhausted. Wait it out rather than
       // abandoning the run — every write is idempotent, so nothing is lost, but
       // finishing in one pass beats asking the operator to come back.

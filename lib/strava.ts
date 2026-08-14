@@ -91,13 +91,35 @@ export async function accessTokenFor(userId: string): Promise<string> {
   return t.access_token;
 }
 
+/**
+ * A failed Strava call, carrying its status code.
+ *
+ * The status is a property rather than only part of the message because callers
+ * need to branch on it: a 404 from the streams endpoint means "this activity has
+ * no time series", which is a normal answer to record, while a 401 or 500 means
+ * try again later. String-matching a message to tell those apart is how a
+ * permanent condition ends up being retried hourly forever.
+ */
+export class StravaHttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "StravaHttpError";
+  }
+}
+
 /** Authenticated GET against the Strava API. Path starts with a slash. */
 export async function stravaGet<T>(userId: string, path: string): Promise<T> {
   const token = await accessTokenFor(userId);
   const res = await fetch(`${API}${path}`, {
     headers: { authorization: `Bearer ${token}` },
   });
-  if (res.status === 429) throw new Error("strava rate limit hit - back off 15 minutes");
-  if (!res.ok) throw new Error(`strava ${path} -> ${res.status} ${await res.text()}`);
+  if (res.status === 429) {
+    throw new StravaHttpError(429, "strava rate limit hit - back off 15 minutes");
+  }
+  if (!res.ok) {
+    // status first: paths here are ~110 characters, so any log that truncates
+    // the message would otherwise cut off the one part worth reading
+    throw new StravaHttpError(res.status, `strava ${res.status} on ${path} -> ${await res.text()}`);
+  }
   return res.json();
 }

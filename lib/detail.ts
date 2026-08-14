@@ -1,5 +1,5 @@
 import { sql } from "./db";
-import { stravaGet } from "./strava";
+import { StravaHttpError, stravaGet } from "./strava";
 
 /**
  * Per-km splits and the HR/pace time series for an activity.
@@ -121,6 +121,18 @@ export async function saveLaps(activityId: string, detail: unknown): Promise<num
   return laps.length;
 }
 
+/**
+ * Records that an activity has no time series, so the gap query stops asking.
+ * A zero-point row is the marker; there is no separate "we looked" column.
+ */
+async function noStreams(activityId: string): Promise<void> {
+  await sql`
+    insert into activity_streams (activity_id, keys, points, data, fetched_at)
+    values (${activityId}, ${[] as string[]}, 0, ${sql.json({})}, now())
+    on conflict (activity_id) do update set fetched_at = now()
+  `;
+}
+
 /** Fetch and store the streams for one activity. Costs one Strava request. */
 export async function fetchStreams(
   userId: string,
@@ -128,21 +140,28 @@ export async function fetchStreams(
   providerActivityId: string,
 ): Promise<number> {
   const qs = `keys=${STREAM_KEYS.join(",")}&key_by_type=true`;
-  const streams = await stravaGet<Record<string, { data?: unknown[] }>>(
-    userId,
-    `/activities/${providerActivityId}/streams?${qs}`,
-  );
+  let streams: Record<string, { data?: unknown[] }>;
+  try {
+    streams = await stravaGet<Record<string, { data?: unknown[] }>>(
+      userId,
+      `/activities/${providerActivityId}/streams?${qs}`,
+    );
+  } catch (e) {
+    // A 404 here does not mean the activity is missing — it means the activity
+    // has no streams at all. A Runna mobility session logged with no watch
+    // recording answers exactly this way. That is a permanent fact worth
+    // storing, not an error worth retrying every hour until the account dies.
+    if (e instanceof StravaHttpError && e.status === 404) {
+      await noStreams(activityId);
+      return 0;
+    }
+    throw e;
+  }
 
   const keys = Object.keys(streams ?? {});
   if (keys.length === 0) {
-    // A row is still written, with zero points. Returning without one means the
-    // gap query sees "no streams" and asks again every hour for an activity
-    // Strava has no series for at all — a treadmill entry typed in by hand.
-    await sql`
-      insert into activity_streams (activity_id, keys, points, data, fetched_at)
-      values (${activityId}, ${[] as string[]}, 0, ${sql.json({})}, now())
-      on conflict (activity_id) do update set fetched_at = now()
-    `;
+    // Same reasoning for a 200 carrying an empty object.
+    await noStreams(activityId);
     return 0;
   }
   // Every series is the same length; `time` is the one Strava always returns.
