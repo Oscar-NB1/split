@@ -150,6 +150,47 @@ create table if not exists activity_streams (
   fetched_at  timestamptz not null default now()
 );
 
+-- Laps are the interval structure (2026-08-14). A Garmin interval workout
+-- reaches Strava with one lap per rep and one per recovery, each carrying its
+-- own average HR and speed — which is the only place "average HR of the work
+-- reps vs the rest" can come from. Splits are always 1km and cannot express it.
+--
+-- Unlike splits, laps exist for non-distance sports too, so this table is not
+-- gated on distance_m.
+create table if not exists activity_laps (
+  activity_id      uuid    not null references activities(id) on delete cascade,
+  lap_index        int     not null,          -- 1-based, in workout order
+  name             text,
+  distance_m       numeric,
+  moving_seconds   int,
+  elapsed_seconds  int,
+  start_index      int,                       -- index into the stream arrays
+  avg_speed_ms     numeric,
+  max_speed_ms     numeric,
+  avg_hr           numeric,
+  max_hr           numeric,
+  avg_cadence      numeric,
+  elevation_diff_m numeric,
+  primary key (activity_id, lap_index)
+);
+
+-- Records that the detailed fetch happened, separately from whether it yielded
+-- anything. Judging "do we still need detail?" on the presence of split rows
+-- means a gym session — which legitimately has no splits — is re-fetched every
+-- hour forever, burning quota to learn the same nothing.
+alter table activities add column if not exists detail_fetched_at timestamptz;
+
+-- The lap column was first declared `start_offset_s`, which is wrong about its
+-- own contents: Strava's `start_index` is an offset into the stream arrays, not
+-- a number of seconds, and the two only coincide when the watch sampled at
+-- exactly 1Hz. Guarded so the file stays re-runnable.
+do $$ begin
+  if exists (select 1 from information_schema.columns
+              where table_name = 'activity_laps' and column_name = 'start_offset_s')
+  then alter table activity_laps rename column start_offset_s to start_index;
+  end if;
+end $$;
+
 -- Lets the cron sweep find what is still missing without a full scan.
 create index if not exists activities_detail_gap
   on activities (start_time desc) where provider = 'strava';

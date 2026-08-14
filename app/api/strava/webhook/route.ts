@@ -2,7 +2,7 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { stravaGet } from "@/lib/strava";
 import { unpairActivity, upsertActivity, type StravaActivity } from "@/lib/ingest";
-import { fetchStreams, saveSplits } from "@/lib/detail";
+import { fetchStreams, saveLaps, saveSplits } from "@/lib/detail";
 
 /**
  * Strava calls this once with GET to verify the subscription, then with
@@ -61,17 +61,21 @@ async function handle(event: Event) {
     return;
   }
 
-  // This is the DETAILED activity, so it already carries splits_metric — the
-  // splits below cost no extra request. Only the streams do.
+  // This is the DETAILED activity, so it already carries splits_metric and laps
+  // — both of the calls below cost no extra request. Only the streams do.
   const activity = await stravaGet<StravaActivity>(
     userId,
     `/activities/${event.object_id}`,
   );
   const activityId = await upsertActivity(userId, activity);
 
-  await saveSplits(activityId, activity).catch((e) =>
-    console.error("splits", event.object_id, e),
-  );
+  await Promise.all([
+    saveSplits(activityId, activity).catch((e) => console.error("splits", event.object_id, e)),
+    saveLaps(activityId, activity).catch((e) => console.error("laps", event.object_id, e)),
+  ]);
+  // Marks the detailed fetch as done so the hourly sweep doesn't repeat it. Set
+  // after the writes, so a failure above leaves it null and the sweep retries.
+  await sql`update activities set detail_fetched_at = now() where id = ${activityId}`;
   // One extra request. Failing here must not lose the activity itself, which is
   // already stored and paired — the hourly sweep retries anything missing.
   await fetchStreams(userId, activityId, String(event.object_id)).catch((e) =>

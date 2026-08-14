@@ -32,13 +32,13 @@ const DAILY_BUDGET = 900; // leave headroom under 1000 for the app itself
 async function main() {
   const gaps = await detailGaps(100000, since);
   const todo = gaps.slice(0, cap === Infinity ? gaps.length : cap);
-  const estimate = todo.reduce((n, g) => n + (g.needs_splits ? 1 : 0) + (g.needs_streams ? 1 : 0), 0);
+  const estimate = todo.reduce((n, g) => n + (g.needs_detail ? 1 : 0) + (g.needs_streams ? 1 : 0), 0);
 
   console.log(`${todo.length} activities need detail since ${since}`);
   console.log(`  estimated Strava requests: ${estimate}` +
     (estimate > DAILY_BUDGET ? `  !! over the ${DAILY_BUDGET} daily budget — run again tomorrow to finish` : ""));
 
-  let requests = 0, splits = 0, points = 0, done = 0, failed = 0;
+  let requests = 0, splits = 0, laps = 0, points = 0, done = 0, failed = 0;
   for (const gap of todo) {
     if (requests >= DAILY_BUDGET) {
       console.log(`\nstopping at the daily budget (${requests} requests). Re-run to continue.`);
@@ -46,9 +46,9 @@ async function main() {
     }
     try {
       const r = await fillDetail(gap);
-      requests += r.requests; splits += r.splits; points += r.points; done++;
+      requests += r.requests; splits += r.splits; laps += r.laps; points += r.points; done++;
       if (done % 10 === 0 || done === todo.length) {
-        console.log(`  ${done}/${todo.length}  requests=${requests}  splits=${splits}  stream points=${points}`);
+        console.log(`  ${done}/${todo.length}  requests=${requests}  splits=${splits}  laps=${laps}  stream points=${points}`);
       }
     } catch (e) {
       failed++;
@@ -66,7 +66,7 @@ async function main() {
   }
 
   console.log(`\ndone — ${done} activities, ${requests} requests, ${splits} split rows, ` +
-    `${points.toLocaleString()} stream points, ${failed} failed`);
+    `${laps} lap rows, ${points.toLocaleString()} stream points, ${failed} failed`);
   await sql.end();
 }
 

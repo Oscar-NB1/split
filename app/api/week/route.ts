@@ -23,7 +23,9 @@ export const GET = route(async (req: NextRequest) => {
     select s.id, s.user_id, s.planned_date::text as planned_date, s.title, s.kind,
            s.planned_minutes, s.target, s.coach_note, s.status, s.actual_minutes,
            s.skip_reason, s.effort_points, s.source,
-           a.avg_hr, a.distance_m, a.moving_seconds, a.name as activity_name
+           a.avg_hr, a.distance_m, a.moving_seconds, a.name as activity_name,
+           -- lets the sheet offer the detail view, and only when there is one
+           s.activity_id
     from planned_sessions s
     left join activities a on a.id = s.activity_id
     where s.planned_date >= ${ws} and s.planned_date < ${end} and s.status <> 'moved'
@@ -38,7 +40,7 @@ export const GET = route(async (req: NextRequest) => {
     select a.id, a.user_id, a.local_date::text as planned_date, a.name as title,
            a.sport_type as kind, (a.moving_seconds/60)::int as actual_minutes,
            'unplanned' as status, 'strava' as source, null::int as planned_minutes,
-           a.avg_hr, a.distance_m
+           a.avg_hr, a.distance_m, a.id as activity_id
     from activities a
     where a.local_date >= ${ws} and a.local_date < ${end}
       and not exists (select 1 from planned_sessions p where p.activity_id = a.id)

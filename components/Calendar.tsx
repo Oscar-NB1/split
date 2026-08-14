@@ -10,6 +10,8 @@ type Session = {
   status: string; actual_minutes: number | null; skip_reason: string | null;
   effort_points: number | null; source: string; avg_hr: number | null;
   distance_m: number | null; activity_name: string | null;
+  /** null until something from Strava is paired with it — the detail view needs one. */
+  activity_id: string | null;
 };
 type WeekData = {
   week_start: string; users: User[]; sessions: Session[]; unplanned: Session[];
@@ -316,6 +318,12 @@ export default function Calendar({ me, other }: { me: User; other: User | null }
                 </div>
               </div>
             </div>
+
+            {open.activity_id && (
+              <a className="detaillink" href={`/activity/${open.activity_id}`}>
+                Splits, HR &amp; pace →
+              </a>
+            )}
 
             {open.target && <div className="note">{open.target}</div>}
             {open.coach_note && (

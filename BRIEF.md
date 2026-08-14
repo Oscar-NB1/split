@@ -72,7 +72,7 @@ Both are detours around the same closed door.
 
 ## Data model
 
-Seven tables. `users` (two rows). `oauth_accounts` holds every external
+Ten tables. `users` (two rows). `oauth_accounts` holds every external
 credential keyed by provider — the Strava tokens, but also the Runna feed URL
 and the intervals.icu key, which aren't OAuth but live there to keep credential
 handling in one place. `activities` is immutable fact from Strava.
@@ -81,6 +81,22 @@ handling in one place. `activities` is immutable fact from Strava.
 move, scale and skip. `plan_templates` holds week shapes and rules.
 `challenges` stores the resolved weekly head-to-head so a finished week keeps
 the metric it was actually scored on.
+
+Three tables hang off `activities` and hold the detail behind one session:
+`activity_splits` (Strava's whole-kilometre splits), `activity_laps` (the lap
+list, which on an interval workout *is* the rep-and-recovery structure), and
+`activity_streams` (the HR/pace/altitude time series as one jsonb blob, since
+nothing ever queries inside it). `activities.detail_fetched_at` records that the
+detailed fetch happened — separately from whether it returned anything, because
+a gym session legitimately has no splits and judging on row counts re-fetches it
+hourly forever.
+
+**Laps, not splits, are where intervals live.** A 10×300m session reaches us as
+22 laps; `splits_metric` is always whole kilometres, so it averages each rep
+together with its recovery and the interval disappears. Strava does not label
+which laps were work — `lib/analysis.ts` infers it from the distribution of lap
+speeds, and warm-up and cool-down are pulled out separately so they don't
+flatter the recovery averages.
 
 ## File map
 
@@ -96,6 +112,8 @@ the metric it was actually scored on.
 | `templates.ts` | The plan engine. Materialises `horizon` weeks, applies deloads and the fatigue rule. Idempotent — safe to run hourly forever. |
 | `intervals.ts` | Renders a session into intervals.icu workout syntax and pushes it. Rests are written as time or distance on purpose: rest-to-heart-rate degrades to a plain timer once it reaches a Garmin watch. |
 | `scoring.ts` | Weekly challenge metrics, the rotation between them, and the streak rule. |
+| `detail.ts` | Splits, laps and streams. Splits and laps are two fields of the *same* detailed payload, so they cost one request between them; streams cost a second. Everything is idempotent and gated on a "we asked" marker, never on row counts. |
+| `analysis.ts` | Pure functions over stored rows: work/rest segment classification, time-weighted role stats, stream downsampling, polyline decoding, pace formatting. No I/O, which is why it's the best-tested file here. |
 
 ### API routes — `app/api/`
 
@@ -107,6 +125,7 @@ the metric it was actually scored on.
 | `sessions` (POST) | Create a session on either calendar. |
 | `sessions/[id]` (PATCH) | The four actions: move, scale, skip, note. This file is where the "what if she can't do it" behaviour actually lives. |
 | `week` | Everything one screen needs — sessions, unmatched activities, streaks, the challenge — in one round trip. |
+| `activity/[id]` | Everything the detail view needs for one activity, likewise in one round trip. Streams are downsampled server-side — 3,600 raw samples to draw a 700px line is ~250kB for 500 usable pixels. |
 | `intervals` | Stores the intervals.icu key (POST) and the Runna feed URL (PUT). |
 | `cron` | Hourly: Runna sync, template materialisation, push to watch. Each wrapped so one broken feed can't stop the others. |
 
@@ -116,6 +135,7 @@ the metric it was actually scored on.
 |---|---|
 | `globals.css` | The whole design system. Two athlete colours (amber / teal) rather than one accent, because everything in this app is comparative. Mobile-first; the 7-column desktop grid is the override. |
 | `Calendar.tsx` | The app. Three tabs, week navigation, the day strip on mobile, the split rails, the tug bar, and the action sheets. |
+| `ActivityDetail.tsx` | The detail view: headline stats, work-vs-recovery cards, HR and pace charts with the interval structure shaded behind them, the GPS route, and the segment/split tables. Charts are hand-written SVG — no charting dependency. |
 | `Connections.tsx` | Settings — the four connections, each with the manual step it needs. |
 | `login` · `settings` · `page` | Thin server components; all three redirect to login without a session. |
 
@@ -123,9 +143,11 @@ the metric it was actually scored on.
 
 | File | What it does |
 |---|---|
-| `db/schema.sql` | Seven tables, run once. |
+| `db/schema.sql` | Ten tables, run once. Idempotent — re-run to upgrade. |
 | `scripts/seed-users.ts` | Creates the two user rows from env. |
 | `scripts/backfill-strava.ts` | One-time history import, paced under the rate limit. Re-runnable. |
+| `scripts/backfill-detail.ts` | Splits, laps and streams for activities already imported. Pause is *derived* from the rate limit (100 req/15 min = one activity every ~18s), not guessed. |
+| `scripts/with-env.mjs` | Runs a command with `.env.local` loaded. Only Next.js reads that file; psql and tsx don't. Parses it in JS rather than `source`-ing it, because a Neon URL contains `&`. |
 | `scripts/subscribe-webhook.ts` | Creates, lists and deletes the Strava push subscription — the fiddliest part of setup. |
 | `public/manifest.json` · `sw.js` · icons | PWA. Add to Home Screen is how the second person "downloads" it. |
 | `vercel.json` | Registers the hourly cron. |
@@ -150,7 +172,8 @@ explaining the cut.
 - Auth is two codes in environment variables.
 - OAuth tokens are stored unencrypted.
 - Zone-2 minutes are approximated from average HR per activity, not from HR
-  streams — fine for a weekly challenge, wrong for training analysis.
+  streams — fine for a weekly challenge, wrong for training analysis. The
+  streams are now stored, so this can be computed properly whenever it matters.
 - No push notifications; the service worker is an offline shell only.
 - The OAuth `state` parameter carries a user id and isn't signed.
 

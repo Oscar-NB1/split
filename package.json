@@ -9,6 +9,7 @@
     "db:push": "psql $DATABASE_URL -f db/schema.sql",
     "db:seed": "tsx scripts/seed-users.ts",
     "strava:backfill": "tsx scripts/backfill-strava.ts",
+    "strava:detail": "tsx scripts/backfill-detail.ts",
     "strava:subscribe": "tsx scripts/subscribe-webhook.ts",
     "typecheck": "tsc --noEmit",
     "test": "TZ=Europe/Berlin node --import tsx --test tests/*.test.ts"
