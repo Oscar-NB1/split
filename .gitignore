@@ -1,3 +1,10 @@
 node_modules
 .next
 .env.local
+
+# build artefact from tsc --noEmit
+tsconfig.tsbuildinfo
+# macOS metadata
+.DS_Store
+# Next.js reads .env.local; a stray .env must never be committable either
+.env
