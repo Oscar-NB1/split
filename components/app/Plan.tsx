@@ -11,7 +11,9 @@ import {
  * actually happened, so a week that was written 46 km and run 22 reads as a gap
  * rather than as a success.
  */
-export default function Plan({ monday, goStrategy }: { monday: string; goStrategy: () => void }) {
+export default function Plan({ monday, goStrategy, goProgram, goForm }: {
+  monday: string; goStrategy: () => void; goProgram: () => void; goForm: () => void;
+}) {
   const [actual, setActual] = useState<Record<string, number>>({});
 
   useEffect(() => {
@@ -74,6 +76,24 @@ export default function Plan({ monday, goStrategy }: { monday: string; goStrateg
           </span>
         </div>
       </section>
+
+      <button className="card" onClick={goForm}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Form</span>
+          <span style={{ fontSize: 11, color: "var(--ink-40)" }}>Pace and volume against the plan</span>
+        </span>
+        <span style={{ color: "var(--teal)" }}>›</span>
+      </button>
+
+      <button className="card" onClick={goProgram}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Edit this week</span>
+          <span style={{ fontSize: 11, color: "var(--ink-40)" }}>Move, add and re-slot sessions</span>
+        </span>
+        <span style={{ color: "var(--teal)" }}>›</span>
+      </button>
 
       <button className="card" onClick={goStrategy}
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", textAlign: "left" }}>

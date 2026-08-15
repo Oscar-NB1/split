@@ -1,10 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { ZONES } from "@/lib/coach";
+import { zonesFor } from "@/lib/coach";
+import Notifications from "./Notifications";
 import type { User } from "./Shell";
 
 /** Settings: who you are, what is connected, and the zones everything is scored against. */
 export default function Profile({ me }: { me: User }) {
+  const [prof, setProf] = useState<{ hr_max: number | null; notify: Record<string, boolean> } | null>(null);
   const [connected, setConnected] = useState<Record<string, boolean> | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -17,6 +19,7 @@ export default function Profile({ me }: { me: User }) {
 
   useEffect(() => {
     fetch("/api/connections").then(async (r) => r.ok && setConnected(await r.json()));
+    fetch("/api/profile").then(async (r) => r.ok && setProf(await r.json()));
   }, []);
 
   function flip(t: "light" | "dark") {
@@ -65,7 +68,7 @@ export default function Profile({ me }: { me: User }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <span className="caps">Heart rate zones</span>
         <div className="card" style={{ padding: "6px 16px" }}>
-          {ZONES.map((z) => (
+          {zonesFor(prof?.hr_max).map((z) => (
             <div key={z.tag} className="rowsplit" style={{ padding: "11px 0", borderBottom: "1px solid var(--line-2)" }}>
               <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <span style={{ width: 8, height: 8, borderRadius: 2, background: z.colour, display: "block" }} />
@@ -76,10 +79,13 @@ export default function Profile({ me }: { me: User }) {
           ))}
         </div>
         <span style={{ fontSize: 10, color: "var(--ink-40)", lineHeight: 1.5 }}>
-          Set from a measured max of 189 bpm. Easy runs belong under 152 — the plan&apos;s
+          Derived from a maximum of {prof?.hr_max ?? 189} bpm as percentages, so the table is
+          yours rather than the other athlete&apos;s. Easy runs belong in Z2 — the plan&apos;s
           single most repeated instruction.
         </span>
       </div>
+
+      <Notifications prefs={prof?.notify ?? {}} />
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         <span className="caps">Appearance</span>

@@ -24,9 +24,11 @@ export const POST = route(async (req: NextRequest) => {
 
   const [row] = await sql<{ id: string }[]>`
     insert into planned_sessions
-      (user_id, author_id, planned_date, title, kind, planned_minutes, target, coach_note, source)
+      (user_id, author_id, planned_date, title, kind, planned_minutes, target, coach_note,
+       slot, source)
     values (${b.user_id ?? me.id}, ${me.id}, ${b.planned_date}, ${b.title.trim()}, ${b.kind},
-            ${minutes}, ${b.target ?? null}, ${b.coach_note ?? null}, 'manual')
+            ${minutes}, ${b.target ?? null}, ${b.coach_note ?? null},
+            ${b.slot === "PM" ? "PM" : b.slot === "AM" ? "AM" : null}, 'manual')
     returning id
   `;
   await sql`

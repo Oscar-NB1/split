@@ -93,6 +93,15 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
       return NextResponse.json({ ok: true });
     }
 
+    case "slot": {
+      // AM/PM is part of the prescription on double days, and moving a session
+      // between halves of a day is a different edit from moving it to another
+      // day — it does not touch the date, the watch push or the change log.
+      const slot = body.slot === "PM" ? "PM" : body.slot === "AM" ? "AM" : null;
+      await sql`update planned_sessions set slot = ${slot}, updated_at = now() where id = ${id}`;
+      return NextResponse.json({ ok: true });
+    }
+
     case "note": {
       if (typeof body.coach_note !== "string") throw badRequest("coach_note must be text.");
       await sql`

@@ -12,6 +12,9 @@ import Strategy from "./Strategy";
 import Profile from "./Profile";
 import Brief from "./Brief";
 import Strength from "./Strength";
+import Program from "./Program";
+import Picker from "./Picker";
+import Form from "./Form";
 
 export type User = { id: string; display_name: string };
 export type Session = {
@@ -35,14 +38,14 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile" | "brief" | "strength";
+  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
   week: "week", activity: "week",
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
-  brief: "week", strength: "week",
+  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -50,6 +53,9 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
   activity: { to: "week", label: "Week" },
   brief: { to: "week", label: "Week" },
   strength: { to: "week", label: "Week" },
+  program: { to: "plan", label: "Plan" },
+  picker: { to: "program", label: "Cancel" },
+  form: { to: "plan", label: "Plan" },
   strategy: { to: "plan", label: "Plan" },
   profile: { to: "week", label: "Week" },
 };
@@ -59,6 +65,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const [monday, setMonday] = useState(() => mondayOf());
   const [openId, setOpenId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [adding, setAdding] = useState<{ date: string; slot: "AM" | "PM" } | null>(null);
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,13 +104,17 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "versus" ? `You vs ${other?.display_name ?? "—"}`
     : view === "profile" ? "Settings"
     : view === "strategy" ? "Race plan"
+    : view === "form" ? "Pace and volume against plan"
+    : view === "program" ? "Edit the week"
+    : view === "picker" ? "Add a session"
     : week ? `Week ${week.n} · ${week.km} km target`
     : left > 0 ? `${left} days to race` : "Off block";
 
   const title =
     view === "past" ? "Past" : view === "awards" ? "Awards" : view === "versus" ? "Versus"
     : view === "profile" ? "Profile" : view === "strategy" ? "Strategy"
-    : view === "plan" ? "Plan" : "Split";
+    : view === "plan" ? "Plan" : view === "program" ? "Program"
+    : view === "picker" ? "Add" : view === "form" ? "Form" : "Split";
 
   return (
     <div className="app">
@@ -143,8 +154,24 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         {view === "past" && <Past openActivity={openActivity} />}
         {view === "versus" && <Versus data={data} me={me} other={other} />}
         {view === "awards" && <Awards meId={me.id} openActivity={openActivity} />}
-        {view === "plan" && <Plan monday={monday} goStrategy={() => setView("strategy")} />}
+        {view === "plan" && (
+          <Plan monday={monday} goStrategy={() => setView("strategy")}
+            goProgram={() => setView("program")} goForm={() => setView("form")} />
+        )}
+        {view === "program" && (
+          <Program
+            data={data} me={me} other={other} monday={monday} setMonday={setMonday}
+            reload={load} openSession={openSession}
+            openPicker={(date, slot) => { setAdding({ date, slot }); setView("picker"); }}
+          />
+        )}
+        {view === "picker" && adding && (
+          <Picker date={adding.date} slot={adding.slot} forUser={me.id}
+            onDone={() => { setAdding(null); setView("program"); load(); }}
+            onCancel={() => { setAdding(null); setView("program"); }} />
+        )}
         {view === "strategy" && <Strategy />}
+        {view === "form" && <Form />}
         {view === "profile" && <Profile me={me} />}
       </div>
 
