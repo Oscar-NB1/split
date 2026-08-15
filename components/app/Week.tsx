@@ -16,11 +16,11 @@ const statusTag = (s: Session) =>
   : ["plan", "Planned"];
 
 export default function Week({
-  data, me, other, monday, setMonday, openActivity, reload,
+  data, me, other, monday, setMonday, openActivity, openSession, reload,
 }: {
   data: WeekData | null; me: User; other: User | null;
   monday: string; setMonday: (d: string) => void;
-  openActivity: (id: string) => void; reload: () => void;
+  openActivity: (id: string) => void; openSession: (s: Session) => void; reload: () => void;
 }) {
   const [day, setDay] = useState(() => dow(today()));
   const [who, setWho] = useState<"me" | "them">("me");
@@ -176,10 +176,7 @@ export default function Week({
           const [cls, label] = statusTag(s);
           const km = s.distance_m ? Number(s.distance_m) / 1000 : null;
           return (
-            <button key={s.id} className="sess"
-              onClick={() => s.activity_id && openActivity(s.activity_id)}
-              disabled={!s.activity_id}
-              style={{ cursor: s.activity_id ? "pointer" : "default" }}>
+            <button key={s.id} className="sess" onClick={() => openSession(s)}>
               <span className="edge" style={{ background: kindColour(s.kind) }} />
               <span className="body">
                 <span className="rowsplit">

@@ -61,7 +61,15 @@ export function effortPoints(a: StravaActivity): number {
   return Math.round(minutes * w * hrBump);
 }
 
-/** Upsert one Strava activity. Returns the internal activity id. */
+/**
+ * Upsert one Strava activity. Returns the internal activity id.
+ *
+ * Deliberately does NOT announce anything. Personal bests are computed from
+ * kilometre splits, and splits are saved by the caller *after* this returns — so
+ * announcing here would read an activity with no splits yet and find no records.
+ * The webhook calls onActivity() once the detail is stored; the backfill never
+ * calls it at all, which is what keeps years of history silent.
+ */
 export async function upsertActivity(userId: string, a: StravaActivity) {
   const localDate = a.start_date_local.slice(0, 10);
   const rows = await sql<{ id: string }[]>`

@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/session";
 import { pushSession, removeSession } from "@/lib/intervals";
 import { badRequest, notFound, route } from "@/lib/http";
 import { isDateString, isUuid, lighten, scaledTitle, SKIP_REASONS } from "@/lib/plan";
+import { onSkip } from "@/lib/rules";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -88,6 +89,7 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
       // and take it off the watch, or she gets an alert for a session we agreed
       // she isn't doing
       after(() => removeSession(id).catch((e) => console.error("watch remove", e)));
+      after(() => onSkip(s.user_id).catch((e) => console.error("notify: skip", e)));
       return NextResponse.json({ ok: true });
     }
 

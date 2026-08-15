@@ -4,6 +4,8 @@ import { syncRunna } from "@/lib/runna";
 import { materialiseAll } from "@/lib/templates";
 import { pushUpcoming } from "@/lib/intervals";
 import { detailGaps, fillDetail } from "@/lib/detail";
+import { scheduled } from "@/lib/rules";
+import { flush } from "@/lib/notify";
 
 /**
  * Hourly housekeeping. Wired in vercel.json.
@@ -60,6 +62,11 @@ export async function GET(req: NextRequest) {
     await new Promise((r) => setTimeout(r, 1200));
   }
   log.detail = { pending: gaps.length, filled: filled.length, requests };
+
+  // look forward, then deliver — including anything queued overnight while it
+  // would have been rude to send it
+  await scheduled().then(() => (log.scheduled = "ok")).catch((e) => (log.scheduled = String(e)));
+  await flush().then((n) => (log.notifications = n)).catch((e) => (log.notifications = String(e)));
 
   return NextResponse.json(log);
 }

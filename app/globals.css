@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Instrument+Sans:wght@600;700&display=swap');
-
 /* ============================================================
    NB1 · "Performance Soft"
    Navy ink · teal = signal · lime = CTA · Instrument Sans display
@@ -25,8 +23,9 @@
   --line:rgba(18,49,77,.10); --line-2:rgba(18,49,77,.07);
   --grid:rgba(18,49,77,.09);
 
-  --font:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-  --display:'Instrument Sans','Inter',sans-serif;
+  /* supplied by next/font in app/layout.tsx — self-hosted, no CDN request */
+  --font:var(--f-body),-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --display:var(--f-display),var(--f-body),sans-serif;
 
   --r-panel:30px; --r-card:18px; --r-pill:100px;
 

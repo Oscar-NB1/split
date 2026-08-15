@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import { stravaGet } from "@/lib/strava";
 import { unpairActivity, upsertActivity, type StravaActivity } from "@/lib/ingest";
 import { fetchStreams, saveLaps, saveSplits } from "@/lib/detail";
+import { onActivity } from "@/lib/rules";
 
 /**
  * Strava calls this once with GET to verify the subscription, then with
@@ -76,6 +77,12 @@ async function handle(event: Event) {
   // Marks the detailed fetch as done so the hourly sweep doesn't repeat it. Set
   // after the writes, so a failure above leaves it null and the sweep retries.
   await sql`update activities set detail_fetched_at = now() where id = ${activityId}`;
+
+  // Only now: records are read off the split rows written above. Calling this
+  // before them would compute a personal best from an activity with no splits.
+  await onActivity(userId, activityId, true).catch((e) =>
+    console.error("notify: activity rules", e),
+  );
   // One extra request. Failing here must not lose the activity itself, which is
   // already stored and paired — the hourly sweep retries anything missing.
   await fetchStreams(userId, activityId, String(event.object_id)).catch((e) =>

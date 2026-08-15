@@ -349,3 +349,12 @@ alter table users add column if not exists notify jsonb not null default '{}';
 -- AM | PM. The plan puts two sessions on Monday and Thursday, and which half of
 -- the day they belong to is part of the prescription, not decoration.
 alter table planned_sessions add column if not exists slot text;
+
+-- Athlete profile (2026-08-15). Zones were a module constant derived from one
+-- athlete's max of 189 and applied to whoever's activity was open — correct for
+-- one person and wrong for the other the moment she connects a watch.
+alter table users add column if not exists hr_max int;
+alter table users add column if not exists zones jsonb;          -- explicit override
+alter table users add column if not exists dob date;
+alter table users add column if not exists weight_kg numeric;
+alter table users add column if not exists injury_notes text;

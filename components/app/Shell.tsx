@@ -10,6 +10,8 @@ import Awards from "./Awards";
 import Plan from "./Plan";
 import Strategy from "./Strategy";
 import Profile from "./Profile";
+import Brief from "./Brief";
+import Strength from "./Strength";
 
 export type User = { id: string; display_name: string };
 export type Session = {
@@ -33,18 +35,21 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile";
+  | "activity" | "strategy" | "profile" | "brief" | "strength";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
   week: "week", activity: "week",
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
+  brief: "week", strength: "week",
 };
 
 /** Where the back arrow goes, and what it is called. */
 const BACK: Partial<Record<View, { to: View; label: string }>> = {
   activity: { to: "week", label: "Week" },
+  brief: { to: "week", label: "Week" },
+  strength: { to: "week", label: "Week" },
   strategy: { to: "plan", label: "Plan" },
   profile: { to: "week", label: "Week" },
 };
@@ -53,6 +58,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const [view, setView] = useState<View>("week");
   const [monday, setMonday] = useState(() => mondayOf());
   const [openId, setOpenId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +77,16 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   useEffect(() => { document.querySelector(".scroll")?.scrollTo({ top: 0 }); }, [view]);
 
   const openActivity = (id: string) => { setOpenId(id); setView("activity"); };
+  /**
+   * A tapped session goes to whichever screen can actually do something with it:
+   * a strength session to the set logger, a finished one to its activity, and
+   * anything else to the brief.
+   */
+  const openSession = (s: Session) => {
+    if (s.status === "unplanned" && s.activity_id) return openActivity(s.activity_id);
+    setSessionId(s.id);
+    setView(s.kind === "strength" ? "strength" : "brief");
+  };
   const back = BACK[view];
   const week = weekOf(monday);
   const left = daysToRace(today());
@@ -114,10 +130,16 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         {view === "week" && (
           <Week
             data={data} me={me} other={other} monday={monday} setMonday={setMonday}
-            openActivity={openActivity} reload={load}
+            openActivity={openActivity} openSession={openSession} reload={load}
           />
         )}
         {view === "activity" && openId && <Activity id={openId} meId={me.id} />}
+        {view === "brief" && sessionId && (
+          <Brief id={sessionId} meId={me.id} openActivity={openActivity} onChanged={load} />
+        )}
+        {view === "strength" && sessionId && (
+          <Strength id={sessionId} meId={me.id} onChanged={load} />
+        )}
         {view === "past" && <Past openActivity={openActivity} />}
         {view === "versus" && <Versus data={data} me={me} other={other} />}
         {view === "awards" && <Awards meId={me.id} openActivity={openActivity} />}

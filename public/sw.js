@@ -1,5 +1,5 @@
 // Minimal offline shell: cache the app frame, always hit the network for data.
-const CACHE = "split-v1";
+const CACHE = "split-v2";
 const SHELL = ["/", "/manifest.json"];
 
 self.addEventListener("install", (e) => {
@@ -25,5 +25,45 @@ self.addEventListener("fetch", (e) => {
         return res;
       })
       .catch(() => caches.match(e.request).then((r) => r ?? caches.match("/"))),
+  );
+});
+
+// ---------------------------------------------------------------- push
+self.addEventListener("push", (e) => {
+  // iOS requires that every push shows a notification — a silent one gets the
+  // subscription revoked — so there is deliberately no early return here.
+  let d = { title: "Split", body: "", url: "/" };
+  try {
+    if (e.data) d = { ...d, ...e.data.json() };
+  } catch {
+    if (e.data) d.body = e.data.text();
+  }
+  e.waitUntil(
+    self.registration.showNotification(d.title, {
+      body: d.body,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      // same tag replaces rather than stacks: three "they trained" in a row
+      // should be one line in the shade, not three
+      tag: d.tag || "split",
+      data: { url: d.url || "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const target = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      // focus the app if it is already open rather than opening a second copy
+      for (const c of list) {
+        if (c.url.includes(self.registration.scope) && "focus" in c) {
+          c.navigate(target);
+          return c.focus();
+        }
+      }
+      return self.clients.openWindow(target);
+    }),
   );
 });

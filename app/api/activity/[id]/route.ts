@@ -8,7 +8,7 @@ import {
   type LapRow, type StreamData,
 } from "@/lib/analysis";
 import { hasBasemap } from "@/lib/map";
-import { ZONES, zoneSeconds } from "@/lib/coach";
+import { zoneSeconds, zonesFor } from "@/lib/coach";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -38,6 +38,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     polyline: string | null; detail_fetched_at: string | null;
     display_name: string; session_id: string | null; session_title: string | null;
     planned_minutes: number | null; session_status: string | null; effort_points: number | null;
+    hr_max: number | null;
   }[]>`
     select a.id, a.user_id, a.provider_activity_id, a.sport_type, a.name,
            a.start_time, a.local_date::text as local_date,
@@ -46,7 +47,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
            a.raw #>> '{map,summary_polyline}' as polyline,
            u.display_name,
            p.id as session_id, p.title as session_title, p.planned_minutes,
-           p.status as session_status, p.effort_points
+           p.status as session_status, p.effort_points, u.hr_max
       from activities a
       join users u on u.id = a.user_id
       left join planned_sessions p on p.activity_id = a.id and p.status <> 'moved'
@@ -88,10 +89,14 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
   // chart series is bucket-averaged, and averaging a sample that touched Z5 with
   // its neighbours moves it down a zone — which would quietly under-report every
   // interval session's hard minutes.
+  // the ATHLETE'S zones, not the app's: a table built from one person's maximum
+  // reports the other person's easy runs as threshold work
+  const zones = zonesFor(activity.hr_max);
   const raw = streamRow[0]?.data as Record<string, { data?: (number | null)[] }> | undefined;
   const zoneSecs = zoneSeconds(
     raw?.time?.data as number[] | undefined,
     raw?.heartrate?.data as (number | null)[] | undefined,
+    zones,
   );
   const zoneTotal = zoneSecs.reduce((a, b) => a + b, 0);
 
@@ -115,7 +120,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
       Object.entries(s).map(([k, v]) => [k, typeof v === "string" ? Number(v) : v]),
     )),
     series,
-    zones: ZONES.map((z, i) => ({
+    zones: zones.map((z, i) => ({
       tag: z.tag, label: z.label, colour: z.colour,
       seconds: zoneSecs[i],
       pct: zoneTotal ? Math.round((zoneSecs[i] / zoneTotal) * 100) : 0,
