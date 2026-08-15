@@ -13,7 +13,7 @@ const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
  *
  * The numbers, and their bounds, are in lib/strategy.ts — shared with the route
  * that stores them and with the workout text that reaches the watch, so the plan
- * on this screen and the plan on the Garmin cannot drift apart.
+ * on this screen and the plan on the watch cannot drift apart.
  */
 type Row = Segment;
 
@@ -191,17 +191,17 @@ export default function Strategy() {
         color: exportState === "sent" ? TEAL : connected === false ? INK40 : NAVY_D,
         border: connected === false ? `1px solid ${LINE}` : "none",
       }}>
-        {exportState === "sent" ? "Sent to Garmin Forerunner 255"
+        {exportState === "sent" ? "Sent to your watch"
           : exportState === "sending" ? "Sending…"
           : connected === false ? "Connect intervals.icu to export"
-          : "Export race plan to Garmin"}
+          : "Export race plan to my watch"}
       </button>
       {error && (
         <div style={{ fontSize: 11, color: "#B4472F", lineHeight: 1.5 }}>{error}</div>
       )}
       <div style={{ fontSize: 11, color: INK40, lineHeight: 1.5 }}>
         {connected === false
-          ? "Garmin's own Training API is business-only, so the plan reaches the watch through intervals.icu. Add its key under Profile → Manage connections."
+          ? "The plan reaches your watch through intervals.icu. Add its key under Profile → Manage connections."
           : "Goes to intervals.icu as one step per segment with its target time, and syncs from there into Garmin Connect."}
         {" "}
         {saving === "saving" ? "Saving…"

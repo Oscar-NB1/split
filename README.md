@@ -149,15 +149,11 @@ Deliberate, and worth knowing before you build on top:
   private URL. Not fine if this ever has a third user — swap for magic links.
 - **OAuth tokens are stored in plain text.** Encrypt them if this stops being
   just the two of you.
-- **`state` in the OAuth flow carries the user id and isn't signed.** For two
-  known users behind a login it's academic; sign it before anyone else uses this.
-- **No UI yet.** The prototype HTML is the design; wiring it to these
-  endpoints is the next piece.
+- **Guided benchmark execution and its derivation engine.** The test can be
+  scheduled and its retests land on weeks 5 and 9, but nothing yet walks you
+  through running it or turns a logged result into a pace anchor and a limiter.
 
 ## Next, in order of usefulness
 
-1. Wire the prototype calendar to `planned_sessions` and `activities`.
-2. Session actions: move, scale down, skip with reason.
-4. Runna iCal feed → `planned_sessions` where `source = 'runna'`.
-5. Template engine: materialise `horizon` weeks ahead, regenerate on rule change.
-6. intervals.icu push, so programmed sessions land on the watch.
+1. Guided benchmark execution, and the derivation engine behind it.
+2. Deploy, and the Strava webhook subscription.

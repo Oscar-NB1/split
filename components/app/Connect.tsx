@@ -15,17 +15,20 @@ const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
  * a pre-design page still on the old stylesheet, which the Profile screen linked
  * straight into.
  *
- * The three connections are deliberately not interchangeable, and the screen says
- * which is which: Strava is an OAuth round trip, intervals.icu is a pasted key,
- * Runna is a calendar URL. A single "connect" affordance for all three would be a
- * lie about two of them.
+ * Two connections, and they are not peers. Strava is the spine and is one tap —
+ * the keys belong to this app, not to the athlete, so she never sees one.
+ * intervals.icu is optional, needs a pasted key, and only exists to push sessions
+ * out to a watch.
+ *
+ * There is no Apple Health or Garmin here on purpose. HealthKit has no web API at
+ * all, and Garmin's needs a business agreement — both reach us through Strava
+ * instead, which is why Strava is the only thing worth asking for.
  */
 
 type Conn = { provider: string; updated_at: string | null };
 
 export default function Connect() {
   const [conns, setConns] = useState<Conn[] | null>(null);
-  const [feed, setFeed] = useState("");
   const [icu, setIcu] = useState({ athlete_id: "", api_key: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -58,10 +61,11 @@ export default function Connect() {
   const at = (p: string) => conns?.find((c) => c.provider === p);
   const on = (p: string) => !!at(p);
 
-  async function send(method: "POST" | "PUT", body: unknown, label: string, key: string) {
+  async function send(body: unknown, label: string, key: string) {
     setBusy(key); setMsg(null);
     const res = await fetch("/api/intervals", {
-      method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
     });
     const json = await res.json().catch(() => ({}));
     setBusy(null);
@@ -78,7 +82,6 @@ export default function Connect() {
         : `${label} connected.`,
     });
     if (key === "intervals") setIcu({ athlete_id: "", api_key: "" });
-    if (key === "runna") setFeed("");
     await load();
   }
 
@@ -92,7 +95,8 @@ export default function Connect() {
           Where the data comes from.
         </div>
         <div style={{ fontSize: 13, color: INK55, lineHeight: 1.5, marginTop: 7 }}>
-          Each of you connects your own accounts. Nothing here is shared between you.
+          Connect Strava and everything else follows. Your watch and Apple Health
+          already feed it, so there is nothing else to set up.
         </div>
       </div>
 
@@ -110,7 +114,7 @@ export default function Connect() {
         name="Strava"
         state={on("strava")}
         since={at("strava")?.updated_at}
-        sub="Activities, per-kilometre splits, laps and the HR and pace streams. This is the spine — everything the app shows about what you actually did comes from here."
+        sub="Activities, per-kilometre splits, laps and the HR and pace streams. This is the spine: everything the app knows about what you actually did comes from here, including anything your watch or Apple Health sends to Strava."
       >
         {on("strava") ? (
           <Note>Connected. New activities arrive on their own; nothing to do here.</Note>
@@ -135,11 +139,11 @@ export default function Connect() {
         name="intervals.icu"
         state={on("intervals")}
         since={at("intervals")?.updated_at}
-        sub="How a programmed session reaches the watch. Garmin's own Training API is business-only, so workouts go to intervals.icu and its Garmin integration syncs them into Garmin Connect."
+        sub="Optional, and the only way a session we write reaches your watch. Skip it and everything else still works."
       >
         <Note>
           In intervals.icu: Settings → Developer for the API key, and
-          Settings → Connections → Garmin with “Upload planned workouts” ticked.
+          Settings → Connections → your watch, with “Upload planned workouts” ticked.
         </Note>
         <Field label="Athlete ID" placeholder="i12345" value={icu.athlete_id}
           onChange={(v) => setIcu({ ...icu, athlete_id: v })} />
@@ -149,25 +153,8 @@ export default function Connect() {
           busy={busy === "intervals"}
           disabled={!icu.athlete_id.trim() || !icu.api_key.trim()}
           label={on("intervals") ? "Replace key" : "Connect intervals.icu"}
-          onClick={() => send("POST", { athlete_id: icu.athlete_id.trim(), api_key: icu.api_key.trim() },
+          onClick={() => send({ athlete_id: icu.athlete_id.trim(), api_key: icu.api_key.trim() },
             "intervals.icu", "intervals")}
-        />
-      </Card>
-
-      {/* ----------------------------------------------------------- Runna */}
-      <Card
-        name="Runna"
-        state={on("runna")}
-        since={at("runna")?.updated_at}
-        sub="The running spine of the plan, read from Runna's calendar feed. Its sessions arrive as prose rather than structure, so they are shown as written and never reinterpreted."
-      >
-        <Note>Copy the calendar feed URL from Runna, and swap webcal:// for https://.</Note>
-        <Field label="Feed URL" placeholder="https://…" value={feed} onChange={setFeed} />
-        <Action
-          busy={busy === "runna"}
-          disabled={!/^https?:\/\//.test(feed.trim())}
-          label={on("runna") ? "Replace feed" : "Connect Runna"}
-          onClick={() => send("PUT", { feed_url: feed.trim() }, "Runna", "runna")}
         />
       </Card>
 

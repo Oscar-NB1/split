@@ -34,17 +34,11 @@ async function credsFor(userId: string): Promise<Creds | null> {
 /**
  * Is this session's `target` workout structure, or prose?
  *
- * Provenance answers this, not the text. For sessions we programmed, `target`
- * is hand-written structure and goes to the watch verbatim - '10x400m @ 3:55,
- * walk 90s' as much as a dash-prefixed step list. For Runna sessions it is
- * whatever prose Runna wrote in its calendar feed, which used to be sent as
- * the workout body and arrived on the watch unparseable. Prose is demoted to
- * a note; the structure comes from the session kind instead.
- *
- * Guessing from the shape of the text is what not to do here: Runna prose is
- * full of "45 min" and "8 x 400m", so no heuristic separates the two reliably.
+ * Everything we programme writes `target` as hand-written structure — '10x400m
+ * @ 3:55, walk 90s' as much as a dash-prefixed step list — so it goes to the
+ * watch verbatim.
  */
-export const targetIsStructure = (source: string) => source !== "runna";
+export const targetIsStructure = (_source: string) => true;
 
 /**
  * Renders a session into intervals.icu workout syntax.
@@ -63,7 +57,7 @@ export function toWorkoutText(kind: string, minutes: number, target?: string) {
 }
 
 /**
- * The same, for a session whose real structure we don't have - a Runna interval
+ * The same, for a session whose real structure we don't have - an interval
  * day, where the plan lives in prose we can't parse.
  *
  * It deliberately does NOT fall through to the canned rep ladder above. Sending

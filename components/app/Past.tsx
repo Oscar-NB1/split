@@ -162,7 +162,7 @@ export default function Past({ openActivity }: { openActivity: (id: string) => v
         );
       })}
 
-      <div style={{ fontSize: 10, color: INK40 }}>Source: Strava · Garmin Forerunner 255</div>
+      <div style={{ fontSize: 10, color: INK40 }}>Source: Strava</div>
     </div>
   );
 }

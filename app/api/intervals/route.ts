@@ -40,20 +40,3 @@ export const POST = route(async (req: NextRequest) => {
   const pushed = await pushUpcoming(me.id).catch(() => 0);
   return NextResponse.json({ ok: true, pushed });
 });
-
-/** Store a Runna calendar feed URL (kept in the same table for simplicity). */
-export const PUT = route(async (req: NextRequest) => {
-  const me = await requireUser();
-  const { feed_url } = await req.json();
-  // a webcal:// URL is the one people paste; fetch() can't open it
-  if (typeof feed_url !== "string" || !/^https?:\/\//.test(feed_url)) {
-    throw badRequest("That doesn't look like a feed URL. Swap webcal:// for https://.");
-  }
-  await sql`
-    insert into oauth_accounts (user_id, provider, provider_user_id, access_token, updated_at)
-    values (${me.id}, 'runna', 'ical', ${feed_url}, now())
-    on conflict (user_id, provider) do update set
-      access_token = excluded.access_token, updated_at = now()
-  `;
-  return NextResponse.json({ ok: true });
-});

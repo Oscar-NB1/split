@@ -4,7 +4,6 @@ import { baseTitle, isDateString, isKind, lighten, scaledTitle } from "../lib/pl
 import { isDeloadWeek, minutesFor, type Rules } from "../lib/templates";
 import { effortPoints, kindFor, pickClosest, statusFor, type StravaActivity } from "../lib/ingest";
 import { eventBody, targetIsStructure, toWorkoutText } from "../lib/intervals";
-import { kindFromTitle, minutesFromText, parseIcs } from "../lib/runna";
 import { metricForWeek, weekStart } from "../lib/scoring";
 import * as hyroxNov from "../lib/plans/hyrox-nov-2026";
 
@@ -147,10 +146,11 @@ test("a long run is classified by distance", () => {
 
 // ------------------------------------------------------------ watch pushing
 
-test("structure is decided by provenance, not by the shape of the text", () => {
+test("everything we programme is structure, so it reaches the watch as written", () => {
+  // there is no longer a source whose `target` is prose: the one that wrote prose
+  // was the imported feed, and it is gone
   assert.equal(targetIsStructure("manual"), true);
   assert.equal(targetIsStructure("template"), true);
-  assert.equal(targetIsStructure("runna"), false);
 });
 
 test("hand-written structure reaches the watch untouched", () => {
@@ -170,37 +170,17 @@ test("hand-written structure reaches the watch untouched", () => {
   assert.equal(body.start_date_local, "2026-08-14T06:00:00");
 });
 
-test("Runna prose is not sent as workout syntax", () => {
-  // this is the shape of a Runna calendar description
-  const prose = "Easy run to build aerobic base. Keep the effort conversational.";
-  const body = eventBody({
-    id: "abc", planned_date: "2026-08-14", title: "Easy run", kind: "run_easy",
-    planned_minutes: 40, target: prose, coach_note: null, source: "runna",
-  });
-  assert.match(body.description, /^- 40m Z2/);   // real structure first
-  assert.ok(body.description.includes(prose));   // prose kept, as a note
-});
-
-test("Runna prose full of numbers is still prose", () => {
-  // no text heuristic survives this: it reads exactly like a workout
-  const prose = "Speed session: 8 x 400m with 90 sec recoveries, 45 min total.";
-  const body = eventBody({
-    id: "y", planned_date: "2026-08-14", title: "Speed", kind: "run_intervals",
-    planned_minutes: 55, target: prose, coach_note: null, source: "runna",
-  });
-  assert.ok(body.description.includes(prose));
-  assert.ok(!body.description.includes("Z4"), body.description);
-});
-
-test("an interval session we can't parse does not get invented reps", () => {
-  // the canned 8x3min Z4 ladder is not a rough guess at "8 x 400m off 90s" -
-  // it is three times the Z4 volume, at an intensity nobody prescribed
+test("a target we cannot parse does not get invented reps", () => {
+  // The canned 8x3min Z4 ladder is not a rough guess at "8 x 400m off 90s" — it
+  // is three times the Z4 volume at an intensity nobody prescribed. What a
+  // written target says now goes to the watch as written; what must never happen
+  // is the app filling the gap with a session it made up.
   const body = eventBody({
     id: "z", planned_date: "2026-08-14", title: "Intervals", kind: "run_intervals",
     planned_minutes: 50, target: "Reps at 5k effort with jog recoveries.",
-    coach_note: null, source: "runna",
+    coach_note: null, source: "manual",
   });
-  assert.match(body.description, /^- 50m Z2/);
+  assert.ok(body.description.includes("Reps at 5k effort"), "sent as written");
   assert.ok(!/Z4|8x/.test(body.description), body.description);
 });
 
@@ -222,63 +202,6 @@ test("a coach note rides along with the workout", () => {
   });
   assert.ok(body.description.includes("Cut the last rep"));
   assert.match(body.description, /^- 10m Z2 warm up/);
-});
-
-// ------------------------------------------------------------- the ics feed
-
-const ICS = [
-  "BEGIN:VCALENDAR",
-  "BEGIN:VEVENT",
-  "UID:runna-1",
-  "DTSTART;VALUE=DATE:20260817",
-  "SUMMARY:45 min easy run",
-  "DESCRIPTION:Keep it conversational.",
-  "END:VEVENT",
-  "BEGIN:VEVENT",
-  "UID:runna-2",
-  "DTSTART:20260819T060000Z",
-  "SUMMARY:Interval session: 8 x 400m",
-  "END:VEVENT",
-  "END:VCALENDAR",
-];
-
-test("parseIcs reads uid, date, summary and description", () => {
-  const events = parseIcs(ICS.join("\r\n"));
-  assert.equal(events.length, 2);
-  assert.deepEqual(events[0], {
-    uid: "runna-1", date: "2026-08-17",
-    summary: "45 min easy run", description: "Keep it conversational.",
-  });
-  assert.equal(events[1].date, "2026-08-19");
-});
-
-test("folded lines are unfolded whether the feed uses CRLF or bare LF", () => {
-  const folded = [
-    "BEGIN:VEVENT",
-    "UID:runna-3",
-    "DTSTART;VALUE=DATE:20260820",
-    "SUMMARY:Long run with a very long titl",
-    " e that got folded",
-    "END:VEVENT",
-  ];
-  const expected = "Long run with a very long title that got folded";
-  assert.equal(parseIcs(folded.join("\r\n"))[0].summary, expected);
-  // a feed served with bare LF used to keep the fold and break the title
-  assert.equal(parseIcs(folded.join("\n"))[0].summary, expected);
-});
-
-test("kindFromTitle maps Runna's wording onto our kinds", () => {
-  assert.equal(kindFromTitle("Long run"), "run_long");
-  assert.equal(kindFromTitle("Threshold intervals"), "run_intervals");
-  assert.equal(kindFromTitle("Easy 5k"), "run_easy");
-  assert.equal(kindFromTitle("Rest day"), "rest");
-  assert.equal(kindFromTitle("Core strength"), "strength");
-});
-
-test("minutesFromText prefers stated minutes over a distance guess", () => {
-  assert.equal(minutesFromText("45 min easy run"), 45);
-  assert.equal(minutesFromText("12km long run"), 72);
-  assert.equal(minutesFromText("Intervals"), null);
 });
 
 // -------------------------------------------------------------- the contest

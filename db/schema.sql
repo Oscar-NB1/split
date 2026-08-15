@@ -14,7 +14,10 @@ create table if not exists users (
 -- ------------------------------------------------------------- connections
 create table if not exists oauth_accounts (
   user_id           uuid not null references users(id) on delete cascade,
-  provider          text not null,            -- strava | runna | intervals
+  -- strava | intervals. There is no Apple Health or Garmin here: HealthKit has
+  -- no web API, and Garmin's needs a business agreement — both reach us through
+  -- Strava, which is why Strava is the only thing worth asking an athlete for.
+  provider          text not null,
   provider_user_id  text not null,
   access_token      text not null,
   refresh_token     text,
@@ -64,8 +67,8 @@ create table if not exists planned_sessions (
   planned_minutes    int,
   target             text,                           -- '10x400m @ 3:55, walk 90s'
   coach_note         text,
-  source             text not null default 'manual', -- manual | template | runna
-  source_ref         text,                           -- runna ical UID, or template week id
+  source             text not null default 'manual', -- manual | template
+  source_ref         text,                           -- template week id
   status             text not null default 'planned',
   actual_minutes     int,
   activity_id        uuid references activities(id) on delete set null,
@@ -80,8 +83,6 @@ create table if not exists planned_sessions (
   updated_at         timestamptz not null default now()
 );
 create index if not exists sessions_user_date on planned_sessions (user_id, planned_date);
-create unique index if not exists sessions_runna_uid
-  on planned_sessions (user_id, source_ref) where source = 'runna';
 
 -- every move, scale-down and skip, so nobody has to remember what happened
 create table if not exists session_changes (

@@ -96,21 +96,17 @@ npx tsx scripts/backfill-strava.ts her@example.com
 
 Every activity Strava holds, paced under the rate limit. Safe to re-run.
 
-
-## 7. Runna
-
-Runna app → Profile → Sync to calendar → copy the subscription URL → paste it
-into Settings. Swap `webcal://` for `https://` if it isn't done for you.
-The hourly cron mirrors future runs in and never touches ones you've moved.
-
-## 8. intervals.icu → watch
+## 7. intervals.icu → watch (optional)
 
 1. intervals.icu → Settings → Developer → athlete ID + API key → paste into Settings.
-2. intervals.icu → Connections → Garmin → tick **Upload planned workouts**.
+2. intervals.icu → Connections → your watch → tick **Upload planned workouts**.
 
-Programmed runs then reach Garmin Connect and sync to the watch. Note: write
-recoveries as time or distance — rest-to-heart-rate degrades to a plain timer
-on Garmin.
+Programmed runs then sync to the watch. Note: write recoveries as time or
+distance — rest-to-heart-rate degrades to a plain timer on most watches.
+
+Nothing else needs connecting. Apple Health has no web API, and Garmin's needs a
+business agreement; both reach this app through Strava, which a watch or phone
+already feeds.
 
 ## 9. Install on both phones
 

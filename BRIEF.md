@@ -14,7 +14,6 @@ adds a reason to look at it every day.
 Three things it has to do:
 
 1. **Hold the plan.** Calendar view, one calendar per athlete, either person
-   able to write to either. Runna handles the running spine for the
    self-coached athlete; everything else is programmed by hand.
 2. **Pull in what actually happened.** Strava for activities (Garmin arrives
    through it) — automatically, with no copying anything anywhere.
@@ -73,7 +72,6 @@ Both are detours around the same closed door.
 ## Data model
 
 Twelve tables. `users` (two rows). `oauth_accounts` holds every external
-credential keyed by provider — the Strava tokens, but also the Runna feed URL
 and the intervals.icu key, which aren't OAuth but live there to keep credential
 handling in one place. `activities` is immutable fact from Strava.
 `planned_sessions` is intent, and moves through
@@ -117,7 +115,6 @@ have different station sets and HYROX has changed stations between seasons.
 | `session.ts` | Signed cookie sessions. `requireUser()` guards every write route. |
 | `strava.ts` | OAuth, token storage, and refresh. Access tokens live 6 hours; `accessTokenFor()` refreshes anything expiring within 5 minutes and writes the new pair back. **Every Strava call goes through it**, so expiry is handled in exactly one place. |
 | `ingest.ts` | Turns a Strava activity into a row, then pairs it with the day's plan. Also holds `effortPoints()` — weighted by session type so station work isn't undervalued against running. The weights are a starting guess; tune them. |
-| `runna.ts` | A ~40-line iCalendar reader (no dependency — we need four fields) and the mirror into `planned_sessions`. Never touches the past or anything already moved. |
 | `templates.ts` | The plan engine. Materialises `horizon` weeks, applies deloads and the fatigue rule. Idempotent — safe to run hourly forever. |
 | `intervals.ts` | Renders a session into intervals.icu workout syntax and pushes it. Rests are written as time or distance on purpose: rest-to-heart-rate degrades to a plain timer once it reaches a Garmin watch. |
 | `scoring.ts` | Weekly challenge metrics, the rotation between them, and the streak rule. |
@@ -137,8 +134,6 @@ have different station sets and HYROX has changed stations between seasons.
 | `week` | Everything one screen needs — sessions, unmatched activities, streaks, the challenge — in one round trip. |
 | `races` | GET lists every race with its splits; POST imports one from a pasted result URL, updating on re-import rather than duplicating. |
 | `activity/[id]` | Everything the detail view needs for one activity, likewise in one round trip. Streams are downsampled server-side — 3,600 raw samples to draw a 700px line is ~250kB for 500 usable pixels. |
-| `intervals` | Stores the intervals.icu key (POST) and the Runna feed URL (PUT). |
-| `cron` | Hourly: Runna sync, template materialisation, push to watch. Each wrapped so one broken feed can't stop the others. |
 
 ### UI — `app/` and `components/`
 
@@ -157,7 +152,6 @@ have different station sets and HYROX has changed stations between seasons.
 |---|---|
 | `db/schema.sql` | Twelve tables, run once. Idempotent — re-run to upgrade. |
 | `scripts/seed-users.ts` | Creates the two user rows from env. |
-| `scripts/backfill-strava.ts` | One-time history import, paced under the rate limit. Re-runnable. |
 | `scripts/backfill-detail.ts` | Splits, laps and streams for activities already imported. Pause is *derived* from the rate limit (100 req/15 min = one activity every ~18s), not guessed. |
 | `scripts/with-env.mjs` | Runs a command with `.env.local` loaded. Only Next.js reads that file; psql and tsx don't. Parses it in JS rather than `source`-ing it, because a Neon URL contains `&`. |
 | `scripts/subscribe-webhook.ts` | Creates, lists and deletes the Strava push subscription — the fiddliest part of setup. |

@@ -241,7 +241,7 @@ export const INTENTS: IntentRange[] = [
     phase: "Rebuild \u00b7 weeks 1\u20133",
     purpose:
       "Get running volume back to a level your body already knows. Nothing here is meant to hurt \u2014 the block is bought with consistency in August, not intensity.",
-    protect: ["Tue \u00b7 Runna key session", "Sat \u00b7 Hyrox continuous"],
+    protect: ["Tue \u00b7 Key session", "Sat \u00b7 Hyrox continuous"],
     sacrifice: "Friday strength goes first, then Thursday kickboxing. Never the long run.",
     watch: "Easy runs above 152 bpm are the failure mode. They cost Tuesday and Saturday.",
   },
@@ -259,7 +259,7 @@ export const INTENTS: IntentRange[] = [
     phase: "Build \u00b7 weeks 5\u20137",
     purpose:
       "Volume climbs to the 50 km ceiling you proved in February. Pace targets stay honest; the adaptation you want is holding the same pace at a lower heart rate.",
-    protect: ["Tue \u00b7 Runna key session", "Sat \u00b7 Hyrox continuous", "Sun \u00b7 Long run"],
+    protect: ["Tue \u00b7 Key session", "Sat \u00b7 Hyrox continuous", "Sun \u00b7 Long run"],
     sacrifice: "Wednesday intervals can become an easy run. Strength drops to once.",
     watch: "Two hard days a week. Kickboxing rounds are not a third.",
   },

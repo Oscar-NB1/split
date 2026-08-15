@@ -144,7 +144,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "profile" ? "Settings"
     : view === "strategy" ? "Race plan"
     : view === "editProfile" ? "Your details"
-    : view === "connect" ? "Strava, intervals.icu, Runna"
+    : view === "connect" ? "Strava and your watch"
     : view === "build" ? "From your answers"
     : coachingName ? `Coaching ${coachingName}`
     : view === "record" ? "Every ranked effort"

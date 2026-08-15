@@ -89,7 +89,7 @@ export const kindLabel = (k: string) =>
 export const TEMPLATE_WEEK: { dow: number; kind: string; label: string; slot: "AM" | "PM" }[] = [
   { dow: 0, kind: "strength", label: "Strength A", slot: "AM" },
   { dow: 0, kind: "hyrox", label: "Kickboxing", slot: "PM" },
-  { dow: 1, kind: "run_intervals", label: "Runna key session", slot: "AM" },
+  { dow: 1, kind: "run_intervals", label: "Key session", slot: "AM" },
   { dow: 2, kind: "hyrox", label: "Hyrox intervals", slot: "AM" },
   { dow: 3, kind: "run_easy", label: "Easy run", slot: "AM" },
   { dow: 3, kind: "hyrox", label: "Kickboxing", slot: "PM" },

@@ -151,7 +151,7 @@ export async function fetchStreams(
     );
   } catch (e) {
     // A 404 here does not mean the activity is missing — it means the activity
-    // has no streams at all. A Runna mobility session logged with no watch
+    // has no streams at all. A mobility session logged with no watch
     // recording answers exactly this way. That is a permanent fact worth
     // storing, not an error worth retrying every hour until the account dies.
     if (e instanceof StravaHttpError && e.status === 404) {

@@ -20,8 +20,7 @@ export type Prof = {
 
 const APPS: [string, string, string][] = [
   ["strava", "Strava", "Activities, splits and streams"],
-  ["intervals", "intervals.icu", "Pushes workouts to the watch"],
-  ["runna", "Runna", "The running spine, by iCal feed"],
+  ["intervals", "intervals.icu", "Pushes your sessions to your watch"],
 ];
 
 export default function Profile({
