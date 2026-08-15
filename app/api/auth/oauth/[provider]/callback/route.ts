@@ -6,11 +6,7 @@ import {
   PROVIDERS, type Provider, exchange, fillProfileGaps, link, readState, resolveIdentity,
 } from "@/lib/oauth";
 
-/**
- * Coming back from Google, Apple or Strava.
- *
- * Apple posts the callback rather than redirecting it, so both verbs land here.
- */
+/** Coming back from Google or Strava. */
 const back = (to: string, outcome: string) =>
   NextResponse.redirect(`${process.env.APP_URL}${to}?auth=${outcome}`, { status: 303 });
 
@@ -78,13 +74,4 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
 export async function GET(req: NextRequest, ctx: { params: Promise<{ provider: string }> }) {
   const { provider } = await ctx.params;
   return handle(req, provider, new URL(req.url).searchParams);
-}
-
-/** Apple's `response_mode=form_post` arrives as a POST body. */
-export async function POST(req: NextRequest, ctx: { params: Promise<{ provider: string }> }) {
-  const { provider } = await ctx.params;
-  const form = await req.formData();
-  const params = new URLSearchParams();
-  form.forEach((v, k) => params.set(k, String(v)));
-  return handle(req, provider, params);
 }

@@ -148,10 +148,8 @@ could add; `DELETE /api/auth/identities?provider=…` removes one, never the las
 |---|---|
 | Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
 | Strava | already set — the same app that reads activities |
-| Apple *(optional)* | `APPLE_CLIENT_ID` (Services ID), `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the .p8, newlines escaped) |
 
-Register `${APP_URL}/api/auth/oauth/<provider>/callback` with each. Apple posts
-that callback rather than redirecting it, which the route handles.
+Register `${APP_URL}/api/auth/oauth/<provider>/callback` with each.
 
 Signing in with Strava also connects Strava: the tokens arrive with the sign-in,
 so asking again on the next screen would be asking twice for permission already

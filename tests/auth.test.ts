@@ -26,20 +26,10 @@ test("a provider is only offered once its own credentials are present", () => {
   if (before) process.env.GOOGLE_CLIENT_ID = before;
 });
 
-test("Apple needs all four of its pieces, not just a client id", () => {
-  // the client secret is minted per request from the .p8, so an id alone is
-  // enough to render a button and not enough to complete a sign-in
-  const saved = {
-    id: process.env.APPLE_CLIENT_ID, team: process.env.APPLE_TEAM_ID,
-    key: process.env.APPLE_KEY_ID, pem: process.env.APPLE_PRIVATE_KEY,
-  };
-  process.env.APPLE_CLIENT_ID = "com.example.app";
-  delete process.env.APPLE_TEAM_ID;
-  assert.equal(configured("apple"), false, "an id without a signing key is not configured");
-  for (const [k, v] of Object.entries({
-    APPLE_CLIENT_ID: saved.id, APPLE_TEAM_ID: saved.team,
-    APPLE_KEY_ID: saved.key, APPLE_PRIVATE_KEY: saved.pem,
-  })) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+test("only Google and Strava can sign anyone in", () => {
+  // Apple was written and removed: an auth module is the wrong place for a path
+  // that has never met a real server
+  assert.deepEqual([...PROVIDERS], ["google", "strava"]);
 });
 
 test("every provider redirects back to its own callback", () => {

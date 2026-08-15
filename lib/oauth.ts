@@ -1,17 +1,23 @@
-import { SignJWT, createRemoteJWKSet, importPKCS8, jwtVerify } from "jose";
+import { SignJWT, createRemoteJWKSet, jwtVerify } from "jose";
 import { sql } from "./db";
 import { normaliseEmail } from "./auth";
 
 /**
- * Signing in with Google, Apple or Strava.
+ * Signing in with Google or Strava.
  *
- * One shape for three providers that are genuinely different: Google and Apple
- * are OpenID Connect and hand back a signed id_token; Strava is plain OAuth2 and
- * hands back an athlete. What they have in common is a stable subject, and that
- * is what an identity is keyed on — never the email, which people change.
+ * Two providers that work differently: Google is OpenID Connect and hands back a
+ * signed id_token; Strava is plain OAuth2 and hands back an athlete. What they
+ * have in common is a stable subject, and that is what an identity is keyed on —
+ * never the email, which people change.
+ *
+ * Apple was written and taken out again. It needs a form-POST callback and a
+ * client secret minted per request from a downloaded key, and neither had ever
+ * met a real Apple server — unexercised paths are not what belongs in the module
+ * that decides who gets in. It is a small, well-understood addition if an iCloud
+ * address ever needs matching.
  */
 
-export const PROVIDERS = ["google", "apple", "strava"] as const;
+export const PROVIDERS = ["google", "strava"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET!);
@@ -62,8 +68,6 @@ export type Profile = {
 
 type Config = {
   authorize: string; token: string; scope: string;
-  /** Apple posts the callback instead of redirecting it. */
-  responseMode?: string;
   extra?: Record<string, string>;
 };
 
@@ -73,13 +77,6 @@ const CONFIG: Record<Provider, Config> = {
     token: "https://oauth2.googleapis.com/token",
     scope: "openid email profile",
     extra: { access_type: "online", prompt: "select_account" },
-  },
-  apple: {
-    authorize: "https://appleid.apple.com/auth/authorize",
-    token: "https://appleid.apple.com/auth/token",
-    scope: "name email",
-    // Apple only returns name and email as a form POST, and only the first time
-    responseMode: "form_post",
   },
   strava: {
     authorize: "https://www.strava.com/oauth/authorize",
@@ -96,16 +93,13 @@ const clientId = (p: Provider) =>
 /** Is this provider actually set up? Screens ask so they can hide what cannot work. */
 export function configured(p: Provider): boolean {
   if (!clientId(p) || !process.env.APP_URL) return false;
-  if (p === "apple") {
-    return !!(process.env.APPLE_TEAM_ID && process.env.APPLE_KEY_ID && process.env.APPLE_PRIVATE_KEY);
-  }
   if (p === "strava") return !!process.env.STRAVA_CLIENT_SECRET;
   return !!process.env.GOOGLE_CLIENT_SECRET;
 }
 
 export const availableProviders = () => PROVIDERS.filter(configured);
 
-export async function authorizeUrl(p: Provider, state: string): Promise<string> {
+export function authorizeUrl(p: Provider, state: string): string {
   const c = CONFIG[p];
   const params = new URLSearchParams({
     client_id: clientId(p)!,
@@ -113,41 +107,20 @@ export async function authorizeUrl(p: Provider, state: string): Promise<string> 
     response_type: "code",
     scope: c.scope,
     state,
-    ...(c.responseMode ? { response_mode: c.responseMode } : {}),
     ...(c.extra ?? {}),
   });
   return `${c.authorize}?${params}`;
 }
 
-/**
- * Apple's client secret is a short-lived ES256 JWT signed with a key you
- * download once, rather than a string you store. It has to be minted per
- * request, which is the only reason this function is async.
- */
-async function clientSecret(p: Provider): Promise<string> {
-  if (p !== "apple") {
-    return (p === "strava" ? process.env.STRAVA_CLIENT_SECRET : process.env.GOOGLE_CLIENT_SECRET)!;
-  }
-  // the .p8 arrives with literal \n when it is pasted into an environment
-  const pem = process.env.APPLE_PRIVATE_KEY!.replace(/\\n/g, "\n");
-  const key = await importPKCS8(pem, "ES256");
-  return new SignJWT({})
-    .setProtectedHeader({ alg: "ES256", kid: process.env.APPLE_KEY_ID! })
-    .setIssuer(process.env.APPLE_TEAM_ID!)
-    .setAudience("https://appleid.apple.com")
-    .setSubject(process.env.APPLE_CLIENT_ID!)
-    .setIssuedAt()
-    .setExpirationTime("5m")
-    .sign(key);
-}
+const clientSecret = (p: Provider) =>
+  (p === "strava" ? process.env.STRAVA_CLIENT_SECRET : process.env.GOOGLE_CLIENT_SECRET)!;
 
 const GOOGLE_JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
-const APPLE_JWKS = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
 
-/** Read an OIDC id_token, verifying the signature rather than decoding it. */
+/** Read Google's id_token, verifying the signature rather than decoding it. */
 async function readIdToken(p: Provider, token: string) {
-  const { payload } = await jwtVerify(token, p === "google" ? GOOGLE_JWKS : APPLE_JWKS, {
-    issuer: p === "google" ? "https://accounts.google.com" : "https://appleid.apple.com",
+  const { payload } = await jwtVerify(token, GOOGLE_JWKS, {
+    issuer: "https://accounts.google.com",
     audience: clientId(p)!,
   });
   return payload as {
@@ -169,7 +142,7 @@ export async function exchange(p: Provider, code: string): Promise<Profile> {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: clientId(p)!,
-      client_secret: await clientSecret(p),
+      client_secret: clientSecret(p),
       code,
       grant_type: "authorization_code",
       redirect_uri: callbackUrl(p),

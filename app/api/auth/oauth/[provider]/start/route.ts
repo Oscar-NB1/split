@@ -3,7 +3,7 @@ import { currentUser } from "@/lib/session";
 import { PROVIDERS, type Provider, authorizeUrl, configured, signState } from "@/lib/oauth";
 
 /**
- * Send them to Google, Apple or Strava.
+ * Send them to Google or Strava.
  *
  * The state carries the signed-in user when there is one, which is what turns
  * the same route into "link this to my account" rather than "sign me in".
@@ -20,7 +20,7 @@ export async function GET(
       return NextResponse.redirect(`${home}/login?auth=unavailable`);
     }
     const me = await currentUser();
-    return NextResponse.redirect(await authorizeUrl(p, await signState({ link: me?.id ?? null })));
+    return NextResponse.redirect(authorizeUrl(p, await signState({ link: me?.id ?? null })));
   } catch (e) {
     console.error("oauth start", e);
     return NextResponse.redirect(`${home}/login?auth=failed`);
