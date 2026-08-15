@@ -13,6 +13,10 @@ import Strava from "./Strava";
 import Empty from "./Empty";
 import PlanBuilder from "./PlanBuilder";
 import Profile from "./Profile";
+import Notes from "./Notes";
+import Inbox from "./Inbox";
+import Bench from "./Bench";
+import Preflight from "./Preflight";
 import Brief from "./Brief";
 import Strength from "./Strength";
 import Program from "./Program";
@@ -48,7 +52,8 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect" | "build";
+  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect" | "build"
+  | "notes" | "inbox" | "bench" | "preflight";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
@@ -56,6 +61,7 @@ const TAB_FOR: Record<View, string> = {
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
   brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week", connect: "week", build: "week",
+  notes: "week", inbox: "week", bench: "week", preflight: "week",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -71,6 +77,10 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
   connect: { to: "profile", label: "Profile" },
   strategy: { to: "plan", label: "Plan" },
   profile: { to: "week", label: "Week" },
+  notes: { to: "profile", label: "Profile" },
+  inbox: { to: "notes", label: "Messages" },
+  bench: { to: "profile", label: "Profile" },
+  preflight: { to: "profile", label: "Profile" },
 };
 
 export default function Shell({ me, other }: { me: User; other: User | null }) {
@@ -83,6 +93,14 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
    * toggle implies two equal halves and coaching is a relationship you enter.
    */
   const [coaching, setCoaching] = useState<string | null>(null);
+  /**
+   * Whose messages are being written.
+   *
+   * Deliberately not the same state as `coaching`: writing her week and reading
+   * her week are different things to be doing, and coming back from a preview
+   * should land on the messages again rather than on your own week.
+   */
+  const [writing, setWriting] = useState<string | null>(null);
 
   // Strava's callback returns into the app rather than a settings page, so the
   // outcome arrives as a query parameter. Opening the connections view is what
@@ -133,9 +151,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const week = weekOf(block, monday);
   const left = daysToRace(block, today());
 
-  const coachingName = coaching
-    ? data?.users.find((u) => u.id === coaching)?.display_name ?? null
-    : null;
+  const nameOf = (id: string) =>
+    data?.users.find((u) => u.id === id)?.display_name ?? "Athlete";
+  const coachingName = coaching ? nameOf(coaching) : null;
 
   const sub =
     view === "past" ? "Everything logged"
@@ -146,6 +164,10 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "editProfile" ? "Your details"
     : view === "connect" ? "One connection"
     : view === "build" ? "From your answers"
+    : view === "notes" ? "Written ahead, read in her week"
+    : view === "inbox" ? "Between the two of you"
+    : view === "bench" ? "What the test found, and what it changed"
+    : view === "preflight" ? "The lap protocol, and what to do if you miss one"
     : coachingName ? `Coaching ${coachingName}`
     : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
@@ -162,7 +184,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "plan" ? "Plan" : view === "program" ? "Program"
     : view === "picker" ? "Add" : view === "form" ? "Form"
     : view === "record" ? "Record" : view === "connect" ? "Strava"
-    : view === "build" ? "Build my plan" : "Split";
+    : view === "build" ? "Build my plan"
+    : view === "notes" ? "Messages" : view === "inbox" ? "Thread"
+    : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions" : "Split";
 
   return (
     <div className="app">
@@ -263,7 +287,27 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Profile me={me} openEdit={() => setView("editProfile")}
             openConnect={() => setView("connect")}
             openBuild={() => setView("build")}
-            openCoachee={(id) => { setCoaching(id); setView("week"); }} />
+            openCoachee={(id) => { setCoaching(id); setView("week"); }}
+            openNotes={(id) => { setWriting(id); setView("notes"); }}
+            openBench={() => setView("bench")}
+            openPreflight={() => setView("preflight")} />
+        )}
+        {view === "notes" && writing && (
+          <Notes athleteId={writing} athleteName={nameOf(writing)}
+            openInbox={() => setView("inbox")}
+            openAthlete={() => { setCoaching(writing); setView("week"); }} />
+        )}
+        {view === "inbox" && writing && (
+          <Inbox withId={writing} withName={nameOf(writing)} meId={me.id} />
+        )}
+        {view === "bench" && <Bench athleteId={coaching ?? undefined} />}
+        {/* No protocol and no push yet: the doses per variant are not defined
+            anywhere the app can read, and nothing here talks to a watch. The
+            screen says both out loud rather than rendering a button that claims
+            to do something it cannot. */}
+        {view === "preflight" && (
+          <Preflight protocol={null} pushable={false}
+            onPush={async () => false} onDone={() => setView("profile")} />
         )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
         {view === "connect" && <Strava onDone={() => setView("profile")} />}

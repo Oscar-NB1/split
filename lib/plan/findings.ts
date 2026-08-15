@@ -37,6 +37,23 @@ export const mmss = (s: number) => {
 const durationsOf = (segments: Segment[], type: Segment["type"]) =>
   segments.filter((s) => s.type === type && s.duration_s > 0).map((s) => s.duration_s);
 
+/**
+ * Round times as a pace per kilometre where the distance is known.
+ *
+ * A 400 m leg reported as "1:41" is a duration wearing the word pace; the same
+ * leg as "4:12 /km" is comparable with every other pace in the app, which is
+ * the only reason to show it at all. Without a distance it stays a duration and
+ * is labelled as one.
+ */
+function paceOf(segments: Segment[]): { text: (s: number) => string; per_km: boolean } {
+  const runs = segments.filter((s) => s.type === "run" && s.duration_s > 0);
+  const d = runs[0]?.distance_m;
+  if (!d || runs.some((r) => r.distance_m !== d)) {
+    return { text: (s) => mmss(s), per_km: false };
+  }
+  return { text: (s) => `${mmss(s * (1000 / d))} /km`, per_km: true };
+}
+
 // ------------------------------------------------------------- band tables
 
 /** Fade across the runs — the ratio of the last to the first. */
@@ -169,6 +186,7 @@ export function read(capture: Capture, previous?: Capture): Reading[] {
   }
 
   const pace = mean(runs);
+  const as = paceOf(capture.segments);
   const prevRuns = previous ? durationsOf(previous.segments, "run") : [];
   if (prevRuns.length >= 2) {
     const before = mean(prevRuns);
@@ -177,14 +195,14 @@ export function read(capture: Capture, previous?: Capture): Reading[] {
       dim: "Speed", band: delta > 0 ? "improving" : "flat",
       severity: delta > 0 ? "good" : "neutral", priority: 100,
       headline: `${Math.abs(delta)}% ${delta > 0 ? "faster" : "slower"} than last time`,
-      body: `Average round pace moved from ${mmss(before)} to ${mmss(pace)}, and fade came in from ` +
+      body: `Average round pace moved from ${as.text(before)} to ${as.text(pace)}, and fade came in from ` +
         `${Math.round((prevRuns[prevRuns.length - 1] / prevRuns[0] - 1) * 100)}% to ${Math.round((fade - 1) * 100)}%.`,
       effect: "Every pace target rewritten from the new numbers.",
     });
   } else {
     out.push({
       dim: "Speed", band: "measured", severity: "neutral", priority: 20,
-      headline: `Average round pace ${mmss(pace)}`,
+      headline: `Average round pace ${as.text(pace)}`,
       body: "First test, so this is a starting point rather than a verdict. The next one tells you whether it is moving.",
       effect: "Pace anchor replaced with a measured number.",
     });

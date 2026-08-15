@@ -615,3 +615,51 @@ create table if not exists standards (
   loads    jsonb not null,
   primary key (season, division, sex)
 );
+
+-- What she reads in her week (2026-08-15). Two different things that look alike
+-- and are stored apart because they behave differently.
+--
+-- A `context` message is keyed to a kind of week — one for a deload, one for a
+-- taper, one for the week a benchmark lands in — and is written once, then
+-- shown every time a week of that kind comes round. A `warm` message belongs to
+-- no particular week and rotates. Storing them in one table with a nullable key
+-- would make "which message does this week get" a query with a coalesce in it
+-- rather than a lookup.
+create table if not exists coach_messages (
+  id         uuid primary key default gen_random_uuid(),
+  coach_id   uuid not null references users(id) on delete cascade,
+  athlete_id uuid not null references users(id) on delete cascade,
+  kind       text not null check (kind in ('context', 'warm')),
+  -- benchmark | deload | taper | raceclose | peak | build | base, for context
+  -- messages; null for warm ones, which are not keyed to anything
+  context    text,
+  body       text not null,
+  position   int  not null default 0,
+  updated_at timestamptz not null default now(),
+  check ((kind = 'context') = (context is not null))
+);
+
+-- One context message per kind of week: writing a second is editing the first.
+create unique index if not exists coach_messages_context
+  on coach_messages (coach_id, athlete_id, context) where kind = 'context';
+
+-- The thread. Distinct from planned_sessions.coach_note, which is about one
+-- session — this is the conversation that has nowhere else to live.
+create table if not exists messages (
+  id         uuid primary key default gen_random_uuid(),
+  coach_id   uuid not null references users(id) on delete cascade,
+  athlete_id uuid not null references users(id) on delete cascade,
+  author_id  uuid not null references users(id) on delete cascade,
+  body       text not null,
+  created_at timestamptz not null default now(),
+  read_at    timestamptz
+);
+create index if not exists messages_pair on messages (coach_id, athlete_id, created_at desc);
+
+-- What a benchmark did to the plan (2026-08-15). The before and after are
+-- stored, the reading of them is not: a stored reading would freeze an
+-- interpretation next to numbers that outlive it, and nothing in the row would
+-- say which version of the band tables wrote it.
+alter table benchmark_results add column if not exists plan_before jsonb;
+alter table benchmark_results add column if not exists plan_after  jsonb;
+alter table benchmark_results add column if not exists applied_at  timestamptz;

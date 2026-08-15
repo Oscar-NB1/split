@@ -20,12 +20,16 @@ export type Prof = {
 };
 
 export default function Profile({
-  me, openEdit, openConnect, openBuild, openCoachee,
+  me, openEdit, openConnect, openBuild, openCoachee, openNotes, openBench, openPreflight,
 }: {
   me: User; openEdit: () => void; openConnect: () => void;
   openBuild: () => void;
   /** enter someone else's week — coaching is a relationship, not a toggle */
   openCoachee: (id: string) => void;
+  /** write what they read in their week */
+  openNotes: (id: string) => void;
+  openBench: () => void;
+  openPreflight: () => void;
 }) {
   const [p, setP] = useState<Prof | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
@@ -115,6 +119,19 @@ export default function Profile({
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <span style={caps}>Coaching</span>
           {(p?.coachees ?? []).map((c) => (
+            <button key={`notes-${c.id}`} onClick={() => openNotes(c.id)} style={{
+              ...planRow, display: "flex", flexDirection: "column",
+              alignItems: "flex-start", gap: 3,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>
+                Messages for {c.display_name}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 400, color: INK55 }}>
+                Write what she reads in her week
+              </span>
+            </button>
+          ))}
+          {(p?.coachees ?? []).map((c) => (
             <button key={c.id} onClick={() => openCoachee(c.id)} style={{
               width: "100%", textAlign: "left", background: PAPER, border: `1px solid ${LINE}`,
               borderRadius: "var(--r-card)", padding: "15px 16px", color: "var(--ink)",
@@ -142,10 +159,24 @@ export default function Profile({
         <button onClick={openBuild} style={planRow}>
           {p?.has_plan ? "Rebuild my plan" : "Build a new plan"}
         </button>
-        {/* "Run the benchmark test" belongs here and is deliberately absent:
-            nothing yet walks anyone through running it or reads a logged result
-            back into the plan, and a row that quietly opened the plan builder
-            instead would be a button claiming to do something it does not. */}
+        <button onClick={openBench} style={{
+          ...planRow, display: "flex", flexDirection: "column",
+          alignItems: "flex-start", gap: 3,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Benchmark results</span>
+          <span style={{ fontSize: 11, fontWeight: 400, color: INK55 }}>
+            What the test found, and what it changed
+          </span>
+        </button>
+        <button onClick={openPreflight} style={{
+          ...planRow, display: "flex", flexDirection: "column",
+          alignItems: "flex-start", gap: 3,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>Benchmark instructions</span>
+          <span style={{ fontSize: 11, fontWeight: 400, color: INK55 }}>
+            The lap protocol, and what to do if you miss one
+          </span>
+        </button>
       </div>
 
       <a href="/api/auth/logout" style={{

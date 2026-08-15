@@ -123,6 +123,15 @@ test("a second test compares against the first", () => {
   assert.match(s.body, /4:28 to 4:01/);
 });
 
+test("round times are a pace per km once the distance is known", () => {
+  // "1:41" for a 400 m leg is a duration wearing the word pace
+  const c = capture({ runs: [101, 104, 107, 110] });
+  for (const seg of c.segments) if (seg.type === "run") seg.distance_m = 400;
+  assert.match(find(read(c), "Speed")!.headline, /4:24 \/km/);
+  // and stays a duration, labelled as one, when it is not known
+  assert.match(find(read(capture({ runs: [101, 104, 107, 110] })), "Speed")!.headline, /1:46$/);
+});
+
 test("only the lines that moved are shown, each with its reason", () => {
   const readings = read(capture({ runs: [240, 260, 280, 300], stations: [220, 222, 224, 226] }));
   const cs = changes(
