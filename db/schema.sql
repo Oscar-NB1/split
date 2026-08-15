@@ -236,6 +236,103 @@ do $$ begin
   end if;
 end $$;
 
+-- ------------------------------------------------- session logging (2026-08-15)
+-- The three tables the Brief, Strength and Activity screens need. Each hangs
+-- off a planned session rather than off an activity, because the thing being
+-- logged is the prescription being executed — a set belongs to "Strength A",
+-- not to whatever Strava happened to record around it.
+
+-- One row per set. `prescribed_*` is what the plan asked for and never changes;
+-- `load_kg`/`reps` are what actually happened. Keeping both is the entire point:
+-- "3x5 @ 100" vs "3x5 @ 95" is the signal the progression rules read.
+create table if not exists session_sets (
+  id                uuid primary key default gen_random_uuid(),
+  session_id        uuid not null references planned_sessions(id) on delete cascade,
+  exercise          text not null,
+  ord               int  not null,            -- exercise order within the session
+  set_no            int  not null,            -- 1-based set within the exercise
+  prescribed_load   numeric,
+  prescribed_reps   int,
+  load_kg           numeric,
+  reps              int,
+  done              boolean not null default false,
+  note              text,
+  updated_at        timestamptz not null default now(),
+  unique (session_id, ord, set_no)
+);
+
+-- How it felt. Separate from the activity because RPE is the athlete's report on
+-- the *session*, and a session can exist with no activity behind it.
+create table if not exists session_feedback (
+  session_id   uuid primary key references planned_sessions(id) on delete cascade,
+  rpe          int,                            -- 1-10
+  length_feel  text,                           -- short | right | long
+  note         text,
+  updated_at   timestamptz not null default now()
+);
+
+-- The coach thread. Two people, so no read receipts and no threading — just
+-- who said what, when, against which session.
+create table if not exists session_comments (
+  id          uuid primary key default gen_random_uuid(),
+  session_id  uuid not null references planned_sessions(id) on delete cascade,
+  author_id   uuid not null references users(id) on delete cascade,
+  body        text not null,
+  created_at  timestamptz not null default now()
+);
+create index if not exists session_comments_session
+  on session_comments (session_id, created_at);
+
+-- ------------------------------------------------------------ notifications
+-- One row per device per person. The endpoint is the identity: the push service
+-- issues a new one when a subscription is renewed, and the old one starts
+-- answering 410, which is the cue to delete it.
+create table if not exists push_subscriptions (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  endpoint    text not null unique,
+  p256dh      text not null,
+  auth        text not null,
+  user_agent  text,
+  created_at  timestamptz not null default now(),
+  last_ok_at  timestamptz
+);
+
+-- The queue, the log and the de-duplicator, in one table.
+--
+-- Queue first, send second. That single decision is what lets quiet hours
+-- *defer* a notification rather than drop it, and `dedupe_key` is what stops the
+-- same thing being announced twice — Strava fires an update event for an
+-- activity it already told us about, and the hourly cron re-evaluates the same
+-- upcoming session every hour until it stops being tomorrow.
+create table if not exists notifications (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  kind        text not null,
+  dedupe_key  text not null,
+  title       text not null,
+  body        text not null,
+  url         text,
+  created_at  timestamptz not null default now(),
+  send_after  timestamptz not null default now(),
+  sent_at     timestamptz,
+  unique (user_id, dedupe_key)
+);
+create index if not exists notifications_pending
+  on notifications (send_after) where sent_at is null;
+
+-- Current personal bests, one row per person per metric. Beating one is what
+-- produces the notification; the row itself is the bar.
+create table if not exists records (
+  user_id      uuid not null references users(id) on delete cascade,
+  metric       text not null,
+  value        numeric not null,
+  activity_id  uuid references activities(id) on delete set null,
+  achieved_on  date not null,
+  previous     numeric,
+  primary key (user_id, metric)
+);
+
 -- Lets the cron sweep find what is still missing without a full scan.
 create index if not exists activities_detail_gap
   on activities (start_time desc) where provider = 'strava';
@@ -243,3 +340,12 @@ create index if not exists activities_detail_gap
 -- Adding to a table above? Add the matching `add column if not exists` here.
 alter table planned_sessions add column if not exists intervals_event_id  text;
 alter table planned_sessions add column if not exists intervals_pushed_at timestamptz;
+-- What kind of day this is: null | key | benchmark | race. Set by the plan, so
+-- "benchmark tomorrow" never depends on matching words in a title.
+alter table planned_sessions add column if not exists significance text;
+-- Per-person notification switches. On the user row rather than its own table:
+-- two people, one column.
+alter table users add column if not exists notify jsonb not null default '{}';
+-- AM | PM. The plan puts two sessions on Monday and Thursday, and which half of
+-- the day they belong to is part of the prescription, not decoration.
+alter table planned_sessions add column if not exists slot text;

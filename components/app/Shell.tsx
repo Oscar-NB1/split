@@ -19,6 +19,7 @@ export type Session = {
   effort_points: number | null; source: string; avg_hr: number | null;
   distance_m: number | null; activity_name: string | null; activity_id: string | null;
   slot?: string | null;
+  significance?: string | null;
 };
 export type WeekData = {
   week_start: string; users: User[]; sessions: Session[]; unplanned: Session[];

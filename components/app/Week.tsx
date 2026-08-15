@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { addDays, dow, fmt, today } from "@/lib/dates";
 import {
   BLOCK_START, GOAL, WEEKS, kindColour, kindLabel, weekDates, weekIntent, weekOf,
@@ -24,6 +24,15 @@ export default function Week({
 }) {
   const [day, setDay] = useState(() => dow(today()));
   const [who, setWho] = useState<"me" | "them">("me");
+
+  // Changing week kept the same weekday, so stepping into next week from a
+  // Saturday landed on next Saturday — past the two sessions on its Monday.
+  // Today when today is in view, otherwise the start of the week.
+  useEffect(() => {
+    const t = today();
+    const inWeek = t >= monday && t < addDays(monday, 7);
+    setDay(inWeek ? dow(t) : 0);
+  }, [monday]);
 
   if (!data) return <div className="pad"><p className="empty">Loading…</p></div>;
 
@@ -177,6 +186,12 @@ export default function Week({
                   <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     {s.slot && <span className="slot">{s.slot}</span>}
                     <span className="kindlab">{kindLabel(s.kind)}</span>
+                    {s.significance && (
+                      <span className="tag" style={{
+                        background: "var(--navy)", color: "#fff", fontSize: 9,
+                        letterSpacing: ".08em", textTransform: "uppercase", padding: "3px 8px",
+                      }}>{s.significance}</span>
+                    )}
                   </span>
                   <span className={`tag ${cls}`}>{label}</span>
                 </span>

@@ -16,6 +16,12 @@ export type TemplateDay = {
   title: string;
   minutes: number;
   target?: string;
+  /** Why this session exists, in the plan's own words. Shown, never parsed. */
+  coach_note?: string;
+  /** null | key | benchmark | race — what makes the day worth arriving fresh for. */
+  significance?: string;
+  /** AM | PM, for the days that carry two sessions. */
+  slot?: string;
 };
 
 export type Rules = {
@@ -140,19 +146,29 @@ export async function materialise(templateId: string) {
       // renumbers every ref and re-inserts a duplicate of every future session.
       // The date is the session's real identity, and it survives the athlete
       // moving the session: the ref stays the slot it was written for.
-      const ref = `${tpl.id}:${date}:${d.kind}`;
-      const note =
+      // slot is part of the identity: Monday carries strength AM and kickboxing
+      // PM, and Thursday an easy run AM and kickboxing PM. Keying on kind alone
+      // silently drops the second session of any day that repeats a kind.
+      const ref = `${tpl.id}:${date}:${d.kind}:${d.slot ?? "AM"}`;
+      // The adaptation note is appended to the plan's own note, never
+      // substituted for it: the day's note carries the pace guardrail, and
+      // losing it on a deload week loses it exactly when it matters least to
+      // lose and most to read.
+      const adaptation =
         fatigued && !isDeload
-          ? `Volume cut ${Math.round((1 - rules.fatigue_cut) * 100)}% - ${skips} sessions skipped last week for fatigue.`
+          ? `Volume cut ${Math.round((1 - rules.fatigue_cut) * 100)}% — ${skips} sessions skipped last week for fatigue.`
           : isDeload
             ? "Deload week."
             : null;
+      const note = [d.coach_note, adaptation].filter(Boolean).join("\n\n") || null;
 
       const rows = await sql<{ id: string }[]>`
         insert into planned_sessions
-          (user_id, author_id, planned_date, title, kind, planned_minutes, target, coach_note, source, source_ref)
+          (user_id, author_id, planned_date, title, kind, planned_minutes, target,
+           coach_note, significance, slot, source, source_ref)
         select ${tpl.athlete_id}, ${tpl.author_id}, ${date}, ${d.title}, ${d.kind},
-               ${minutes}, ${d.target ?? null}, ${note}, 'template', ${ref}
+               ${minutes}, ${d.target ?? null}, ${note}, ${d.significance ?? null},
+               ${d.slot ?? null}, 'template', ${ref}
         where not exists (
           select 1 from planned_sessions
           where user_id = ${tpl.athlete_id} and source = 'template' and source_ref = ${ref}
