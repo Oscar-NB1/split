@@ -85,6 +85,50 @@ export const olderOf = (a: TrainingAge, b: TrainingAge) => (rank(a) >= rank(b) ?
 
 export type Confidence = "estimated" | "measured";
 
+/**
+ * What the athlete has actually been running lately.
+ *
+ * `measured` comes from their own activity history, `reported` from the intake.
+ * The distinction matters at exactly one point — how far a number is allowed to
+ * raise the running ceiling — because a figure typed into a form is a memory
+ * and a figure from the file is a record.
+ */
+export type RecentRunning = {
+  /** the typical week — what the block starts from */
+  weekly_km: number | null;
+  /** the biggest week they have actually completed — what the peak builds on */
+  peak_week_km?: number | null;
+  long_run_km: number | null;
+  source: "measured" | "reported";
+};
+
+/**
+ * The running base a long run demonstrates, whatever the athlete called
+ * themselves. One 18 km run is not a claim about identity, it is evidence.
+ */
+export function baseFromLongRun(km: number | null): RunningBase | null {
+  if (!km || km <= 0) return null;
+  if (km >= 30) return "marathon_competitive";
+  if (km >= 18) return "half_marathon_fit";
+  if (km >= 10) return "runs_regularly";
+  if (km >= 5) return "5k_nonstop";
+  if (km >= 2) return "walk_breaks";
+  return "doesnt_run";
+}
+
+const runRank = (b: RunningBase) => RUNNING_BASE.indexOf(b);
+
+/**
+ * The most a week can plausibly be, given the longest run in it.
+ *
+ * A long run is normally a quarter to a third of the week, so a claimed 60 km
+ * week behind a 5 km longest run is a mistyped answer rather than a training
+ * history. Four times the long run is the generous end of that, and it only
+ * ever trims a reported number — never a measured one, where the arithmetic is
+ * already the athlete's own.
+ */
+export const LONG_RUN_SHARE = 4;
+
 export type ResolveInput = {
   general_training_age: TrainingAge;
   hyrox_experience: HyroxExperience | null;
@@ -95,6 +139,7 @@ export type ResolveInput = {
   /** The athlete's volume dial, as a multiplier on the ramp. 1.0 is Progressive. */
   volume_dial?: number;
   allow_doubles?: boolean;
+  recent?: RecentRunning | null;
 };
 
 export type Resolved = {
@@ -129,13 +174,33 @@ export function resolve(x: ResolveInput): Resolved {
   }
 
   const matrix_volume = BASE_MATRIX[training_age][Math.max(2, Math.min(7, sessions))];
-  const ceiling = RUNNING_CEILING[x.running_base];
+
+  // A long run is evidence about the base, so it can only raise it.
+  const demonstrated = baseFromLongRun(x.recent?.long_run_km ?? null);
+  const running_base = demonstrated && runRank(demonstrated) > runRank(x.running_base)
+    ? demonstrated : x.running_base;
+  if (running_base !== x.running_base) {
+    flags.push(
+      `Your ${x.recent!.long_run_km} km long run puts your running above what you called it, so the ceiling comes from the run rather than the description.`,
+    );
+  }
+
+  const ceiling = RUNNING_CEILING[running_base];
   const capped = ceiling == null ? matrix_volume : Math.min(matrix_volume, ceiling);
   if (ceiling != null && ceiling < matrix_volume) {
     flags.push(
       `Week 1 is held at ${capped} km rather than ${matrix_volume} km: your training says one thing and your running says another, and the running wins.`,
     );
   }
+
+  /**
+   * What they are already running beats what the matrix guessed.
+   *
+   * The matrix reads adjectives; a recent weekly figure is the thing itself.
+   * Starting below where someone already is spends the first weeks of a block
+   * detraining them, which is the more common failure of the two.
+   */
+  const recent = plausibleRecent(x.recent ?? null, flags);
 
   /**
    * No benchmark is not a reason to train less.
@@ -147,7 +212,14 @@ export function resolve(x: ResolveInput): Resolved {
    * the absence of a test penalises not having taken one. A benchmark sharpens
    * the paces; it does not license the volume.
    */
-  const start_volume = Math.max(3, Math.round(capped * 10) / 10);
+  const start_volume = Math.max(3, Math.round((recent ?? capped) * 10) / 10);
+  if (recent != null && Math.abs(recent - capped) >= 1) {
+    flags.push(
+      recent > capped
+        ? `Week 1 starts at ${Math.round(recent * 10) / 10} km, not the ${capped} km the matrix suggested — you are already running that, and a block that starts under you is a block spent catching up.`
+        : `Week 1 starts at ${Math.round(recent * 10) / 10} km rather than ${capped} km, because that is where your running actually is right now.`,
+    );
+  }
 
   const dial = x.volume_dial ?? 1.0;
   const ramp_rate = Math.min(BASE_RAMP[training_age], RUNNING_RAMP[x.running_base]) * dial;
@@ -156,13 +228,61 @@ export function resolve(x: ResolveInput): Resolved {
   // athlete does not become capable of less by declining to be measured.
   const peak_mult = rank(training_age) >= rank("intermediate") ? 2.2 : 1.8;
 
+  /**
+   * A block builds on proven volume; it does not double it.
+   *
+   * The multiplier above was calibrated against a conservative matrix start.
+   * Anchoring the start to real recent volume makes it over-deliver — 40 km a
+   * week becomes an 88 km peak, which is not a plan. Sixty per cent above the
+   * highest week the athlete has actually done is the ceiling, and it only
+   * binds when there is a real week to measure it against.
+   */
+  const raw_peak = start_volume * peak_mult;
+  // Against the biggest week they have actually done, not the typical one:
+  // "proven" means the most they have completed, and an athlete whose weeks
+  // swing between 20 and 38 km has proven 38.
+  const proven = x.recent?.peak_week_km ?? recent;
+  const proven_cap = proven != null ? proven * PROVEN_HEADROOM : Infinity;
+  const peak_ceiling = Math.round(Math.min(raw_peak, proven_cap) * 10) / 10;
+  if (proven_cap < raw_peak) {
+    flags.push(
+      `The block peaks at ${peak_ceiling} km rather than ${Math.round(raw_peak * 10) / 10} km: that is ${Math.round((PROVEN_HEADROOM - 1) * 100)}% above your biggest recent week of ${Math.round(proven! * 10) / 10} km, and building further than that inside one block is where people get hurt.`,
+    );
+  }
+
   return {
     training_age,
     start_volume,
     ramp_rate,
-    peak_ceiling: Math.round(start_volume * peak_mult * 10) / 10,
+    peak_ceiling,
     max_block: MAX_BLOCK[training_age],
     max_hard: MAX_HARD[training_age],
     matrix_volume, ceiling, sessions, flags,
   };
+}
+
+/** How far above a proven week a single block is allowed to build. */
+export const PROVEN_HEADROOM = 1.6;
+
+/**
+ * A recent weekly figure, sanity-checked against the long run behind it.
+ *
+ * Only reported numbers are trimmed. A measured one is the athlete's own
+ * arithmetic over their own files, and second-guessing it here would mean
+ * disbelieving a record in favour of a rule of thumb.
+ */
+function plausibleRecent(
+  recent: RecentRunning | null, flags: string[],
+): number | null {
+  const weekly = recent?.weekly_km;
+  if (!recent || !weekly || weekly <= 0) return null;
+  const long = recent.long_run_km;
+  if (recent.source === "measured" || !long || long <= 0) return weekly;
+
+  const most = long * LONG_RUN_SHARE;
+  if (weekly <= most) return weekly;
+  flags.push(
+    `You put ${weekly} km a week behind a ${long} km long run. A long run is usually a quarter to a third of the week, so week 1 is built from ${Math.round(most * 10) / 10} km — correct either number and it moves.`,
+  );
+  return most;
 }

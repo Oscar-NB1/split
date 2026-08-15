@@ -663,3 +663,11 @@ create index if not exists messages_pair on messages (coach_id, athlete_id, crea
 alter table benchmark_results add column if not exists plan_before jsonb;
 alter table benchmark_results add column if not exists plan_after  jsonb;
 alter table benchmark_results add column if not exists applied_at  timestamptz;
+
+-- What they have actually been running lately (2026-08-15). Optional: not
+-- everyone tracks, and refusing to build a plan without them would be worse
+-- than the matrix guess they replace. Where they exist they beat every
+-- adjective in the form — "runs regularly" is a self-description, 40 km a week
+-- with a 16 km long run is a measurement.
+alter table athlete_intake add column if not exists recent_weekly_km   numeric;
+alter table athlete_intake add column if not exists recent_long_run_km numeric;

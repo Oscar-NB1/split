@@ -16,6 +16,7 @@
 import { sql } from "../lib/db";
 import { addDays, mondayOf } from "../lib/dates";
 import { generate, type Params } from "../lib/plan/generate";
+import { measuredRecent } from "../lib/recent";
 import { anchorFrom } from "../lib/plan/paces";
 
 const START = "2026-08-17";
@@ -52,7 +53,12 @@ async function main() {
   console.log("From his data:");
   console.log(`  ${stats.activities} activities over ${stats.years} years`);
   console.log(`  longest run ${stats.longest_km} km · best half ${Math.floor(best.half_s / 60)}:${String(best.half_s % 60).padStart(2, "0")}`);
-  console.log(`  ${races.n} Hyrox session(s) on file · max HR ${me.hr_max}\n`);
+  // Not asked for and not guessed: read from his own activities.
+  const recent = await measuredRecent(me.id);
+  console.log(`  ${races.n} Hyrox session(s) on file · max HR ${me.hr_max}`);
+  console.log(recent
+    ? `  recent: ${recent.weekly_km} km in a typical week, biggest ${recent.peak_week_km} km, longest run ${recent.long_run_km} km (measured)\n`
+    : "  recent: nothing in the last 8 weeks, so the matrix decides week 1\n");
 
   const params: Params = {
     // derived from the data above
@@ -81,6 +87,7 @@ async function main() {
     }],
     absences: [],
     exclusions: [],
+    recent,
     week_start: (n) => addDays(mondayOf(START), (n - 1) * 7),
   };
 

@@ -109,6 +109,18 @@ export type Intake = {
   paceMin: number | null;
   paceSec: number | null;
   paceUnknown: boolean;
+  /**
+   * What they have actually been running lately, which beats every adjective
+   * above it.
+   *
+   * "Runs regularly" is a self-description; 40 km a week with a 16 km long run
+   * is a measurement. Where the two disagree the numbers win, because a block
+   * that starts below what someone is already doing is a detraining block.
+   * Both are optional — not everyone tracks, and refusing to build a plan
+   * without them would be worse than the matrix guess they replace.
+   */
+  recentWeeklyKm: number | null;
+  recentLongRunKm: number | null;
   days: Day[];
   commitments: CommitmentName[];
   /** how many times a week each one happens */
