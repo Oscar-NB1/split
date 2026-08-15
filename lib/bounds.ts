@@ -11,6 +11,11 @@
  *   - "1,256 Zone-2 minutes" in a weekly challenge score — 21 hours — from a
  *     weight-training activity of 68,740 s with moving equal to elapsed. A watch
  *     left running overnight.
+ *   - "Fastest kilometre: 3:24 — Afternoon Ride". Six of the eight best
+ *     kilometres on the Awards screen were bike rides. lib/records.ts had always
+ *     required a running activity; the Awards route, querying the same split rows
+ *     itself, had not. Exactly the mistake the second entry above describes,
+ *     third time round, in the same file.
  *
  * The lesson is the reason this file exists: a data-quality rule that lives next
  * to one query is not a rule, it is a patch, and the next reader of the same
@@ -29,3 +34,20 @@ export const MAX_SESSION_SECONDS = 6 * 3600;
 
 /** For a SQL `least(moving_seconds, …)`. */
 export const MAX_SESSION_SQL = MAX_SESSION_SECONDS;
+
+/**
+ * Which activities a running record may come from.
+ *
+ * A bike ride has kilometre splits too, and at 17 km/h they sit comfortably under
+ * MAX_SPEED_MS — the speed bound cannot catch this, because nothing about a
+ * 3:24 kilometre is implausible. Only the sport is wrong.
+ *
+ * Matched on the substring so Strava's Run, TrailRun and VirtualRun all qualify.
+ * A Hyrox race logged as "Workout" does not, deliberately: its splits straddle
+ * the stations, so they are not clean running kilometres even though the running
+ * inside them is real.
+ */
+export const RUN_SPORT_SQL = "%run%";
+
+/** The same rule for rows already in hand. */
+export const isRunSport = (sport: string | null | undefined) => /run/i.test(sport ?? "");

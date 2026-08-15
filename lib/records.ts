@@ -1,5 +1,5 @@
 import { sql } from "./db";
-import { MAX_SESSION_SECONDS, MAX_SPEED_MS } from "./bounds";
+import { MAX_SESSION_SECONDS, MAX_SPEED_MS, isRunSport } from "./bounds";
 
 /**
  * Personal bests.
@@ -129,8 +129,8 @@ export async function candidates(
     out.push({ metric: "longest_session_min", value: seconds / 60 });
   }
 
-  const isRun = /run/i.test(a.sport_type ?? "");
-  if (!isRun) return out;
+  // the same predicate the Awards route uses, from lib/bounds.ts
+  if (!isRunSport(a.sport_type)) return out;
 
   const km = Number(a.distance_m ?? 0) / 1000;
   // and a "run" averaging above the sprint bound is a bad GPS trace

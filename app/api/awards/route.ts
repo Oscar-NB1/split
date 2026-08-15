@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { route } from "@/lib/http";
-import { MAX_SESSION_SECONDS, MAX_SPEED_MS } from "@/lib/bounds";
+import { MAX_SESSION_SECONDS, MAX_SPEED_MS, RUN_SPORT_SQL, isRunSport } from "@/lib/bounds";
 
 /**
  * Career totals, personal records and medal tiers — all computed from stored
@@ -73,15 +73,18 @@ function tierOf(m: MedalDef, value: number) {
 async function earnedDates(userId: string, defs: MedalDef[]) {
   const acts = await sql<{
     local_date: string; distance_m: string | null; moving_seconds: number | null;
+    sport_type: string | null;
   }[]>`
-    select local_date::text as local_date, distance_m,
+    select local_date::text as local_date, distance_m, sport_type,
            least(moving_seconds, ${MAX_SESSION_SECONDS}) as moving_seconds
       from activities where user_id = ${userId} order by start_time asc
   `;
   const weekly = await sql<{ wk: string; km: string }[]>`
     select to_char(date_trunc('week', start_time), 'YYYY-MM-DD') as wk,
            sum(distance_m)/1000 as km
-      from activities where user_id = ${userId} group by 1 order by 1
+      from activities
+     where user_id = ${userId} and sport_type ilike ${RUN_SPORT_SQL}
+     group by 1 order by 1
   `;
 
   // running totals, in the order the activities actually happened
@@ -101,7 +104,9 @@ async function earnedDates(userId: string, defs: MedalDef[]) {
     km += Number(a.distance_m ?? 0) / 1000;
     sessions += 1;
     hours += Math.min(a.moving_seconds ?? 0, MAX_SESSION_SECONDS) / 3600;
-    longest = Math.max(longest, Number(a.distance_m ?? 0) / 1000);
+    // the date a running medal was earned has to be found by the same rule that
+    // decides the medal, or the tier and its date come from different activities
+    if (isRunSport(a.sport_type)) longest = Math.max(longest, Number(a.distance_m ?? 0) / 1000);
     mark("Lifetime distance", km, a.local_date);
     mark("Sessions logged", sessions, a.local_date);
     mark("Hours moving", hours, a.local_date);
@@ -117,21 +122,29 @@ async function earnedDates(userId: string, defs: MedalDef[]) {
 export const GET = route(async () => {
   const me = await requireUser();
 
+  // "Lifetime distance" is every sport, which the label says. "Single longest run"
+  // is not — and was taken from max(distance_m) across everything, so one long
+  // ride would have become a running medal. It agrees today only because the
+  // longest activity on file happens to be a run.
   const [totals] = await sql<{
     km: string; sessions: number; seconds: string; longest: string; first: string | null;
   }[]>`
     select coalesce(sum(distance_m),0)/1000 as km,
            count(*)::int as sessions,
            coalesce(sum(least(moving_seconds, ${MAX_SESSION_SECONDS})),0) as seconds,
-           coalesce(max(distance_m),0)/1000 as longest,
+           coalesce(max(distance_m) filter (where sport_type ilike ${RUN_SPORT_SQL}),0)/1000 as longest,
            min(local_date)::text as first
       from activities where user_id = ${me.id}
   `;
 
+  // Running only, to agree with the biggest_week_km record that lib/rules.ts
+  // writes on a Sunday — that one has always filtered to runs, so an all-sport
+  // number here would have shown a medal the record disagreed with.
   const [{ best_week }] = await sql<{ best_week: string }[]>`
     select coalesce(max(km),0) as best_week from (
       select sum(distance_m)/1000 as km
-        from activities where user_id = ${me.id}
+        from activities
+       where user_id = ${me.id} and sport_type ilike ${RUN_SPORT_SQL}
        group by date_trunc('week', start_time)
     ) w
   `;
@@ -146,6 +159,7 @@ export const GET = route(async () => {
       from activity_splits s join activities a on a.id = s.activity_id
      where a.user_id = ${me.id} and s.moving_seconds > 0 and s.distance_m >= 995
        and s.distance_m / s.moving_seconds <= ${MAX_SPEED_MS}
+       and a.sport_type ilike ${RUN_SPORT_SQL}
      order by s.moving_seconds asc limit 5
   `;
 
@@ -166,6 +180,7 @@ export const GET = route(async () => {
         from activity_splits s join activities a on a.id = s.activity_id
        where a.user_id = ${me.id} and s.moving_seconds > 0 and s.distance_m >= 995
          and s.distance_m / s.moving_seconds <= ${MAX_SPEED_MS}
+         and a.sport_type ilike ${RUN_SPORT_SQL}
     ) x where have = ${n} order by total asc limit 5
   `;
 
