@@ -184,12 +184,21 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
               </svg>
             </button>
           )}
-          <button className="whoami" onClick={() => setView("profile")} aria-label="Profile">
-            <span className="nm">{coachingName ?? me.display_name}</span>
-            <span className="avatar">
-              {(coachingName ?? me.display_name).slice(0, 1).toUpperCase()}
-            </span>
-          </button>
+          {coachingName ? (
+            // Coaching is a mode you are in, so there has to be a way out of it.
+            // Without this the only exit was a reload.
+            <button onClick={() => { setCoaching(null); setView("week"); }}
+              className="whoami" aria-label={`Stop coaching ${coachingName}`}>
+              <span className="nm">{coachingName}</span>
+              <span className="avatar" style={{ background: "var(--navy)",
+                color: "var(--lime)" }}>✕</span>
+            </button>
+          ) : (
+            <button className="whoami" onClick={() => setView("profile")} aria-label="Profile">
+              <span className="nm">{me.display_name}</span>
+              <span className="avatar">{me.display_name.slice(0, 1).toUpperCase()}</span>
+            </button>
+          )}
         </span>
       </header>
 
@@ -227,7 +236,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "plan" && (block || !data) && (
           <Plan data={data} monday={monday} goStrategy={() => setView("strategy")}
-            goProgram={() => setView("program")} openSession={openSession} />
+            openSession={openSession} />
         )}
         {view === "program" && (
           <Program
@@ -245,7 +254,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         {view === "form" && <Form />}
         {view === "profile" && (
           <Profile me={me} openEdit={() => setView("editProfile")}
-            openConnect={() => setView("connect")} />
+            openConnect={() => setView("connect")}
+            openBuild={() => setView("build")}
+            openCoachee={(id) => { setCoaching(id); setView("week"); }} />
         )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
         {view === "connect" && <Connect />}

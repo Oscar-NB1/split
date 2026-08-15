@@ -30,6 +30,10 @@ export const GET = route(async () => {
     weight_kg: row?.weight_kg == null ? null : Number(row.weight_kg),
     // read from the coaching table rather than hardcoded, so a second athlete
     // appears here without a code change
+    has_plan: (await sql<{ ok: boolean }[]>`
+      select exists (select 1 from plan_templates
+                      where athlete_id = ${me.id} and active) as ok
+    `)[0]?.ok ?? false,
     coachees: await coachees(me.id),
     coached_by: await coachedBy(me.id),
     connected: conns.map((c) => c.provider),

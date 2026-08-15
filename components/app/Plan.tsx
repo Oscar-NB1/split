@@ -26,10 +26,10 @@ type Tab = "Block" | "Form" | "Volume";
  * would hide exactly the thing worth seeing.
  */
 export default function Plan({
-  data, monday, goStrategy, goProgram, openSession,
+  data, monday, goStrategy, openSession,
 }: {
   data: WeekData | null; monday: string;
-  goStrategy: () => void; goProgram: () => void; openSession: (s: Session) => void;
+  goStrategy: () => void; openSession: (s: Session) => void;
 }) {
   const [tab, setTab] = useState<Tab>("Block");
   const [logged, setLogged] = useState<Record<string, number>>({});
@@ -55,6 +55,15 @@ export default function Plan({
   const done = WEEKS.filter((w) => w.start < thisMonday).length;
   const totalKm = WEEKS.reduce((n, w) => n + w.km, 0);
   const left = daysToRace(block, now);
+  /** What explains cautious numbers without a notification. */
+  const state = !block?.plan_state ? null : {
+    estimated: { label: "Estimated", bg: OFF, fg: INK55,
+      why: "Volume held 15% low, ramp capped. The benchmark lifts it." },
+    awaiting: { label: "Awaiting baseline", bg: "var(--teal-tint2)", fg: TEAL,
+      why: "The benchmark is session 1; the numbers rebuild from it." },
+    measured: { label: "Measured", bg: "var(--lime)", fg: "var(--on-lime)",
+      why: "Paces, limiter and roxzone come from real numbers." },
+  }[block.plan_state];
   const current = weekOf(block, thisMonday);
 
   return (
@@ -102,6 +111,15 @@ export default function Plan({
               <span style={{ fontSize: 12, color: INK55 }}>
                 {block.goal_label ? `Target ${block.goal_label}` : "No target time set yet"}
               </span>
+              {state && (
+                <span style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 4 }}>
+                  <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".08em",
+                    textTransform: "uppercase", borderRadius: "var(--r-pill)",
+                    padding: "4px 10px", flex: "none",
+                    background: state.bg, color: state.fg }}>{state.label}</span>
+                  <span style={{ fontSize: 11, lineHeight: 1.45, color: INK55 }}>{state.why}</span>
+                </span>
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 3 }}>
@@ -131,7 +149,14 @@ export default function Plan({
               </div>
             </div>
 
-            <div style={{ borderTop: `1px dashed ${LINE}`, paddingTop: 12, display: "flex",
+            {/* The tiles came out — Rearrange is the calendar icon in the week
+                header, Form and Volume are the tabs above, coaching moved to the
+                profile. The race countdown became the way into the strategy,
+                which is the one thing that had nowhere else to go. */}
+            <button onClick={goStrategy} style={{ width: "100%", textAlign: "left",
+              background: "none", padding: 0, color: "var(--ink)",
+              borderTop: `1px dashed ${LINE}`, borderLeft: 0, borderRight: 0, borderBottom: 0,
+              paddingTop: 12, display: "flex",
               alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-70)" }}>
                 {left == null ? `${WEEKS.length} weeks, no race date set`
@@ -140,31 +165,9 @@ export default function Plan({
               </span>
               <span style={{ fontSize: 10, color: INK40 }}>
                 {fmt(block.start, { day: "numeric", month: "short" })} → {fmt(block.race_date ?? block.end, { day: "numeric", month: "short" })}
+                {" ›"}
               </span>
-            </div>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {[
-              { label: "Rearrange", sub: "workouts", go: goProgram },
-              { label: "Form", sub: "vs plan", go: () => setTab("Form") },
-              { label: "Volume", sub: "vs plan", go: () => setTab("Volume") },
-              { label: "Race strategy", sub: "28 Nov", go: goStrategy },
-            ].map((x) => (
-              <button key={x.label} onClick={x.go} style={{
-                display: "flex", alignItems: "center", gap: 10, textAlign: "left",
-                background: PAPER, border: `1px solid ${LINE}`, borderRadius: "var(--r-card)",
-                padding: "13px 14px", color: "var(--ink)",
-              }}>
-                <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>{x.label}</span>
-                  <span style={{ fontSize: 11, color: INK40 }}>{x.sub}</span>
-                </span>
-                <span style={{ marginLeft: "auto", width: 22, height: 22, borderRadius: "50%",
-                  background: OFF, color: TEAL, fontSize: 12, fontWeight: 700,
-                  display: "flex", alignItems: "center", justifyContent: "center" }}>›</span>
-              </button>
-            ))}
+            </button>
           </div>
 
           {WEEKS.map((w, i) => {
