@@ -225,3 +225,50 @@ export async function pushUpcoming(userId: string) {
   for (const r of rows) if (await pushSession(r.id)) n++;
   return n;
 }
+
+/** Is this athlete connected to intervals.icu at all? */
+export const intervalsConnected = async (userId: string) => (await credsFor(userId)) !== null;
+
+/**
+ * Push the race plan as a single dated workout.
+ *
+ * Kept separate from pushSession because a race plan is not a planned_session —
+ * it is one event per race, stored in race_plans, and re-exporting must update
+ * the same event rather than leave a second copy of the race on the watch.
+ *
+ * Throws rather than returning null on a missing connection: the caller is a
+ * button the athlete just pressed, and "Sent to Garmin" when nothing was sent is
+ * the failure this whole path exists to remove.
+ */
+export async function pushRacePlan(
+  userId: string,
+  race: { date: string; name: string; body: string; eventId: string | null },
+): Promise<string> {
+  const creds = await credsFor(userId);
+  if (!creds) throw new Error("intervals.icu is not connected");
+
+  const headers = { authorization: auth(creds.apiKey), "content-type": "application/json" };
+  const body = JSON.stringify({
+    start_date_local: `${race.date}T09:00:00`,
+    category: "WORKOUT",
+    type: "Other",
+    name: race.name,
+    description: race.body,
+    external_id: `split-race-${race.date}`,
+  });
+
+  if (race.eventId) {
+    const res = await fetch(`${BASE}/athlete/${creds.athleteId}/events/${race.eventId}`,
+      { method: "PUT", headers, body });
+    if (res.ok) return race.eventId;
+    // 404 means it was deleted inside intervals.icu; anything else is a real failure
+    if (res.status !== 404) throw new Error(`intervals.icu refused the update (${res.status})`);
+  }
+
+  const res = await fetch(`${BASE}/athlete/${creds.athleteId}/events`,
+    { method: "POST", headers, body });
+  if (!res.ok) throw new Error(`intervals.icu refused the workout (${res.status})`);
+  const json = (await res.json()) as { id?: number };
+  if (!json.id) throw new Error("intervals.icu accepted the workout but returned no id");
+  return String(json.id);
+}

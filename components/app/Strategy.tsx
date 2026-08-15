@@ -1,6 +1,7 @@
 "use client";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { mmss } from "@/lib/prescription";
+import { SEED, TARGET, type Segment, totals } from "@/lib/strategy";
 
 const TEAL = "#0A8FB0", LIME = "#C6FF5B", LIME_D = "#AAEA42", NAVY = "#12314D", NAVY_D = "#0E2740";
 const TEAL_T2 = "var(--teal-tint2)";
@@ -10,50 +11,74 @@ const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
 /**
  * The race, segment by segment.
  *
- * Seeded from the plan's own numbers: run splits at race pace, stations at the
- * Heerenveen distribution the plan explicitly says to leave alone ("top 5.6% of
- * the field, twice — that lever is spent"), and a roxzone of 30 s per transition
- * against the 4:00 target. The notes are the doubles handover for each station,
- * which is the part you actually have to agree with Olivier in advance.
+ * The numbers, and their bounds, are in lib/strategy.ts — shared with the route
+ * that stores them and with the workout text that reaches the watch, so the plan
+ * on this screen and the plan on the Garmin cannot drift apart.
  */
-type Row = { name: string; sec: number; kind: "Run" | "Station"; note: string };
-
-const STRATEGY: Row[] = [
-  { name: "Run 1", sec: 232, kind: "Run", note: "Hold back. Everyone goes out hot." },
-  { name: "SkiErg 1000 m", sec: 165, kind: "Station", note: "Split 500/500. You start." },
-  { name: "Run 2", sec: 236, kind: "Run", note: "" },
-  { name: "Sled Push 50 m", sec: 130, kind: "Station", note: "Two pushes each, no rest between." },
-  { name: "Run 3", sec: 238, kind: "Run", note: "" },
-  { name: "Sled Pull 50 m", sec: 165, kind: "Station", note: "Your strongest station — take three pulls." },
-  { name: "Run 4", sec: 238, kind: "Run", note: "" },
-  { name: "Burpee Broad Jump 80 m", sec: 170, kind: "Station", note: "20 m blocks. Do not redline here." },
-  { name: "Run 5", sec: 240, kind: "Run", note: "" },
-  { name: "Row 1000 m", sec: 160, kind: "Station", note: "Split 500/500. Drop HR on the rest." },
-  { name: "Run 6", sec: 240, kind: "Run", note: "" },
-  { name: "Farmers Carry 200 m", sec: 85, kind: "Station", note: "One trip each. No set-downs." },
-  { name: "Run 7", sec: 242, kind: "Run", note: "" },
-  { name: "Sandbag Lunges 100 m", sec: 145, kind: "Station", note: "25 m blocks, swap every block." },
-  { name: "Run 8", sec: 238, kind: "Run", note: "Empty the tank from 400 m out." },
-  { name: "Wall Balls 100", sec: 180, kind: "Station", note: "Sets of 10. Never miss two in a row." },
-];
-
-/** The slow end of the stated 55:00–56:30 target. */
-const TARGET = 56 * 60 + 30;
+type Row = Segment;
 
 export default function Strategy() {
-  const [rows, setRows] = useState<Row[]>(STRATEGY);
+  const [rows, setRows] = useState<Row[]>(SEED);
   const [roxEach, setRoxEach] = useState(30);
-  const [exported, setExported] = useState(false);
+  const [saving, setSaving] = useState<"idle" | "saving" | "saved">("idle");
+  const [exportState, setExportState] = useState<"idle" | "sending" | "sent">("idle");
+  const [connected, setConnected] = useState<boolean | null>(null);
+  const [exportedAt, setExportedAt] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // nothing is written until the athlete actually changes something, so opening
+  // the screen and leaving does not turn the plan's numbers into "their" plan
+  const loaded = useRef(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const total = rows.reduce((n, r) => n + r.sec, 0);
-  const rox = roxEach * 8;
-  const finish = total + rox;
+  useEffect(() => {
+    fetch("/api/strategy").then(async (r) => {
+      if (r.status === 401) { location.href = "/login"; return; }
+      const j = await r.json();
+      setRows(j.segments); setRoxEach(j.rox_seconds);
+      setConnected(j.intervals_connected); setExportedAt(j.exported_at);
+      loaded.current = true;
+    });
+  }, []);
+
+  // Debounced: holding the minus button is a dozen taps, not a dozen saves.
+  const save = useCallback((next: Row[], nextRox: number) => {
+    if (!loaded.current) return;
+    setSaving("saving");
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      const res = await fetch("/api/strategy", {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ segments: next, rox_seconds: nextRox }),
+      });
+      setSaving(res.ok ? "saved" : "idle");
+      if (!res.ok) setError("Could not save that change.");
+    }, 600);
+  }, []);
+
+  const { runs: runTotal, stations: stationTotal, rox, finish } = totals(rows, roxEach);
   const inside = finish <= TARGET;
-  const runTotal = rows.filter((r) => r.kind === "Run").reduce((n, r) => n + r.sec, 0);
-  const stationTotal = rows.filter((r) => r.kind === "Station").reduce((n, r) => n + r.sec, 0);
 
   const bump = (i: number, by: number) =>
-    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, sec: Math.max(60, r.sec + by) } : r)));
+    setRows((rs) => {
+      const next = rs.map((r, j) => (j === i ? { ...r, sec: Math.max(60, r.sec + by) } : r));
+      save(next, roxEach);
+      return next;
+    });
+
+  const setRox = (fn: (r: number) => number) =>
+    setRoxEach((r) => { const next = fn(r); save(rows, next); return next; });
+
+  async function exportPlan() {
+    setExportState("sending"); setError(null);
+    const res = await fetch("/api/strategy", { method: "POST" });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setExportState("idle");
+      setError(j.error ?? "Could not send the plan.");
+      return;
+    }
+    setExportState("sent"); setExportedAt(new Date().toISOString());
+  }
 
   // elapsed accumulates the transition after each station, as the race does
   let elapsed = 0;
@@ -110,10 +135,10 @@ export default function Strategy() {
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={() => setRoxEach((r) => Math.max(15, r - 5))} style={roxStep}>−</button>
+            <button onClick={() => setRox((r) => Math.max(15, r - 5))} style={roxStep}>−</button>
             <span style={{ fontFamily: "var(--display)", fontSize: 19, fontWeight: 700,
               minWidth: 44, textAlign: "center" }}>{mmss(roxEach)}</span>
-            <button onClick={() => setRoxEach((r) => r + 5)} style={roxStep}>+</button>
+            <button onClick={() => setRox((r) => r + 5)} style={roxStep}>+</button>
           </div>
         </div>
         <div style={{ fontSize: 11, lineHeight: 1.5, color: roxEach > 32 ? NAVY_D : INK55 }}>
@@ -159,16 +184,31 @@ export default function Strategy() {
         </div>
       ))}
 
-      <button onClick={() => setExported(true)} style={{
+      <button onClick={exportPlan} disabled={exportState !== "idle" || connected === false} style={{
         width: "100%", borderRadius: "var(--r-pill)", padding: 16, fontSize: 12, fontWeight: 800,
         letterSpacing: ".06em", textTransform: "uppercase",
-        background: exported ? TEAL_T2 : LIME, color: exported ? TEAL : NAVY_D,
+        background: exportState === "sent" ? TEAL_T2 : connected === false ? OFF : LIME,
+        color: exportState === "sent" ? TEAL : connected === false ? INK40 : NAVY_D,
+        border: connected === false ? `1px solid ${LINE}` : "none",
       }}>
-        {exported ? "Sent to Garmin Forerunner 255" : "Export race plan to Garmin"}
+        {exportState === "sent" ? "Sent to Garmin Forerunner 255"
+          : exportState === "sending" ? "Sending…"
+          : connected === false ? "Connect intervals.icu to export"
+          : "Export race plan to Garmin"}
       </button>
+      {error && (
+        <div style={{ fontSize: 11, color: "#B4472F", lineHeight: 1.5 }}>{error}</div>
+      )}
       <div style={{ fontSize: 11, color: INK40, lineHeight: 1.5 }}>
-        Exports as a multisport workout with per-segment target times and lap alerts.
-        Changes here are not saved yet.
+        {connected === false
+          ? "Garmin's own Training API is business-only, so the plan reaches the watch through intervals.icu. Add its API key on the profile screen."
+          : "Goes to intervals.icu as one step per segment with its target time, and syncs from there into Garmin Connect."}
+        {" "}
+        {saving === "saving" ? "Saving…"
+          : saving === "saved" ? "Changes saved."
+          : exportedAt ? `Last sent ${new Date(exportedAt).toLocaleDateString("en-GB",
+              { day: "numeric", month: "short" })}.`
+          : "Changes save as you make them."}
       </div>
     </div>
   );

@@ -373,3 +373,20 @@ alter table users add column if not exists injury_notes text;
 alter table activity_laps add column if not exists station_key text;
 create index if not exists activity_laps_station on activity_laps (station_key)
   where station_key is not null;
+
+-- The race plan the Strategy screen builds (2026-08-15). It was component state
+-- seeded from a constant, so the screen carried a footnote reading "Changes here
+-- are not saved yet" and its export button set a boolean and claimed the plan had
+-- been sent to the watch. One row per athlete per race date.
+create table if not exists race_plans (
+  user_id       uuid not null references users(id) on delete cascade,
+  race_date     date not null,
+  segments      jsonb not null,
+  rox_seconds   int not null default 30,
+  -- the intervals.icu event, so re-exporting updates the workout on the watch
+  -- rather than adding a second copy of the same race
+  event_id      text,
+  exported_at   timestamptz,
+  updated_at    timestamptz not null default now(),
+  primary key (user_id, race_date)
+);
