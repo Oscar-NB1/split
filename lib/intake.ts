@@ -303,9 +303,8 @@ export const RACE_SHAPE = {
  * added to the sled, `_total_kg` includes the sled itself, which is what a gym's
  * sled actually has to be loaded to.
  *
- * Wall ball target height is NOT in the source table and is therefore not here.
- * It is the one number that changes the movement rather than the load, so it is
- * left null and flagged rather than guessed.
+ * Target height is not tracked. It does not vary in a way that changes what gets
+ * programmed, and a session prescribes a weight and a rep count.
  */
 export type Standards = {
   sled_push_kg: number; sled_push_total_kg: number;
@@ -313,38 +312,42 @@ export type Standards = {
   farmers_kg: number;   // per hand
   lunge_kg: number;
   wall_ball_kg: number;
-  wall_ball_target_m: number | null;
 };
 
-export const STANDARDS: Partial<Record<Division, Standards>> = {
+const MENS_OPEN: Standards = {
+  sled_push_kg: 100, sled_push_total_kg: 152,
+  sled_pull_kg: 50, sled_pull_total_kg: 103,
+  farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6,
+};
+
+export const STANDARDS: Record<Exclude<Division, "unknown">, Standards> = {
   womens_open: {
     sled_push_kg: 50, sled_push_total_kg: 102,
     sled_pull_kg: 25, sled_pull_total_kg: 78,
-    farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4, wall_ball_target_m: null,
+    farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4,
   },
   womens_pro: {
     sled_push_kg: 100, sled_push_total_kg: 152,
     sled_pull_kg: 50, sled_pull_total_kg: 103,
-    farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6, wall_ball_target_m: null,
+    farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6,
   },
-  mens_open: {
-    sled_push_kg: 100, sled_push_total_kg: 152,
-    sled_pull_kg: 50, sled_pull_total_kg: 103,
-    farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6, wall_ball_target_m: null,
-  },
+  mens_open: MENS_OPEN,
   mens_pro: {
     sled_push_kg: 150, sled_push_total_kg: 202,
     sled_pull_kg: 100, sled_pull_total_kg: 153,
-    farmers_kg: 32, lunge_kg: 30, wall_ball_kg: 9, wall_ball_target_m: null,
+    farmers_kg: 32, lunge_kg: 30, wall_ball_kg: 9,
   },
-  // mixed_doubles is deliberately absent: it is not in the source table, and a
-  // doubles pair's loads are not derivable from the four singles divisions.
+  // Confirmed as men's open weights, not inferred from them. Shared by reference
+  // so the two can never drift apart in an edit.
+  mixed_doubles: MENS_OPEN,
 };
 
-export const standardsFor = (x: Intake): Standards | null => STANDARDS[x.division] ?? null;
+export const standardsFor = (x: Intake): Standards | null =>
+  x.division === "unknown" ? null : STANDARDS[x.division];
+
 
 export const needsStandards = (x: Intake) =>
-  isHyrox(x.goal_kind) && !STANDARDS[x.division];
+  isHyrox(x.goal_kind) && standardsFor(x) === null;
 
 export const isHyrox = (k: GoalKind) => k === "hyrox" || k === "hyrox_doubles";
 

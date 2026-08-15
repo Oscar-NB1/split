@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  BASE_VOLUME, COMMITMENT, RUNNING_CEILING, STANDARDS, type Intake,
+  BASE_VOLUME, COMMITMENT, DIVISION, RUNNING_CEILING, STANDARDS, type Intake,
   allocationFor, heavyDays, needsStandards, rampRate, setClock, startVolume, validate,
 } from "../lib/intake";
 import {
@@ -243,24 +243,25 @@ test("a solo athlete does not get a doubles split", () => {
   assert.notEqual(solo.run, 0.60);
 });
 
-test("station weights are never printed, because the standards are not loaded", () => {
-  assert.ok(needsStandards(HER), "no verified standards for this division");
-  const work = strengthFor(HER, "base") ?? "";
-  assert.match(work, /% of race weight/, "expressed as a share, not as kilos");
-  assert.doesNotMatch(work, /\d+\s?kg/, "no weight nobody verified");
-  assert.ok(generate(HER).flags.some((f) => /not in the standards table/.test(f)),
-    "and the plan says the numbers are missing rather than staying quiet");
-  // a division that IS in the table but hypothetically unloaded says the other thing
-  assert.ok(generate({ ...HER, division: "unknown" }).flags
-    .some((f) => /Confirm them against the rulebook/.test(f)));
+test("without a division, loads are a share of race weight rather than invented kilos", () => {
+  const nodiv = { ...HER, division: "unknown" as const };
+  assert.ok(needsStandards(nodiv));
+  const work = strengthFor(nodiv, "base") ?? "";
+  assert.match(work, /% of race weight/, "expressed as a share");
+  assert.doesNotMatch(work, /\d+ kg loaded/, "no weight nobody verified");
+  assert.ok(generate(nodiv).flags.some((f) => /No division chosen/.test(f)),
+    "and the plan says so rather than staying quiet");
 });
 
 test("sled loading climbs by phase, and starts lower for someone who never has", () => {
-  const pct = (p: Parameters<typeof strengthFor>[1], x = HER) =>
-    Number((strengthFor(x, p) ?? "").match(/Sled push (\d+)%/)?.[1] ?? 100);
-  assert.ok(pct("base") < pct("build"), "60 then 80");
-  assert.match(strengthFor(HER, "specific") ?? "", /race weight, race distance/);
-  assert.ok(pct("base", { ...HER, sled_experience: "never" }) < pct("base"));
+  // mixed doubles is men's open: 152 kg loaded at race weight
+  const loaded = (p: Parameters<typeof strengthFor>[1], x = HER) =>
+    Number((strengthFor(x, p) ?? "").match(/Sled push (\d+) kg loaded/)?.[1] ?? 0);
+  assert.equal(loaded("base"), Math.round(152 * 0.6), "60% in base");
+  assert.equal(loaded("build"), Math.round(152 * 0.8), "80% in build");
+  assert.equal(loaded("specific"), 152, "race weight in the specific phase");
+  assert.ok(loaded("base", { ...HER, sled_experience: "never" }) < loaded("base"),
+    "someone who has never pushed one starts lower still");
 });
 
 test("sandbag lunges are introduced last", () => {
@@ -334,10 +335,10 @@ test("the standards table matches the official one, both sled numbers", () => {
   assert.deepEqual(STANDARDS.womens_open, {
     sled_push_kg: 50, sled_push_total_kg: 102,
     sled_pull_kg: 25, sled_pull_total_kg: 78,
-    farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4, wall_ball_target_m: null,
+    farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4,
   });
-  assert.equal(STANDARDS.mens_pro!.sled_push_total_kg, 202);
-  assert.equal(STANDARDS.mens_pro!.sled_pull_total_kg, 153);
+  assert.equal(STANDARDS.mens_pro.sled_push_total_kg, 202);
+  assert.equal(STANDARDS.mens_pro.sled_pull_total_kg, 153);
   // women's pro and men's open are the same load on every station
   assert.deepEqual(STANDARDS.womens_pro, STANDARDS.mens_open);
 });
@@ -346,7 +347,7 @@ test("every loaded division scales upward across the four of them", () => {
   const order = ["womens_open", "womens_pro", "mens_pro"] as const;
   for (const key of ["sled_push_kg", "sled_pull_kg", "farmers_kg", "lunge_kg", "wall_ball_kg"] as const) {
     for (let i = 1; i < order.length; i++) {
-      assert.ok(STANDARDS[order[i]]![key] > STANDARDS[order[i - 1]]![key],
+      assert.ok(STANDARDS[order[i]][key] > STANDARDS[order[i - 1]][key],
         `${key} climbs from ${order[i - 1]} to ${order[i]}`);
     }
   }
@@ -365,16 +366,38 @@ test("real weights are printed once the division is known", () => {
   assert.match(strengthFor(her, "build") ?? "", /Sled push 82 kg loaded/);
 });
 
-test("mixed doubles is not in the table, so it is not filled in", () => {
-  // a pair's loads are not derivable from the four singles divisions
-  assert.equal(STANDARDS.mixed_doubles, undefined);
-  assert.ok(needsStandards(HER), "her division still has no verified numbers");
-  assert.doesNotMatch(strengthFor(HER, "specific") ?? "", /\d+ kg loaded/);
-  assert.ok(generate(HER).flags.some((f) => /Mixed doubles weights are not in the standards table/.test(f)));
+test("mixed doubles carries the men's open loads, by reference", () => {
+  // confirmed as the same weights rather than inferred from them, and shared by
+  // reference so an edit to one can never leave the other behind
+  assert.deepEqual(STANDARDS.mixed_doubles, STANDARDS.mens_open);
+  assert.ok(!needsStandards(HER), "her division has real numbers");
+  assert.match(strengthFor(HER, "specific") ?? "", /Sled push 152 kg loaded, 50 m/);
+  assert.match(strengthFor(HER, "specific") ?? "", /Sled pull 103 kg loaded, 50 m/);
+  assert.match(strengthFor(HER, "specific") ?? "", /Wall balls 6 kg/);
+  assert.match(strengthFor(HER, "specific") ?? "", /Sandbag lunges 20 kg/);
+  assert.match(strengthFor(HER, "specific") ?? "", /Farmers carry 2 x 24 kg/);
+  assert.ok(!generate(HER).flags.some((f) => /race weight/.test(f)),
+    "and no longer flags a missing standard");
 });
 
-test("wall ball target height is missing from the source, and is said so", () => {
-  const her = { ...HER, division: "womens_open" as const };
-  assert.equal(STANDARDS.womens_open!.wall_ball_target_m, null);
-  assert.ok(generate(her).flags.some((f) => /target height is not in the standards table/.test(f)));
+test("every division in the list except unknown has loads", () => {
+  for (const d of DIVISION) {
+    if (d === "unknown") continue;
+    assert.ok(STANDARDS[d], `${d} has standards`);
+  }
+});
+
+test("stations are introduced in order of soreness cost, not all at once", () => {
+  const at = (p: Parameters<typeof strengthFor>[1]) => strengthFor(HER, p) ?? "";
+  // base: technique and base strength, plus the sled at a reduced load
+  assert.match(at("base"), /Back squat/);
+  assert.match(at("base"), /Sled push/);
+  assert.doesNotMatch(at("base"), /Wall ball|Farmers|Sandbag/,
+    "front-loading every station leaves week 1 too sore to run");
+  // build: farmers and wall ball technique
+  assert.match(at("build"), /Wall ball technique/);
+  assert.match(at("build"), /Farmers carry/);
+  assert.doesNotMatch(at("build"), /Sandbag/);
+  // specific: sandbag lunges last, the highest soreness cost of any station
+  assert.match(at("specific"), /Sandbag lunges/);
 });

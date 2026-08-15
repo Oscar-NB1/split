@@ -198,15 +198,18 @@ export function strengthFor(x: Intake, phase: PhaseName): string | null {
         : `Sled push ${Math.round(share * 100)}% of race weight, 12.5 m x 4`);
     }
   }
-  if (has("wall_ball")) {
+  // Base is technique and base strength only — squat, hinge, press, row, sled.
+  // Farmers and wall ball come in from the build phase, and sandbag last of all.
+  // Front-loading every station is how week 1 leaves someone too sore to run.
+  if (has("wall_ball") && phase !== "base") {
     const w = std ? `${std.wall_ball_kg} kg ` : "";
-    lines.push(phase === "base" ? `Wall ball technique ${w}3x10` : `Wall balls ${w}4x15`);
+    lines.push(phase === "build" ? `Wall ball technique ${w}3x10` : `Wall balls ${w}4x15`);
   }
   // last, on purpose: the highest soreness cost of any station
   if (has("sandbag") && phase === "specific") {
     lines.push(std ? `Sandbag lunges ${std.lunge_kg} kg, 3x20 m` : "Sandbag lunges 3x20 m");
   }
-  if (has("kettlebell")) {
+  if (has("kettlebell") && phase !== "base") {
     lines.push(std ? `Farmers carry 2 x ${std.farmers_kg} kg, 2x50 m` : "Farmers carry 2x50 m");
   }
   return lines.join("\n");
@@ -455,16 +458,7 @@ export function flagsFor(x: Intake, weeks: number): string[] {
     out.push("No pace anchor. The first weeks run on effort and heart rate alone; the baseline test sets real numbers.");
   }
   if (needsStandards(x)) {
-    out.push(
-      x.division === "mixed_doubles"
-        ? "Mixed doubles weights are not in the standards table, and a pair's loads are not derivable from the singles divisions. Sled and wall ball are prescribed as a share of race weight until they are supplied."
-        : "Your division's standards are not loaded, so sled and wall ball are prescribed as a share of race weight. Confirm them against the rulebook before week 1.",
-    );
-  } else {
-    const std = standardsFor(x);
-    if (std && std.wall_ball_target_m == null && x.equipment.includes("wall_ball")) {
-      out.push("Wall ball weight is set from your division; the target height is not in the standards table, so check it before the first session.");
-    }
+    out.push("No division chosen, so sled and wall ball are prescribed as a share of race weight rather than in kilos. Pick your division and the sessions carry real loads.");
   }
   const locked = x.commitments.filter((c) => c.day != null).length;
   if (locked > 0) {
