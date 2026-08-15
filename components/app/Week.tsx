@@ -4,16 +4,52 @@ import { addDays, dow, fmt, today } from "@/lib/dates";
 import {
   BLOCK_START, GOAL, WEEKS, kindColour, kindLabel, weekDates, weekIntent, weekOf,
 } from "@/lib/coach";
+import { prescribedPace } from "@/lib/signals";
 import type { Session, User, WeekData } from "./Shell";
 
-const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const TEAL = "#0A8FB0", LIME = "#C6FF5B", NAVY = "#12314D";
+const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
+const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
 
-const statusTag = (s: Session) =>
-  s.status === "done" ? ["done", "Done"]
-  : s.status === "adjusted" ? ["adj", "Adjusted"]
-  : s.status === "skipped" ? ["skip", "Skipped"]
-  : s.status === "unplanned" ? ["done", "Logged"]
-  : ["plan", "Planned"];
+/** PM is the loud one: a second session in a day is worth noticing. */
+const slotChip = (slot: string | null | undefined): React.CSSProperties => ({
+  fontSize: 9, fontWeight: 800, letterSpacing: ".08em", padding: "3px 7px",
+  borderRadius: "var(--r-pill)",
+  background: slot === "PM" ? NAVY : OFF,
+  color: slot === "PM" ? LIME : INK55,
+});
+
+const pc = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")}`;
+
+/**
+ * The three numbers under a session card.
+ *
+ * Planned and completed sessions say different things: before, the useful figures
+ * are the prescription and the alarm; after, they are what actually happened.
+ */
+function metrics(s: Session): [string, string, string] {
+  const done = ["done", "adjusted", "unplanned"].includes(s.status);
+  const pace = prescribedPace(s.title);
+  if (s.kind === "strength") {
+    return [`${s.planned_minutes ?? 40} min`, done ? "logged" : "3 lifts", ""];
+  }
+  const km = s.distance_m ? Number(s.distance_m) / 1000 : null;
+  if (!s.kind.startsWith("run")) {
+    return [
+      s.actual_minutes ? `${s.actual_minutes} min` : `${s.planned_minutes ?? "—"} min`,
+      done && s.avg_hr ? `avg ${Math.round(Number(s.avg_hr))} bpm` : "",
+      "",
+    ];
+  }
+  return [
+    km ? `${km.toFixed(2)} km` : `${s.planned_minutes ?? "—"} min`,
+    done && km && s.actual_minutes
+      ? `${pc((s.actual_minutes * 60) / km)} /km`
+      : pace ? `${pc(pace)} /km prescribed` : "",
+    done && s.avg_hr ? `HR ${Math.round(Number(s.avg_hr))}` : pace ? `alert ${pc(pace - 3)}` : "",
+  ];
+}
 
 export default function Week({
   data, me, other, monday, setMonday, openActivity, openSession, reload,
@@ -25,188 +61,231 @@ export default function Week({
   const [day, setDay] = useState(() => dow(today()));
   const [who, setWho] = useState<"me" | "them">("me");
 
-  // Changing week kept the same weekday, so stepping into next week from a
-  // Saturday landed on next Saturday — past the two sessions on its Monday.
-  // Today when today is in view, otherwise the start of the week.
   useEffect(() => {
     const t = today();
-    const inWeek = t >= monday && t < addDays(monday, 7);
-    setDay(inWeek ? dow(t) : 0);
+    setDay(t >= monday && t < addDays(monday, 7) ? dow(t) : 0);
   }, [monday]);
 
-  if (!data) return <div className="pad"><p className="empty">Loading…</p></div>;
+  if (!data) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
   const uid = who === "me" ? me.id : other?.id;
   const all = [...data.sessions, ...data.unplanned].filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
   const week = weekOf(monday);
-  // Outside the block there is no phase to name. Borrowing week 1's intent put
-  // "Rebuild · weeks 1-3" above a headline that said "Off block".
   const intent = week ? weekIntent(week.n) : null;
-  const startsSoon = !week && monday < BLOCK_START;
+  const beforeBlock = !week && monday < BLOCK_START;
 
-  const dayDate = dates[day];
-  const daySessions = all.filter((s) => s.planned_date === dayDate);
+  const dayList = all
+    .filter((s) => s.planned_date === dates[day])
+    .sort((a, b) => Number(a.slot === "PM") - Number(b.slot === "PM"));
 
-  // Week totals are counted off what actually happened, not what was planned —
-  // a plan you did not do is not volume.
-  const doneKm = all
-    .filter((s) => s.distance_m)
+  const kmDone = all.filter((s) => ["done", "adjusted", "unplanned"].includes(s.status))
     .reduce((n, s) => n + (Number(s.distance_m) || 0), 0) / 1000;
-  const doneMin = all.reduce((n, s) => n + (s.actual_minutes ?? 0), 0);
-  const plannedCount = all.filter((s) => s.status !== "unplanned").length;
-  const doneCount = all.filter((s) => ["done", "adjusted", "unplanned"].includes(s.status)).length;
+  const doneCount = all.filter((s) => s.status === "done").length;
 
   return (
-    <div className="pad">
+    <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <div className="eyebrow">
-          {intent ? intent.phase : startsSoon ? "Before the block" : "Off block"}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+          textTransform: "uppercase", color: "var(--teal)" }}>
+          {intent ? intent.phase : beforeBlock ? "Before the block" : "Off block"}
         </div>
-        <h1 className="h1">
+        <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
+          lineHeight: 1.1, letterSpacing: "-.02em" }}>
           {week ? `${week.km} km, and two hard days.`
-            : startsSoon ? "The block starts Monday." : "Off block."}
-        </h1>
-        <p className="muted">
-          {week?.note
-            || (startsSoon
-              ? `Fifteen weeks to ${GOAL}. Week 1 is ${WEEKS[0].km} km — the rebuild is bought with consistency, not intensity.`
-              : "Tuesday and Saturday are the week. Everything else supports them.")}
-        </p>
+            : beforeBlock ? "The block starts Monday." : "Off block."}
+        </div>
+        <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
+          {week?.note || (beforeBlock
+            ? `Fifteen weeks to ${GOAL}. Week 1 is ${WEEKS[0].km} km — bought with consistency, not intensity.`
+            : "Tuesday and Saturday are the week. Everything else supports them.")}
+        </div>
       </div>
 
       {other && (
-        <div className="pillrow" role="tablist" aria-label="Whose week">
-          <button role="tab" aria-pressed={who === "me"} onClick={() => setWho("me")}>Mine</button>
-          <button role="tab" aria-pressed={who === "them"} onClick={() => setWho("them")}>
-            {other.display_name}
-          </button>
-        </div>
-      )}
-
-      {/* ---------------------------------------------- what the week is for */}
-      {intent && (
-      <section className="card intent">
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="dot" /><span className="eyebrow">{intent.phase}</span>
-        </div>
-        <p style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-70)" }}>{intent.purpose}</p>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 7, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-          <span className="caps">Protect these</span>
-          {intent.protect.map((p) => (
-            <div key={p} className="protect">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0A8FB0"
-                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
-              </svg>
-              <span>{p}</span>
-            </div>
+        <div style={{ display: "flex", gap: 3, background: OFF,
+          borderRadius: "var(--r-pill)", padding: 3 }}>
+          {(["me", "them"] as const).map((w) => (
+            <button key={w} onClick={() => setWho(w)} style={{
+              flex: 1, padding: "7px 16px", borderRadius: "var(--r-pill)",
+              fontSize: 12, fontWeight: 700,
+              background: who === w ? NAVY : "transparent",
+              color: who === w ? "#fff" : INK55,
+            }}>{w === "me" ? "My week" : other.display_name}</button>
           ))}
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-          <div className="kv"><b>Drop first</b><span>{intent.sacrifice}</span></div>
-          <div className="kv"><b>Watch for</b><span>{intent.watch}</span></div>
-        </div>
-      </section>
       )}
 
-      {/* ------------------------------------------------------- the 7 days */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <button className="btn-ghost" style={{ width: 46, padding: "10px 0" }}
-          onClick={() => setMonday(addDays(monday, -7))} aria-label="Previous week">←</button>
-        <div className="strip" style={{ flex: 1 }}>
+      {/* ------------------------------------------- what the week is for */}
+      {intent && (
+        <div style={{ background: PAPER, border: `1px solid ${LINE}`,
+          borderRadius: "var(--r-card)", padding: 16,
+          display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--teal)" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+              textTransform: "uppercase", color: "var(--teal)" }}>{intent.phase}</span>
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-70)" }}>{intent.purpose}</div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 7,
+            borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
+              textTransform: "uppercase", color: INK55 }}>Protect these</span>
+            {intent.protect.map((p) => (
+              <div key={p} style={{ display: "flex", alignItems: "center", gap: 9,
+                background: "var(--teal-tint)", border: "1px solid var(--teal-tint2)",
+                borderRadius: 10, padding: "10px 12px" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0A8FB0"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{p}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8,
+            borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
+            {([["Drop first", intent.sacrifice], ["Watch for", intent.watch]] as const).map(([k, v]) => (
+              <div key={k} style={{ display: "grid", gridTemplateColumns: "78px 1fr",
+                gap: 10, alignItems: "start" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
+                  textTransform: "uppercase", whiteSpace: "nowrap", color: INK40 }}>{k}</span>
+                <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-70)" }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* --------------------------------------------------- the seven days */}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <button onClick={() => setMonday(addDays(monday, -7))} aria-label="Previous week"
+          style={arrow}>←</button>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4,
+          background: PAPER, border: `1px solid ${LINE}`, borderRadius: "var(--r-card)", padding: 8 }}>
           {dates.map((d, i) => {
-            const items = all.filter((s) => s.planned_date === d);
+            const has = all.filter((s) => s.planned_date === d);
+            const active = i === day;
             return (
-              <button key={d} onClick={() => setDay(i)} aria-pressed={day === i}
-                className={d === today() ? "today" : undefined}>
-                <span className="dw">{DOW[i]}</span>
-                <span className="dn">{fmt(d, { day: "numeric" })}</span>
-                <span className="dots">
-                  {items.slice(0, 3).map((s) => (
-                    <i key={s.id} style={{
-                      background: kindColour(s.kind),
-                      opacity: ["done", "adjusted", "unplanned"].includes(s.status) ? 1 : .35,
-                    }} />
+              <button key={d} onClick={() => setDay(i)} style={{
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                padding: "8px 0 7px", borderRadius: 12,
+                background: active ? NAVY : "transparent", color: active ? "#fff" : "var(--ink)",
+              }}>
+                <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".06em",
+                  color: active ? "rgba(255,255,255,.7)" : d === today() ? "var(--teal)" : INK40 }}>
+                  {DAYS[i]}
+                </span>
+                <span style={{ fontSize: 15, fontWeight: 700 }}>{fmt(d, { day: "numeric" })}</span>
+                <span style={{ display: "flex", gap: 2, height: 5, alignItems: "center" }}>
+                  {has.slice(0, 3).map((s) => (
+                    <span key={s.id} style={{ width: 5, height: 5, borderRadius: "50%",
+                      background: active ? LIME : kindColour(s.kind) }} />
                   ))}
                 </span>
               </button>
             );
           })}
         </div>
-        <button className="btn-ghost" style={{ width: 46, padding: "10px 0" }}
-          onClick={() => setMonday(addDays(monday, 7))} aria-label="Next week">→</button>
+        <button onClick={() => setMonday(addDays(monday, 7))} aria-label="Next week"
+          style={arrow}>→</button>
       </div>
 
-      <div className="stat3">
-        <div className="kpi">
-          <div className="l">Distance</div>
-          <div className="v">{doneKm ? doneKm.toFixed(1) : "—"}</div>
-          <div className="s">of {week?.km ?? "—"} km target</div>
-        </div>
-        <div className="kpi">
-          <div className="l">Time</div>
-          <div className="v">{doneMin ? `${Math.floor(doneMin / 60)}h ${doneMin % 60}m` : "—"}</div>
-          <div className="s">logged this week</div>
-        </div>
-        <div className="kpi">
-          <div className="l">Sessions</div>
-          <div className="v">{doneCount}<span style={{ fontSize: 13, color: "var(--ink-40)" }}>/{plannedCount || doneCount}</span></div>
-          <div className="s">{data.streaks[uid ?? ""] ?? 0} week streak</div>
-        </div>
+      {/* --------------------------------------------------------- the stats */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {[
+          { label: "Volume", value: `${kmDone.toFixed(kmDone < 10 ? 1 : 0)}/${week?.km ?? "—"}`, sub: "km run", hot: false },
+          { label: "Sessions", value: `${doneCount}/${all.length}`, sub: "completed", hot: false },
+          { label: "Reps off", value: String(data.reps_off ?? 0), sub: "> 5 s/km out",
+            hot: (data.reps_off ?? 0) > 2 },
+        ].map((k) => (
+          <div key={k.label} style={{ background: PAPER, border: `1px solid ${LINE}`,
+            borderRadius: "var(--r-card)", padding: 12 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
+              textTransform: "uppercase", color: INK55 }}>{k.label}</div>
+            <div style={{ fontFamily: "var(--display)", fontSize: 21, fontWeight: 700,
+              marginTop: 4, lineHeight: 1, color: k.hot ? "#0E2740" : "var(--ink)" }}>{k.value}</div>
+            <div style={{ fontSize: 10, color: INK55, marginTop: 3 }}>{k.sub}</div>
+          </div>
+        ))}
       </div>
 
-      {/* ------------------------------------------------------ that day */}
+      {/* ----------------------------------------------------------- the day */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div className="rowsplit">
-          <span className="caps">{fmt(dayDate, { weekday: "long", day: "numeric", month: "long" })}</span>
-          <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
-            {daySessions.length === 0 ? "Nothing planned"
-              : `${daySessions.length} session${daySessions.length > 1 ? "s" : ""}`}
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+            textTransform: "uppercase", color: INK55 }}>
+            {fmt(dates[day], { weekday: "long", day: "numeric", month: "long" })}
+          </div>
+          <span style={{ fontSize: 11, color: INK55 }}>
+            {dayList.length === 0 ? "Rest day" : `${dayList.length} session${dayList.length > 1 ? "s" : ""}`}
           </span>
         </div>
 
-        {daySessions.length === 0 && (
-          <p className="empty">Rest day, or nothing written yet.</p>
-        )}
+        {dayList.length === 0 && <p className="empty">Nothing written for this day.</p>}
 
-        {daySessions.map((s) => {
-          const [cls, label] = statusTag(s);
-          const km = s.distance_m ? Number(s.distance_m) / 1000 : null;
+        {dayList.map((s) => {
+          const [m1, m2, m3] = metrics(s);
+          const isDone = s.status === "done" || s.status === "unplanned";
           return (
-            <button key={s.id} className="sess" onClick={() => openSession(s)}>
-              <span className="edge" style={{ background: kindColour(s.kind) }} />
-              <span className="body">
-                <span className="rowsplit">
+            <button key={s.id} onClick={() => openSession(s)} style={{
+              textAlign: "left", width: "100%", padding: 0, background: PAPER,
+              border: `1px solid ${LINE}`, borderRadius: "var(--r-card)", overflow: "hidden",
+              display: "flex", alignItems: "stretch", color: "var(--ink)",
+            }}>
+              <span style={{ width: 4, flex: "none", alignSelf: "stretch",
+                background: kindColour(s.kind) }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 7,
+                padding: "14px 14px 13px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center",
+                  justifyContent: "space-between", gap: 8 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    {s.slot && <span className="slot">{s.slot}</span>}
-                    <span className="kindlab">{kindLabel(s.kind)}</span>
-                    {s.significance && (
-                      <span className="tag" style={{
-                        background: "var(--navy)", color: "#fff", fontSize: 9,
-                        letterSpacing: ".08em", textTransform: "uppercase", padding: "3px 8px",
-                      }}>{s.significance}</span>
-                    )}
+                    {s.slot && <span style={slotChip(s.slot)}>{s.slot}</span>}
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
+                      textTransform: "uppercase", color: INK55 }}>{kindLabel(s.kind)}</span>
                   </span>
-                  <span className={`tag ${cls}`}>{label}</span>
-                </span>
-                <span className="title">{s.title}</span>
-                {s.target && <span className="detail">{s.target}</span>}
-                <span className="metrics">
-                  <span>{km ? `${km.toFixed(2)} km` : s.planned_minutes ? `${s.planned_minutes} min` : "—"}</span>
-                  <span>{s.actual_minutes ? `${s.actual_minutes} min` : "not yet"}</span>
-                  <span>{s.avg_hr ? `${Math.round(Number(s.avg_hr))} bpm` : ""}</span>
-                </span>
-                {s.coach_note && (
                   <span style={{
-                    fontSize: 11, fontWeight: 600, color: "var(--teal)",
-                    background: "var(--teal-tint)", borderRadius: "var(--r-pill)",
-                    padding: "4px 10px", alignSelf: "flex-start",
-                  }}>{s.coach_note}</span>
+                    fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
+                    textTransform: "uppercase", padding: "4px 9px", borderRadius: "var(--r-pill)",
+                    background: isDone ? "var(--teal-tint2)" : OFF,
+                    color: isDone ? TEAL : INK55,
+                  }}>
+                    {s.status === "done" ? "Completed" : s.status === "adjusted" ? "Adjusted"
+                      : s.status === "skipped" ? "Skipped"
+                      : s.status === "unplanned" ? "Off plan" : "Planned"}
+                  </span>
+                </div>
+                <div style={{ fontFamily: "var(--display)", fontSize: 18, fontWeight: 700,
+                  lineHeight: 1.2, letterSpacing: "-.01em" }}>{s.title}</div>
+                {s.target && (
+                  <div style={{ fontSize: 12, color: INK55, lineHeight: 1.45 }}>
+                    {s.target.split("\n")[0].replace(/^[-•*]\s*/, "")}
+                  </div>
                 )}
-              </span>
+                <div style={{ display: "flex", gap: 12, fontSize: 12, fontWeight: 600 }}>
+                  <span>{m1}</span>
+                  <span style={{ color: INK55, fontWeight: 500 }}>{m2}</span>
+                  <span style={{ color: INK55, fontWeight: 500 }}>{m3}</span>
+                </div>
+                {s.significance && (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: NAVY,
+                    background: "var(--teal-tint2)", borderRadius: "var(--r-pill)",
+                    padding: "4px 10px", alignSelf: "flex-start", textTransform: "capitalize" }}>
+                    {s.significance}
+                  </span>
+                )}
+                {/hyrox|race|sim/i.test(s.title) && s.significance && (
+                  <span style={{ display: "flex", alignItems: "center", gap: 6,
+                    alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: INK55 }}>
+                    <span style={{ width: 16, height: 16, borderRadius: "50%", background: NAVY,
+                      color: LIME, fontSize: 8, fontWeight: 800, display: "flex",
+                      alignItems: "center", justifyContent: "center" }}>2</span>
+                    With Olivier
+                  </span>
+                )}
+              </div>
             </button>
           );
         })}
@@ -214,3 +293,8 @@ export default function Week({
     </div>
   );
 }
+
+const arrow: React.CSSProperties = {
+  width: 40, height: 40, flex: "none", borderRadius: "var(--r-pill)",
+  border: `1px solid ${LINE}`, background: PAPER, color: INK55, fontSize: 15,
+};

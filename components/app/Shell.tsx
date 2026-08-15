@@ -29,6 +29,7 @@ export type Session = {
 export type WeekData = {
   week_start: string; users: User[]; sessions: Session[]; unplanned: Session[];
   streaks: Record<string, number>;
+  reps_off?: number;
   challenge: { metric: string; label: string; scores: { user_id: string; score: number }[] };
 };
 

@@ -5,6 +5,8 @@ import { challengeScores, metricForWeek, METRICS, streakFor, weekStart } from "@
 import { route } from "@/lib/http";
 import { addDays, mondayOf, today } from "@/lib/dates";
 import { isDateString } from "@/lib/plan";
+import { classifySegments, type LapRow } from "@/lib/analysis";
+import { prescribedPace } from "@/lib/signals";
 
 /** Everything one week's screen needs, in a single round trip. */
 export const GET = route(async (req: NextRequest) => {
@@ -48,6 +50,37 @@ export const GET = route(async (req: NextRequest) => {
       and not exists (select 1 from planned_sessions p where p.activity_id = a.id)
   `;
 
+  /**
+   * How many work reps this week landed more than 5 s/km off prescription.
+   *
+   * The plan is explicit that this — not average pace — is the number that
+   * matters: "how many reps were more than 5 s/km off? That number is the
+   * metric." Counted off the work laps of every completed session that states a
+   * pace, so a session with no laps contributes nothing rather than a zero.
+   */
+  let repsOff = 0;
+  for (const s of sessions) {
+    const pace = prescribedPace(String(s.title ?? ""));
+    if (!pace || !s.activity_id || !["done", "adjusted"].includes(String(s.status))) continue;
+    const laps = await sql<LapRow[]>`
+      select lap_index, name, distance_m, moving_seconds, elapsed_seconds,
+             avg_speed_ms, max_speed_ms, avg_hr, max_hr
+        from activity_laps where activity_id = ${s.activity_id} order by lap_index
+    `;
+    if (laps.length === 0) continue;
+    const n = (v: unknown) => (v == null ? null : Number(v));
+    const { segments } = classifySegments(laps.map((l) => ({
+      ...l,
+      distance_m: n(l.distance_m), moving_seconds: n(l.moving_seconds),
+      elapsed_seconds: n(l.elapsed_seconds), avg_speed_ms: n(l.avg_speed_ms),
+      max_speed_ms: n(l.max_speed_ms), avg_hr: n(l.avg_hr), max_hr: n(l.max_hr),
+    })));
+    for (const seg of segments) {
+      if (seg.role !== "work" || !seg.avg_speed_ms) continue;
+      if (Math.abs(1000 / Number(seg.avg_speed_ms) - pace) > 5) repsOff++;
+    }
+  }
+
   const metric = metricForWeek(ws);
   const scores = await challengeScores(ws, metric);
   const streaks = Object.fromEntries(
@@ -60,6 +93,7 @@ export const GET = route(async (req: NextRequest) => {
     sessions,
     unplanned,
     streaks,
+    reps_off: repsOff,
     challenge: { metric, label: METRICS[metric], scores },
   });
 });
