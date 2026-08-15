@@ -137,31 +137,35 @@ Open the URL in Safari or Chrome → Share → **Add to Home Screen**. That's th
 
 ## Signing in
 
-Email and password works with no setup. Social sign-in needs credentials, and
-each provider only appears once its own are present — `GET /api/auth/signup`
-returns the list, so a screen can offer what actually works rather than
-advertising a button that fails.
+Google or Strava. There are no passwords: this app never stores a credential,
+never needs a reset flow it has no email to send, and cannot leak a password it
+does not have. Recovery is the provider's job.
+
+`GET /api/auth/identities` returns what an account signs in with and what it
+could add; `DELETE /api/auth/identities?provider=…` removes one, never the last.
 
 | Provider | Environment |
 |---|---|
 | Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
-| Apple | `APPLE_CLIENT_ID` (the Services ID), `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the .p8, newlines escaped) |
 | Strava | already set — the same app that reads activities |
+| Apple *(optional)* | `APPLE_CLIENT_ID` (Services ID), `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the .p8, newlines escaped) |
 
 Register `${APP_URL}/api/auth/oauth/<provider>/callback` with each. Apple posts
-that callback instead of redirecting it, which the route handles.
+that callback rather than redirecting it, which the route handles.
 
 Signing in with Strava also connects Strava: the tokens arrive with the sign-in,
 so asking again on the next screen would be asking twice for permission already
-granted. Strava carries no email, so an account created that way has none until
-one is added.
+granted. Strava carries no email, so an account created that way has none.
 
-Existing accounts made by the access code have no password. Give them one with:
+### The two accounts that predate this
 
-```bash
-npx tsx scripts/set-password.ts you@example.com
-```
+They were made by an access code and hold a training history, and neither
+provider can reach them: one email is an iCloud address Google will never match,
+and a Strava sign-in has no email to match on, so it would make a second account
+rather than find the first.
 
-That is a command rather than a screen on purpose: it only writes where there is
-no password, which is safe to run twice — and, exposed over HTTP, would hand any
-passwordless account to the first anonymous caller.
+The access code still works for them, and stops working the moment it is not
+needed — once an account has a sign-in of its own, the code no longer opens it.
+So the path is: sign in with the code once, then add Google or Strava from the
+profile while signed in, which links it to the existing account rather than
+creating a new one. After that the code is dead for that account, on its own.

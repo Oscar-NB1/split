@@ -54,6 +54,8 @@ export type Profile = {
   emailVerified: boolean;
   name: string | null;
   avatar: string | null;
+  /** Kilograms, where the provider knows it. Strava does; Google does not. */
+  weightKg: number | null;
   /** Strava only: signing in with Strava also connects it. */
   strava?: { access_token: string; refresh_token: string; expires_at: number; athleteId: string };
 };
@@ -186,6 +188,11 @@ export async function exchange(p: Provider, code: string): Promise<Profile> {
       emailVerified: false,
       name: [a.firstname, a.lastname].filter(Boolean).join(" ") || null,
       avatar: a.profile ?? null,
+      // Strava's athlete object carries a weight, which the app otherwise has to
+      // ask for. Its `sex` field is deliberately ignored: division is asked, and
+      // nothing here derives a training load from someone's sex.
+      weightKg: typeof a.weight === "number" && a.weight > 20 && a.weight < 300
+        ? a.weight : null,
       strava: {
         access_token: json.access_token, refresh_token: json.refresh_token,
         expires_at: json.expires_at, athleteId: String(a.id),
@@ -201,6 +208,7 @@ export async function exchange(p: Provider, code: string): Promise<Profile> {
     emailVerified: id.email_verified === true || id.email_verified === "true",
     name: id.name ?? null,
     avatar: id.picture ?? null,
+    weightKg: null,
   };
 }
 
@@ -250,13 +258,35 @@ export async function resolveIdentity(profile: Profile): Promise<Resolution> {
   }
 
   const [created] = await sql<{ id: string }[]>`
-    insert into users (email, display_name, avatar_url, email_verified)
+    insert into users (email, display_name, avatar_url, email_verified, weight_kg)
     values (${profile.email}, ${profile.name ?? "Athlete"}, ${profile.avatar},
-            ${profile.emailVerified})
+            ${profile.emailVerified}, ${profile.weightKg})
     returning id
   `;
   await link(profile, created.id);
   return { kind: "created", userId: created.id };
+}
+
+/**
+ * Fill in what the account is missing, and overwrite nothing.
+ *
+ * A provider knows a name, a photo and — for Strava — a weight, which saves
+ * asking for any of it. But someone who has typed their own name or corrected
+ * their weight has said something the provider has not, so this only ever writes
+ * into a gap. `coalesce` in the other order would quietly undo an edit on every
+ * sign-in, which is the kind of bug nobody reports and everybody notices.
+ */
+export async function fillProfileGaps(userId: string, profile: Profile) {
+  await sql`
+    update users set
+      display_name = case when display_name in ('', 'Athlete')
+        then coalesce(${profile.name}, display_name) else display_name end,
+      avatar_url = coalesce(avatar_url, ${profile.avatar}),
+      weight_kg  = coalesce(weight_kg, ${profile.weightKg}),
+      email      = coalesce(email, ${profile.email}),
+      email_verified = email_verified or (${profile.emailVerified} and email is null)
+    where id = ${userId}
+  `;
 }
 
 export async function link(profile: Profile, userId: string) {

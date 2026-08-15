@@ -3,7 +3,7 @@ import { sql } from "@/lib/db";
 import { issueSession } from "@/lib/session";
 import { saveTokens } from "@/lib/strava";
 import {
-  PROVIDERS, type Provider, exchange, link, readState, resolveIdentity,
+  PROVIDERS, type Provider, exchange, fillProfileGaps, link, readState, resolveIdentity,
 } from "@/lib/oauth";
 
 /**
@@ -40,6 +40,7 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
       if (outcome.kind === "conflict") return back("/login", "email-in-use");
 
       await link(profile, outcome.userId);
+      await fillProfileGaps(outcome.userId, profile);
       await saveTokens(outcome.userId, {
         access_token: profile.strava.access_token,
         refresh_token: profile.strava.refresh_token,
@@ -59,11 +60,13 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
       `;
       if (taken && taken.user_id !== linkTo) return back("/", "already-linked");
       await link(profile, linkTo);
+      await fillProfileGaps(linkTo, profile);
       return back("/", "linked");
     }
 
     const outcome = await resolveIdentity(profile);
     if (outcome.kind === "conflict") return back("/login", "email-in-use");
+    await fillProfileGaps(outcome.userId, profile);
     await issueSession(outcome.userId);
     return back("/", outcome.kind === "created" ? "created" : "signed-in");
   } catch (e) {
