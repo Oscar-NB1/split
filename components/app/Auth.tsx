@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Mark from "./Mark";
 
 const LIME = "var(--lime)", NAVY = "var(--navy)", TEAL = "var(--teal)";
 const INK = "var(--ink)", INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
@@ -165,27 +166,4 @@ export default function Auth() {
       </div>
     </div>
   );
-}
-
-/**
- * The provider's own mark.
- *
- * Falls back to a lettered tile when the asset is missing rather than to a
- * hand-drawn shape: an approximate logo is worse than none on a sign-in button,
- * where the exact mark is the recognition cue.
- */
-function Mark({ id, label }: { id: string; label: string }) {
-  const [failed, setFailed] = useState(false);
-  const box: React.CSSProperties = {
-    width: 20, height: 20, flex: "none", borderRadius: 5, objectFit: "contain",
-  };
-  if (failed) {
-    return (
-      <span aria-hidden style={{ ...box, background: OFF, color: INK40, fontSize: 10,
-        fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {label.slice(0, 1)}
-      </span>
-    );
-  }
-  return <img src={`/marks/${id}.png`} alt="" style={box} onError={() => setFailed(true)} />;
 }

@@ -1,11 +1,12 @@
 # Provider marks
 
-Drop the official assets here:
+`strava.png` and `google.png` are the official assets, supplied by the athlete
+who owns the app registrations.
 
-- `strava.png` — in the design project at `assets/strava-mark.png`
-- `google.png` — from Google's branding guidelines, if Google sign-in is enabled
+Named after the provider id, which is what `components/app/Mark.tsx` looks up.
+When a file is missing the button falls back to a lettered tile rather than a
+hand-drawn shape: an approximate logo is worse than none where the exact mark is
+the recognition cue.
 
-Named after the provider id, which is what `components/app/Auth.tsx` looks up.
-Until a file is here the button shows a lettered tile instead. That is
-deliberate: an approximate logo is worse than none on a sign-in button, where
-the exact mark is the recognition cue, so nothing here is drawn by hand.
+One component renders them everywhere they appear — the sign-in buttons, the
+profile row and the Strava screen — so a replacement file lands in all three.

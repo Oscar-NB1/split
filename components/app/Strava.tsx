@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Mark from "./Mark";
 
 const TEAL = "var(--teal)", LIME = "var(--lime)";
 const INK = "var(--ink)", INK40 = "var(--ink-40)", INK55 = "var(--ink-55)", INK70 = "var(--ink-70)";
@@ -89,15 +90,7 @@ export default function Strava({ onDone }: { onDone?: () => void }) {
   return (
     <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span style={{ width: 60, height: 60, flex: "none", borderRadius: 14,
-          background: OFF, display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 10, fontWeight: 800, letterSpacing: ".06em", color: INK40 }}
-          aria-hidden>
-          {/* A placeholder for the official mark, and hidden from assistive tech:
-              it is decoration, and read aloud it turns the row's name into
-              "STRAVA Strava Connected". */}
-          STRAVA
-        </span>
+        <Mark id="strava" label="Strava" size={60} radius={14} />
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700,
             lineHeight: 1.1 }}>Strava</span>

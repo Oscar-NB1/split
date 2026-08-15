@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { fmt } from "@/lib/dates";
 import type { Zone } from "@/lib/zones";
+import Mark from "./Mark";
 import Notifications from "./Notifications";
 import type { User } from "./Shell";
 
@@ -79,10 +80,7 @@ export default function Profile({
           <button onClick={openConnect} style={{ display: "flex", alignItems: "center",
             gap: 12, width: "100%", padding: "13px 0", background: "none",
             color: "var(--ink)", textAlign: "left" }}>
-            <span style={{ width: 34, height: 34, flex: "none", borderRadius: 9, background: OFF,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 8, fontWeight: 800, letterSpacing: ".04em", color: INK40 }}
-              aria-hidden>STRAVA</span>
+            <Mark id="strava" label="Strava" size={34} radius={9} />
             <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
               <span style={{ fontSize: 13, fontWeight: 600 }}>Strava</span>
               <span style={{ fontSize: 11, fontWeight: 700,
