@@ -111,6 +111,13 @@ create table if not exists plan_templates (
   created_at  timestamptz not null default now()
 );
 
+-- One plan of a given name per athlete. seed-plan.ts always claimed to upsert on
+-- this pair, but nothing enforced it, so running the script twice wrote a second
+-- active template and every session in the block was materialised twice — 20
+-- duplicated sessions on the calendar with no way to tell which copy was real.
+create unique index if not exists plan_templates_athlete_name
+  on plan_templates (athlete_id, name);
+
 -- ----------------------------------------------------------- the competition
 create table if not exists challenges (
   week_start  date primary key,

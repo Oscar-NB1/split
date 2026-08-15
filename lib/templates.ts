@@ -178,7 +178,57 @@ export async function materialise(templateId: string) {
       created += rows.length;
     }
   }
+
+  created += await materialiseRaces(tpl, planStart, rules, now);
   return { created };
+}
+
+/**
+ * Races, written for the whole plan rather than the horizon.
+ *
+ * The rolling horizon is right for training: a Tuesday interval session eight
+ * weeks out is a derived intention, and materialising it early only freezes a
+ * guess. A race is the opposite — a fixed, paid-for, travelled-to date that the
+ * whole block is aimed at, and it belongs on the calendar from day one.
+ *
+ * It is also what the countdown depends on. `raceCountdown` reads race rows and
+ * announces at 28, 14, 7 and 1 days out; with a three-week horizon the row did
+ * not exist until roughly 21 days before, so the four-weeks-out notification
+ * could never have fired — and nothing would have reported that it hadn't.
+ *
+ * No adaptation factor is applied. A deload cannot shorten a race.
+ */
+async function materialiseRaces(
+  tpl: { id: string; athlete_id: string; author_id: string; weeks: TemplateDay[][] },
+  planStart: string,
+  rules: Required<Rules>,
+  now: string,
+) {
+  let created = 0;
+  for (let planWeek = 0; planWeek < tpl.weeks.length; planWeek++) {
+    for (const d of tpl.weeks[planWeek]) {
+      if (d.significance !== "race") continue;
+      const date = addDays(addDays(planStart, planWeek * 7), d.day);
+      if (date < now) continue;
+      const ref = `${tpl.id}:${date}:${d.kind}:${d.slot ?? "AM"}`;
+      const rows = await sql<{ id: string }[]>`
+        insert into planned_sessions
+          (user_id, author_id, planned_date, title, kind, planned_minutes, target,
+           coach_note, significance, slot, source, source_ref)
+        select ${tpl.athlete_id}, ${tpl.author_id}, ${date}, ${d.title}, ${d.kind},
+               ${minutesFor(d, planWeek, 1, rules)}, ${d.target ?? null},
+               ${d.coach_note ?? null}, ${d.significance}, ${d.slot ?? null},
+               'template', ${ref}
+        where not exists (
+          select 1 from planned_sessions
+          where user_id = ${tpl.athlete_id} and source = 'template' and source_ref = ${ref}
+        )
+        returning id
+      `;
+      created += rows.length;
+    }
+  }
+  return created;
 }
 
 export async function materialiseAll() {

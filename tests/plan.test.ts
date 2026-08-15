@@ -6,6 +6,9 @@ import { effortPoints, kindFor, pickClosest, statusFor, type StravaActivity } fr
 import { eventBody, targetIsStructure, toWorkoutText } from "../lib/intervals";
 import { kindFromTitle, minutesFromText, parseIcs } from "../lib/runna";
 import { metricForWeek, weekStart } from "../lib/scoring";
+import { PLAN_START, WEEK_SHAPES } from "../lib/plans/hyrox-nov-2026";
+import { RACE_DATE } from "../lib/coach";
+import { addDays } from "../lib/dates";
 
 const RULES: Required<Rules> = {
   long_run_delta_min: 5,
@@ -302,4 +305,25 @@ test("the rotation keeps the phase the first implementation had", () => {
 test("any day of the week resolves to that week's metric", () => {
   // /api/week accepts a date; a Wednesday must not score as its own week
   assert.equal(metricForWeek("2026-08-12"), metricForWeek("2026-08-10"));
+});
+
+/**
+ * The plan's race day and the constant the UI counts down to must be the same
+ * date. They are two independent declarations — lib/plans/… builds the week
+ * shapes, lib/coach.ts holds RACE_DATE for the header and the Plan screen — and
+ * nothing but this test makes them agree.
+ */
+test("the plan's race day is the date the app counts down to", () => {
+  const races: { week: number; day: number }[] = [];
+  WEEK_SHAPES.forEach((week, i) =>
+    week.forEach((d) => { if (d.significance === "race") races.push({ week: i, day: d.day }); }));
+
+  assert.equal(races.length, 2, "a B-race and the race itself");
+  const main = races[races.length - 1];
+  assert.equal(addDays(PLAN_START, main.week * 7 + main.day), RACE_DATE);
+
+  // Both sit far beyond the three-week materialisation horizon, which is why
+  // races are written for the whole block rather than the horizon: the countdown
+  // reads race rows, and a row that does not exist yet cannot be announced.
+  for (const r of races) assert.ok(r.week > 3, `week ${r.week + 1} is outside the horizon`);
 });

@@ -38,10 +38,16 @@ async function main() {
     return;
   }
 
+  // A real upsert, which this only ever claimed to be. Without it a second run
+  // wrote a second active template, and materialise() — keyed on a source_ref
+  // that starts with the template id — duplicated every session in the block.
   const [tpl] = await sql<{ id: string }[]>`
     insert into plan_templates (athlete_id, author_id, name, start_date, weeks, rules, horizon, active)
     values (${me.id}, ${me.id}, ${PLAN_NAME}, ${PLAN_START},
             ${sql.json(WEEK_SHAPES as never)}, ${sql.json(RULES as never)}, 3, true)
+    on conflict (athlete_id, name) do update set
+      start_date = excluded.start_date, weeks = excluded.weeks,
+      rules = excluded.rules, horizon = excluded.horizon, active = true
     returning id
   `;
   console.log(`\ntemplate ${tpl.id} written`);
