@@ -4,6 +4,7 @@ import { syncRunna } from "@/lib/runna";
 import { materialiseAll } from "@/lib/templates";
 import { pushUpcoming } from "@/lib/intervals";
 import { detailGaps, fillDetail } from "@/lib/detail";
+import { discoverAll } from "@/lib/discover";
 import { scheduled } from "@/lib/rules";
 import { flush } from "@/lib/notify";
 
@@ -42,13 +43,20 @@ export async function GET(req: NextRequest) {
     .then((n) => (log.templates = n))
     .catch((e) => (log.templates = String(e)));
 
+  // Find activities the webhook never delivered. This has to run BEFORE the
+  // detail sweep below, so a run discovered here gets its splits on the same pass
+  // rather than waiting an hour. The detail sweep is not a substitute for it: that
+  // one looks for rows missing detail, and an activity never inserted has no row.
+  const found = await discoverAll().catch((e) => ({ log: { error: String(e) }, requests: 0 }));
+  log.discover = found.log;
+
   // Backstop for splits/streams. The webhook fetches them as a run lands, but a
   // missed webhook, a Strava blip or a rate-limit rejection would otherwise
   // leave a permanent hole. Bounded per run: Strava allows 100 requests per 15
   // minutes and each gap costs up to two, so 30 keeps an hourly sweep well
   // clear even when the same window is doing token refreshes.
   const gaps = await detailGaps(30).catch(() => []);
-  let requests = 0;
+  let requests = found.requests;
   const filled: string[] = [];
   for (const gap of gaps) {
     if (requests >= 60) break;
