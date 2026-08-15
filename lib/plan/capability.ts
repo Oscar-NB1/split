@@ -60,17 +60,3 @@ export function best(rows: Capability[]): Record<string, Capability> {
 export const confidenceFrom = (rows: Capability[]): "estimated" | "measured" =>
   rows.some((r) => RANK[r.source] <= RANK.measured_benchmark) ? "measured" : "estimated";
 
-/**
- * A retest much worse than the last one on the same variant.
- *
- * Not silently accepted: a bad night's sleep and a real decline look identical
- * in the number and completely different in what should happen next, so the
- * athlete decides rather than the generator guessing.
- */
-export const BAD_DAY_THRESHOLD = 0.15;
-
-export function badDay(previous: number, next: number, lowerIsBetter = true): boolean {
-  if (!previous || !next) return false;
-  const worse = lowerIsBetter ? next / previous - 1 : previous / next - 1;
-  return worse > BAD_DAY_THRESHOLD;
-}

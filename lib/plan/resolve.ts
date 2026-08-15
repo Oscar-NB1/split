@@ -137,19 +137,24 @@ export function resolve(x: ResolveInput): Resolved {
     );
   }
 
-  // Not knowing costs 15%, and it is stated rather than hidden.
-  const conf_mult = x.confidence === "estimated" ? 0.85 : 1.0;
-  const start_volume = Math.max(3, Math.round(capped * conf_mult * 10) / 10);
-  if (conf_mult < 1) {
-    flags.push("No benchmark yet, so week 1 sits 15% below the ceiling and the ramp is capped.");
-  }
+  /**
+   * No benchmark is not a reason to train less.
+   *
+   * This used to hold week 1 fifteen per cent under the ceiling whenever no
+   * test had been logged. The ceiling is already derived from what the athlete
+   * told us about their training and their running, and both of those are
+   * answers about what they are doing now — discounting them a second time for
+   * the absence of a test penalises not having taken one. A benchmark sharpens
+   * the paces; it does not license the volume.
+   */
+  const start_volume = Math.max(3, Math.round(capped * 10) / 10);
 
   const dial = x.volume_dial ?? 1.0;
   const ramp_rate = Math.min(BASE_RAMP[training_age], RUNNING_RAMP[x.running_base]) * dial;
 
-  // A measured athlete with some history is allowed a higher peak; nobody else is.
-  const peak_mult = x.confidence === "measured" && rank(training_age) >= rank("intermediate")
-    ? 2.2 : 1.8;
+  // Training age sets the peak. Whether a test has been run does not: the same
+  // athlete does not become capable of less by declining to be measured.
+  const peak_mult = rank(training_age) >= rank("intermediate") ? 2.2 : 1.8;
 
   return {
     training_age,

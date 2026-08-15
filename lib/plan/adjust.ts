@@ -181,25 +181,24 @@ export function applyAbsences(
 // ---------------------------------------------------------------- benchmarks
 
 /**
- * Where the benchmark and its retests go.
+ * Where the benchmark goes, if the athlete wants one.
  *
- * Week 1, the midpoint, and four weeks out — the last one placed early enough
- * that a bad result still leaves time to act on it. Never inside an absence: a
- * test run on a week the athlete is away measures the trip, not the training.
+ * One, at the start, and only when asked for. It is an offer rather than a
+ * prescription: a test is a hard session that costs a week of training, and
+ * repeating it on a schedule spends that cost again for a number nobody asked
+ * to know. An athlete who wants to retest can log one whenever they like — the
+ * plan reads it the same way — but nothing here puts one in the calendar.
+ *
+ * Week 1 unless week 1 is an absence, in which case the first week they are
+ * actually training: a test run on a trip measures the trip.
  */
-export function benchmarkWeeks(length: number, isAway: (n: number) => boolean): number[] {
-  const wanted = [1, Math.max(2, Math.round(length / 2)), Math.max(2, length - 4)];
-  const out: number[] = [];
-  for (const w of wanted) {
-    let n = Math.min(Math.max(1, w), length);
-    // walk forward off an absence, then backward if the end of the block is reached
-    let guard = 0;
-    while (isAway(n) && n < length && guard++ < length) n++;
-    guard = 0;
-    while (isAway(n) && n > 1 && guard++ < length) n--;
-    if (!isAway(n) && !out.includes(n)) out.push(n);
-  }
-  return out.sort((a, b) => a - b);
+export function benchmarkWeeks(
+  length: number, isAway: (n: number) => boolean, wanted = true,
+): number[] {
+  if (!wanted || length < 1) return [];
+  let n = 1;
+  while (isAway(n) && n < length) n++;
+  return isAway(n) ? [] : [n];
 }
 
 // ---------------------------------------------------------------- exclusions

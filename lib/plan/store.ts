@@ -1,5 +1,5 @@
 import { sql } from "../db";
-import { badDay, best, confidenceFrom, type Capability, type Source } from "./capability";
+import { best, confidenceFrom, type Capability, type Source } from "./capability";
 import { GENERATOR_VERSION, type Generated, type Params, generate } from "./generate";
 
 /**
@@ -90,8 +90,7 @@ export const activePlan = async (raceTargetId: string): Promise<StoredPlan | nul
 // ------------------------------------------------------------- regeneration
 
 export type Regeneration =
-  | { kind: "regenerated"; planId: string; weeks: Generated["weeks"]; flags: Generated["flags"] }
-  | { kind: "decision"; prompt: string; previous: number; next: number };
+  { kind: "regenerated"; planId: string; weeks: Generated["weeks"]; flags: Generated["flags"] };
 
 /**
  * Regenerate forward.
@@ -117,36 +116,6 @@ export async function regenerate(
     raceTargetId, params, { ...fresh, weeks }, confidenceFrom(caps),
   );
   return { kind: "regenerated", planId, weeks, flags: fresh.flags };
-}
-
-/**
- * A retest much worse than the last, on the same variant.
- *
- * Not silently accepted. A bad night's sleep and a real decline are the same
- * number and completely different situations, and downgrading a block on the
- * first is worse than waiting a week to find out. The athlete decides.
- */
-export async function checkRetest(
-  athleteId: string, field: string, next: number, variant: string,
-): Promise<Regeneration | null> {
-  const rows = await sql<{ value: number }[]>`
-    select c.value from capabilities c
-     where c.athlete_id = ${athleteId} and c.field = ${field}
-       and c.source = 'measured_benchmark'
-       and exists (
-         select 1 from benchmark_results b
-          where b.athlete_id = c.athlete_id and b.variant = ${variant}
-       )
-     order by c.captured_at desc limit 1
-  `;
-  const previous = rows[0]?.value;
-  if (!previous || !badDay(previous, next)) return null;
-  return {
-    kind: "decision",
-    previous, next,
-    prompt:
-      "That is more than 15% down on your last test. Rough day, or a real change? Accept it and the plan comes down, or retest within seven days and we keep the current numbers until then.",
-  };
 }
 
 /** Everything we hold about an athlete, best source first. */

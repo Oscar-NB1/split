@@ -47,9 +47,10 @@ export default function Bench({ athleteId }: { athleteId?: string }) {
         <span style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
           lineHeight: 1.15, letterSpacing: "-.02em" }}>No test logged yet</span>
         <span style={{ fontSize: 13, lineHeight: 1.6, color: INK55 }}>
-          The first benchmark is scheduled in week one. Until it is run, every pace
-          in the plan is an estimate carried forward from your answers — which is
-          why the block starts more conservatively than it otherwise would.
+          A benchmark is optional and offered once, at the start of a block. Without
+          one the volume is unchanged — it comes from what you said about your
+          training and your running — but the paces are worked out from your answers
+          rather than measured, and they are labelled that way wherever they appear.
         </span>
       </div>
     );

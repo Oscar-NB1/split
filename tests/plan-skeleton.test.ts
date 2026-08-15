@@ -53,12 +53,16 @@ test("every ceiling in the table is enforced", () => {
   }
 });
 
-test("not knowing costs 15%, and says so", () => {
+test("no benchmark is not a reason to train less", () => {
+  // the ceiling already comes from what the athlete said about their training
+  // and their running — both answers about what they are doing now. Discounting
+  // them again for the absence of a test penalises not having taken one.
   const measured = resolve(base({ confidence: "measured" }));
   const guessed = resolve(base({ confidence: "estimated" }));
-  assert.equal(guessed.start_volume, Math.round(measured.start_volume * 0.85 * 10) / 10);
-  assert.ok(guessed.flags.some((f) => /15% below/.test(f)));
-  assert.ok(!measured.flags.some((f) => /15% below/.test(f)));
+  assert.equal(guessed.start_volume, measured.start_volume);
+  assert.equal(guessed.peak_ceiling, measured.peak_ceiling);
+  assert.equal(guessed.ramp_rate, measured.ramp_rate);
+  assert.ok(!guessed.flags.some((f) => /15%|conservat/i.test(f)));
 });
 
 test("high availability on a low base schedules fewer sessions and flags it", () => {
@@ -87,11 +91,14 @@ test("the ramp is the lower of the two, and the dial scales it", () => {
   assert.ok(gentle.ramp_rate < r.ramp_rate);
 });
 
-test("a higher peak needs both a measurement and some history", () => {
-  const measured = resolve(base({ confidence: "measured", general_training_age: "advanced" }));
-  assert.equal(measured.peak_ceiling, Math.round(measured.start_volume * 2.2 * 10) / 10);
-  const novice = resolve(base({ confidence: "measured", general_training_age: "novice" }));
-  assert.equal(novice.peak_ceiling, Math.round(novice.start_volume * 1.8 * 10) / 10);
+test("the peak comes from training age, and from nothing else", () => {
+  // the same athlete does not become capable of less by declining to be measured
+  for (const confidence of ["measured", "estimated"] as const) {
+    const advanced = resolve(base({ confidence, general_training_age: "advanced" }));
+    assert.equal(advanced.peak_ceiling, Math.round(advanced.start_volume * 2.2 * 10) / 10);
+    const novice = resolve(base({ confidence, general_training_age: "novice" }));
+    assert.equal(novice.peak_ceiling, Math.round(novice.start_volume * 1.8 * 10) / 10);
+  }
 });
 
 // ----------------------------------------------------------------- skeleton

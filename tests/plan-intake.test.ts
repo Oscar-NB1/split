@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { RANK, badDay, best, confidenceFrom, type Capability } from "../lib/plan/capability";
+import { RANK, best, confidenceFrom, type Capability } from "../lib/plan/capability";
 import { type Kit, deriveVariant, equipmentFlags, resolveSessionPreference } from "../lib/plan/variant";
 import {
   ABSENCE_EFFECT, checkIntake, mergeAbsences, needsReEntry, type Absence, type IntakeCheck,
@@ -52,12 +52,6 @@ test("confidence follows whether anything was measured", () => {
   assert.equal(confidenceFrom([cap("x", 1, "measured_benchmark", "2026-01-01")]), "measured");
 });
 
-test("a retest much worse than the last is not silently accepted", () => {
-  // a bad night's sleep and a real decline look identical in the number
-  assert.equal(badDay(300, 360), true, "20% slower");
-  assert.equal(badDay(300, 315), false, "5% slower is noise");
-  assert.equal(badDay(300, 280), false, "faster is not a bad day");
-});
 
 // ------------------------------------------------------------- the variant
 

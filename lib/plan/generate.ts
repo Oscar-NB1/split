@@ -33,6 +33,11 @@ export type Params = ResolveInput & {
   commitments: Commitment[];
   absences: Absence[];
   exclusions: string[];
+  /**
+   * Whether the athlete wants a baseline test at the start. Optional, asked
+   * once, never scheduled again — see benchmarkWeeks.
+   */
+  benchmark?: boolean;
   week_start: (n: number) => string;
 };
 
@@ -86,7 +91,9 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
   flags.push(...absenceFlags);
 
   const awayWeeks = new Set(adjusted.filter((w) => w.reason?.startsWith("Away")).map((w) => w.n));
-  const benchmarks = new Set(benchmarkWeeks(p.length, (n) => awayWeeks.has(n)));
+  const benchmarks = new Set(
+    benchmarkWeeks(p.length, (n) => awayWeeks.has(n), p.benchmark !== false),
+  );
 
   const stations = canDoStations(p.variant) && p.discipline !== "running";
   const seenPhase = new Map<PhaseName, number>();

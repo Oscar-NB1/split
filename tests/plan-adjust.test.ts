@@ -117,22 +117,24 @@ test("a short trip does not earn a return week", () => {
 
 // -------------------------------------------------------------- benchmarks
 
-test("benchmarks go at week 1, the midpoint, and four out", () => {
-  assert.deepEqual(benchmarkWeeks(12, () => false), [1, 6, 8]);
-  assert.deepEqual(benchmarkWeeks(16, () => false), [1, 8, 12]);
+test("a benchmark is one, at the start, and only if asked for", () => {
+  // it is an offer, not a prescription: a test is a hard session that costs a
+  // week of training, and repeating it on a schedule spends that cost again
+  assert.deepEqual(benchmarkWeeks(12, () => false), [1]);
+  assert.deepEqual(benchmarkWeeks(16, () => false), [1]);
+  assert.deepEqual(benchmarkWeeks(12, () => false, false), [], "declined means none");
 });
 
 test("a benchmark is never placed inside a week the athlete is away", () => {
   // a test run on a trip measures the trip, not the training
-  const placed = benchmarkWeeks(12, (n) => n === 6);
-  assert.ok(!placed.includes(6));
-  assert.equal(placed.length, 3, "it moves rather than disappearing");
+  assert.deepEqual(benchmarkWeeks(12, (n) => n <= 2), [3], "the first week actually training");
+  assert.deepEqual(benchmarkWeeks(3, () => true), [], "away the whole block, so no test");
 });
 
 test("benchmark weeks are always distinct and inside the block", () => {
   for (const len of [4, 6, 8, 10, 12, 20]) {
     const w = benchmarkWeeks(len, () => false);
-    assert.equal(new Set(w).size, w.length, `${len}: no duplicates`);
+    assert.equal(w.length, 1, `${len}: exactly one, never a schedule of them`);
     for (const n of w) assert.ok(n >= 1 && n <= len, `${len}: week ${n} is inside the block`);
   }
 });
