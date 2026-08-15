@@ -288,32 +288,31 @@ const MENS_PRO: Standards = {
  * Women's pro and men's open are the same weights on every station — an identity
  * that reads like a copy-paste mistake until it is asserted, so a test does.
  */
-export const STANDARDS: Partial<Record<Division, Standards>> = {
+/**
+ * A doubles division carries its singles equivalent's loads — the pair share the
+ * work, not a lighter sled. Mixed doubles is the exception and is men's open.
+ *
+ * Every value is shared by reference rather than copied, so a correction to one
+ * row cannot leave its doubles twin behind. And the type is a full Record rather
+ * than a Partial: adding a division without loads is a compile error, not a
+ * silent fall back to percentages that nobody notices until race day.
+ */
+export const STANDARDS: Record<Division, Standards> = {
   "Women · open": WOMENS_OPEN,
   "Women · pro": MENS_OPEN,
   "Men · open": MENS_OPEN,
   "Men · pro": MENS_PRO,
-  // Confirmed as the men's open loads, shared by reference so the two can never
-  // drift apart in an edit.
+  "Women’s doubles · open": WOMENS_OPEN,
+  "Women’s doubles · pro": MENS_OPEN,
+  "Men’s doubles · open": MENS_OPEN,
+  "Men’s doubles · pro": MENS_PRO,
   "Mixed doubles": MENS_OPEN,
 };
 
-/**
- * Divisions we have no confirmed loads for.
- *
- * Listed because people enter them, unfilled because nobody has supplied the
- * numbers. They prescribe as a share of race weight and say what they need,
- * which is a worse plan than one with real kilos and a much better one than a
- * plan carrying a weight somebody guessed.
- */
-export const UNLOADED_DIVISIONS: Division[] = [
-  "Women’s doubles · open", "Women’s doubles · pro",
-  "Men’s doubles · open", "Men’s doubles · pro",
-];
-
 export const standardsFor = (x: Intake): Standards | null =>
-  x.division ? STANDARDS[x.division] ?? null : null;
+  x.division ? STANDARDS[x.division] : null;
 
+/** True only before a division has been picked: every division has loads. */
 export const needsStandards = (x: Intake) =>
   isHyrox(x.discipline) && standardsFor(x) === null;
 

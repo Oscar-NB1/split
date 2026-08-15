@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   ALLOC, BASE_KM, BENCH_VARIANTS, COMMITMENT, DIVISION, RUN_CEIL, RUN_RAMP,
-  STANDARDS, UNLOADED_DIVISIONS, type Intake,
+  STANDARDS, type Intake,
   allocationFor, divisionsFor, heavyDays, liveQuestions, needsStandards,
   setClock, standardsFor, validate,
 } from "../lib/intake";
@@ -337,17 +337,34 @@ test("division is asked, never derived from sex", () => {
   assert.notDeepEqual(her, STANDARDS["Women · open"]);
 });
 
-test("a division either has confirmed loads or is listed as not having them", () => {
-  for (const d of DIVISION) {
-    assert.equal(!!STANDARDS[d], !UNLOADED_DIVISIONS.includes(d), `${d}`);
-  }
+test("every division has loads — there is no division that silently falls back", () => {
+  for (const d of DIVISION) assert.ok(STANDARDS[d], `${d} has standards`);
 });
 
-test("an unloaded division prescribes by share and says what it needs", () => {
+test("a doubles division carries its singles equivalent's loads", () => {
+  // the pair share the work, not a lighter sled
+  assert.deepEqual(STANDARDS["Women’s doubles · open"], STANDARDS["Women · open"]);
+  assert.deepEqual(STANDARDS["Women’s doubles · pro"], STANDARDS["Women · pro"]);
+  assert.deepEqual(STANDARDS["Men’s doubles · open"], STANDARDS["Men · open"]);
+  assert.deepEqual(STANDARDS["Men’s doubles · pro"], STANDARDS["Men · pro"]);
+  // mixed is the exception, and is men's open rather than a blend of the two
+  assert.deepEqual(STANDARDS["Mixed doubles"], STANDARDS["Men · open"]);
+  assert.notDeepEqual(STANDARDS["Mixed doubles"], STANDARDS["Women · open"]);
+});
+
+test("a women's doubles athlete gets women's open kilos, not a percentage", () => {
   const dbl = { ...HER, division: "Women’s doubles · open" as const };
-  assert.ok(needsStandards(dbl));
-  assert.match(strengthFor(dbl, "base") ?? "", /% of race weight/);
-  assert.ok(generate(dbl).flags.some((f) => /no confirmed loads/.test(f)));
+  assert.ok(!needsStandards(dbl));
+  assert.match(strengthFor(dbl, "specific") ?? "", /Sled push 102 kg loaded/);
+  assert.match(strengthFor(dbl, "specific") ?? "", /Wall balls 4 kg/);
+  assert.ok(!generate(dbl).flags.some((f) => /race weight/.test(f)));
+});
+
+test("only an unanswered division falls back to a share of race weight", () => {
+  const none = { ...HER, division: null };
+  assert.ok(needsStandards(none));
+  assert.match(strengthFor(none, "base") ?? "", /% of race weight/);
+  assert.ok(generate(none).flags.some((f) => /No division picked/.test(f)));
 });
 
 test("sled loading climbs by phase and starts lower for someone who never has", () => {

@@ -464,7 +464,7 @@ export function flagsFor(x: Intake, r: Resolved): string[] {
     out.push("No pace anchor. Sessions run on effort and heart rate until the baseline gives real numbers.");
   }
   if (needsStandards(x)) {
-    out.push("We have no confirmed loads for your division, so sled and wall ball are prescribed as a share of race weight. The weights you train should be the ones you will actually meet.");
+    out.push("No division picked yet, so sled and wall ball are prescribed as a share of race weight. Pick the division you are entered in and the sessions carry real loads.");
   }
   if (r.offerSuppressed && x.raceDate) {
     out.push(`Your race is ${r.weeksToRace} weeks away. Too close to spend a session testing, so the plan is generated from your answers.`);
