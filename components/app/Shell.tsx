@@ -75,6 +75,14 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
 
 export default function Shell({ me, other }: { me: User; other: User | null }) {
   const [view, setView] = useState<View>("week");
+  /**
+   * Whose week is open.
+   *
+   * null is your own. Set from the profile's coaching row, which is where the
+   * relationship moved — the week screen lost its athlete toggle, because a
+   * toggle implies two equal halves and coaching is a relationship you enter.
+   */
+  const [coaching, setCoaching] = useState<string | null>(null);
   const [monday, setMonday] = useState(() => mondayOf());
   const [openId, setOpenId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -118,6 +126,10 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const week = weekOf(block, monday);
   const left = daysToRace(block, today());
 
+  const coachingName = coaching
+    ? data?.users.find((u) => u.id === coaching)?.display_name ?? null
+    : null;
+
   const sub =
     view === "past" ? "Everything logged"
     : view === "awards" ? "Records and medals"
@@ -127,6 +139,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "editProfile" ? "Your details"
     : view === "connect" ? "Strava, intervals.icu, Runna"
     : view === "build" ? "From your answers"
+    : coachingName ? `Coaching ${coachingName}`
     : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
     : view === "program" ? "Edit the week"
@@ -157,10 +170,27 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
             <span className="sub">{sub}</span>
           </div>
         )}
-        <button className="whoami" onClick={() => setView("profile")} aria-label="Profile">
-          <span className="nm">{me.display_name}</span>
-          <span className="avatar">{me.display_name.slice(0, 1).toUpperCase()}</span>
-        </button>
+        <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {view === "week" && (
+            // Rearrange used to be a tile on the plan tab. It belongs beside the
+            // week it rearranges.
+            <button onClick={() => setView("program")} aria-label="Rearrange the week"
+              style={{ width: 30, height: 30, borderRadius: "50%", background: "var(--off)",
+                display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="var(--ink-55)" strokeWidth="2" strokeLinecap="round">
+                <rect x="3" y="5" width="18" height="16" rx="2" />
+                <path d="M3 10h18M8 3v4M16 3v4" />
+              </svg>
+            </button>
+          )}
+          <button className="whoami" onClick={() => setView("profile")} aria-label="Profile">
+            <span className="nm">{coachingName ?? me.display_name}</span>
+            <span className="avatar">
+              {(coachingName ?? me.display_name).slice(0, 1).toUpperCase()}
+            </span>
+          </button>
+        </span>
       </header>
 
       <div className="scroll">
@@ -171,8 +201,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "week" && (block || !data) && (
           <Week
-            data={data} me={me} other={other} monday={monday} setMonday={setMonday}
+            data={data} me={me} monday={monday} coaching={coaching}
             openActivity={openActivity} openSession={openSession} reload={load}
+            openWeek={() => setView("program")}
           />
         )}
         {view === "activity" && openId && <Activity id={openId} meId={me.id} />}

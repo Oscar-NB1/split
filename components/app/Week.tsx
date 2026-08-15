@@ -51,14 +51,17 @@ function metrics(s: Session): [string, string, string] {
 }
 
 export default function Week({
-  data, me, other, monday, setMonday, openActivity, openSession, reload,
+  data, me, monday, openActivity, openSession, reload, openWeek, coaching,
 }: {
-  data: WeekData | null; me: User; other: User | null;
-  monday: string; setMonday: (d: string) => void;
+  data: WeekData | null; me: User;
+  monday: string;
+  /** the athlete being coached, when the profile has opened someone else's week */
+  coaching: string | null;
   openActivity: (id: string) => void; openSession: (s: Session) => void; reload: () => void;
+  /** the whole week — the overview card is the way into it */
+  openWeek: () => void;
 }) {
   const [day, setDay] = useState(() => dow(today()));
-  const [who, setWho] = useState<"me" | "them">("me");
 
   useEffect(() => {
     const t = today();
@@ -67,7 +70,7 @@ export default function Week({
 
   if (!data) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
-  const uid = who === "me" ? me.id : other?.id;
+  const uid = coaching ?? me.id;
   const all = [...data.sessions, ...data.unplanned].filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
   // Someone with no plan of their own is not "before the block" — there is no
@@ -82,104 +85,45 @@ export default function Week({
     .filter((s) => s.planned_date === dates[day])
     .sort((a, b) => Number(a.slot === "PM") - Number(b.slot === "PM"));
 
+  /**
+   * How much of this plan is measured rather than assumed.
+   *
+   * Shown permanently rather than as a notification, because it is what explains
+   * cautious numbers without anyone having to ask — and it makes the upgrade
+   * obvious. Absent for a plan written by hand, which predates the state model.
+   */
+  const state = !block?.plan_state ? null : {
+    estimated: {
+      label: "Estimated", bg: OFF, fg: INK55,
+      why: "Volume is held 15% low and the ramp capped. Run the benchmark and it comes up.",
+    },
+    awaiting: {
+      label: "Awaiting baseline", bg: "var(--teal-tint2)", fg: "var(--teal)",
+      why: "The benchmark is session 1. Every number rebuilds from its result.",
+    },
+    measured: {
+      label: "Measured", bg: LIME, fg: "var(--on-lime)",
+      why: "Paces, limiter and roxzone all come from real numbers.",
+    },
+  }[block.plan_state];
+
   const kmDone = all.filter((s) => ["done", "adjusted", "unplanned"].includes(s.status))
     .reduce((n, s) => n + (Number(s.distance_m) || 0), 0) / 1000;
   const doneCount = all.filter((s) => s.status === "done").length;
 
   return (
     <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-          textTransform: "uppercase", color: "var(--teal)" }}>
-          {intent ? intent.phase : !block ? "No block" : beforeBlock ? "Before the block" : "Off block"}
-        </div>
-        <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
-          lineHeight: 1.1, letterSpacing: "-.02em" }}>
-          {week ? `${week.km} km, and two hard days.`
-            : !block ? "No block on your account."
-            : beforeBlock ? "The block starts Monday." : "Off block."}
-        </div>
-        <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
-          {week?.note || (!block
-            ? "Anything you log still appears here, and still counts in the head-to-head."
-            : beforeBlock
-            // the goal is a time when there is one, the race when there is not, and
-            // neither when the plan has only a length — repeating the block's own
-            // name back at it reads as "11 weeks to Hyrox doubles · 11 weeks"
-            ? `${block.weeks.length} weeks to ${block.goal_label ?? block.race_name ?? "race day"}. Week 1 is ${block.weeks[0]?.km ?? 0} km — bought with consistency, not intensity.`
-            : "Tuesday and Saturday are the week. Everything else supports them.")}
-        </div>
-      </div>
-
-      {other && (
-        <div style={{ display: "flex", gap: 3, background: OFF,
-          borderRadius: "var(--r-pill)", padding: 3 }}>
-          {(["me", "them"] as const).map((w) => (
-            <button key={w} onClick={() => setWho(w)} style={{
-              flex: 1, padding: "7px 16px", borderRadius: "var(--r-pill)",
-              fontSize: 12, fontWeight: 700,
-              background: who === w ? NAVY : "transparent",
-              color: who === w ? "#fff" : INK55,
-            }}>{w === "me" ? "My week" : other.display_name}</button>
-          ))}
-        </div>
-      )}
-
-      {/* ------------------------------------------- what the week is for */}
-      {intent && (
-        <div style={{ background: PAPER, border: `1px solid ${LINE}`,
-          borderRadius: "var(--r-card)", padding: 16,
-          display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--teal)" }} />
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-              textTransform: "uppercase", color: "var(--teal)" }}>{intent.phase}</span>
-          </div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-70)" }}>{intent.purpose}</div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 7,
-            borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
-            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
-              textTransform: "uppercase", color: INK55 }}>Protect these</span>
-            {intent.protect.map((p) => (
-              <div key={p} style={{ display: "flex", alignItems: "center", gap: 9,
-                background: "var(--teal-tint)", border: "1px solid var(--teal-tint2)",
-                borderRadius: 10, padding: "10px 12px" }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0A8FB0"
-                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
-                </svg>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{p}</span>
-              </div>
-            ))}
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8,
-            borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
-            {([["Drop first", intent.sacrifice], ["Watch for", intent.watch]] as const).map(([k, v]) => (
-              <div key={k} style={{ display: "grid", gridTemplateColumns: "78px 1fr",
-                gap: 10, alignItems: "start" }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
-                  textTransform: "uppercase", whiteSpace: "nowrap", color: INK40 }}>{k}</span>
-                <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-70)" }}>{v}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* --------------------------------------------------- the seven days */}
-      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <button onClick={() => setMonday(addDays(monday, -7))} aria-label="Previous week"
-          style={arrow}>←</button>
-        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4,
-          background: PAPER, border: `1px solid ${LINE}`, borderRadius: "var(--r-card)", padding: 8 }}>
+      {/* The day strip, pinned under the header. What you need first is first:
+          the reordering the design asks for is sequence, not styling. */}
+      <div style={{ margin: "-18px -18px 0", padding: "12px 18px", background: PAPER,
+        borderBottom: `1px solid ${LINE}` }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
           {dates.map((d, i) => {
             const has = all.filter((s) => s.planned_date === d);
             const active = i === day;
             return (
               <button key={d} onClick={() => setDay(i)} style={{
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 padding: "8px 0 7px", borderRadius: 12,
                 background: active ? NAVY : "transparent", color: active ? "#fff" : "var(--ink)",
               }}>
@@ -198,27 +142,6 @@ export default function Week({
             );
           })}
         </div>
-        <button onClick={() => setMonday(addDays(monday, 7))} aria-label="Next week"
-          style={arrow}>→</button>
-      </div>
-
-      {/* --------------------------------------------------------- the stats */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
-        {[
-          { label: "Volume", value: `${kmDone.toFixed(kmDone < 10 ? 1 : 0)}/${week?.km ?? "—"}`, sub: "km run", hot: false },
-          { label: "Sessions", value: `${doneCount}/${all.length}`, sub: "completed", hot: false },
-          { label: "Reps off", value: String(data.reps_off ?? 0), sub: "> 5 s/km out",
-            hot: (data.reps_off ?? 0) > 2 },
-        ].map((k) => (
-          <div key={k.label} style={{ background: PAPER, border: `1px solid ${LINE}`,
-            borderRadius: "var(--r-card)", padding: 12 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
-              textTransform: "uppercase", color: INK55 }}>{k.label}</div>
-            <div style={{ fontFamily: "var(--display)", fontSize: 21, fontWeight: 700,
-              marginTop: 4, lineHeight: 1, color: k.hot ? "#0E2740" : "var(--ink)" }}>{k.value}</div>
-            <div style={{ fontSize: 10, color: INK55, marginTop: 3 }}>{k.sub}</div>
-          </div>
-        ))}
       </div>
 
       {/* ----------------------------------------------------------- the day */}
@@ -299,6 +222,112 @@ export default function Week({
           );
         })}
       </div>
+      {/* The week at a glance, and the way into the whole of it. Two bars rather
+          than three tiles: sessions done and distance run are the week's shape,
+          and the third tile was a metric nobody navigated by. */}
+      <button onClick={openWeek} style={{
+        width: "100%", textAlign: "left", background: PAPER, border: `1px solid ${LINE}`,
+        borderRadius: "var(--r-card)", padding: "15px 16px", color: "var(--ink)",
+        display: "flex", flexDirection: "column", gap: 11,
+      }}>
+        <span style={{ display: "flex", alignItems: "center",
+          justifyContent: "space-between", gap: 10 }}>
+          <span style={{ fontSize: 14, fontWeight: 700 }}>
+            {week ? `Week ${week.n} · ${week.km} km target` : "This week"}
+          </span>
+          <span style={{ fontSize: 13, color: INK40 }}>›</span>
+        </span>
+        <span style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <span style={{ height: 5, background: OFF, borderRadius: 3, overflow: "hidden" }}>
+            <span style={{ display: "block", height: 5, background: "var(--teal)",
+              width: `${all.length ? Math.round((doneCount / all.length) * 100) : 0}%` }} />
+          </span>
+          <span style={{ height: 5, background: OFF, borderRadius: 3, overflow: "hidden" }}>
+            <span style={{ display: "block", height: 5, background: LIME,
+              width: `${week?.km ? Math.min(100, Math.round((kmDone / week.km) * 100)) : 0}%` }} />
+          </span>
+        </span>
+        <span style={{ display: "flex", alignItems: "baseline",
+          justifyContent: "space-between", gap: 10, fontSize: 12, fontWeight: 600 }}>
+          <span>{doneCount}/{all.length} sessions</span>
+          <span>{kmDone.toFixed(kmDone < 10 ? 1 : 0)}{week?.km ? ` / ${week.km}` : ""} km</span>
+        </span>
+      </button>
+
+      {/* The block, as context rather than the lead — and the plan-state chip,
+          which is what explains cautious numbers without a notification. */}
+      <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 16,
+        display: "flex", flexDirection: "column", gap: 7 }}>
+        {state && (
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".08em",
+              textTransform: "uppercase", borderRadius: "var(--r-pill)", padding: "4px 10px",
+              flex: "none", background: state.bg, color: state.fg }}>{state.label}</span>
+            <span style={{ fontSize: 11, lineHeight: 1.45, color: INK55 }}>{state.why}</span>
+          </div>
+        )}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+          textTransform: "uppercase", color: "var(--teal)" }}>
+          {intent ? intent.phase : !block ? "No block" : beforeBlock ? "Before the block" : "Off block"}
+        </div>
+        <div style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700,
+          lineHeight: 1.15, letterSpacing: "-.02em" }}>
+          {week ? `${week.km} km, and two hard days.`
+            : !block ? "No block on your account."
+            : beforeBlock ? "The block starts Monday." : "Off block."}
+        </div>
+        <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
+          {week?.note || (!block
+            ? "Anything you log still appears here, and still counts in the head-to-head."
+            : beforeBlock
+            ? `${block.weeks.length} weeks to ${block.goal_label ?? block.race_name ?? "race day"}. Week 1 is ${block.weeks[0]?.km ?? 0} km — bought with consistency, not intensity.`
+            : "Tuesday and Saturday are the week. Everything else supports them.")}
+        </div>
+      </div>
+
+      {/* ------------------------------------------- what the week is for */}
+      {intent && (
+        <div style={{ background: PAPER, border: `1px solid ${LINE}`,
+          borderRadius: "var(--r-card)", padding: 16,
+          display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--teal)" }} />
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+              textTransform: "uppercase", color: "var(--teal)" }}>{intent.phase}</span>
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-70)" }}>{intent.purpose}</div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 7,
+            borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
+              textTransform: "uppercase", color: INK55 }}>Protect these</span>
+            {intent.protect.map((p) => (
+              <div key={p} style={{ display: "flex", alignItems: "center", gap: 9,
+                background: "var(--teal-tint)", border: "1px solid var(--teal-tint2)",
+                borderRadius: 10, padding: "10px 12px" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0A8FB0"
+                  strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6z" />
+                </svg>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{p}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8,
+            borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
+            {([["Drop first", intent.sacrifice], ["Watch for", intent.watch]] as const).map(([k, v]) => (
+              <div key={k} style={{ display: "grid", gridTemplateColumns: "78px 1fr",
+                gap: 10, alignItems: "start" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
+                  textTransform: "uppercase", whiteSpace: "nowrap", color: INK40 }}>{k}</span>
+                <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-70)" }}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
