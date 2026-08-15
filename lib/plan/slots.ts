@@ -63,8 +63,22 @@ export function allocateSlots(x: SlotInput): SlotPlan {
     station: (x.allocation.station / 100) * slots,
     strength: (x.allocation.strength / 100) * slots,
   };
+  /**
+   * How many Hyrox sessions the station share buys.
+   *
+   * NOT station demand divided by the credit. That reasoning — each session
+   * delivers half a session of station work, so 1.8 needs 3.6 of them —
+   * produced three Hyrox sessions a week off a 30% station share, which is
+   * three-quarters of the week spent on the thing that is 30% of it. The credit
+   * describes what a session gives *back* to running; it does not multiply how
+   * many are needed.
+   *
+   * The brief only ever specifies minimums: one, and two once there are five
+   * slots. A third belongs to an athlete whose station share is genuinely
+   * dominant, and nobody else.
+   */
   const hyroxWanted = isHyrox
-    ? Math.min(slots, want.station / (1 - HYROX_RUN_CREDIT))
+    ? Math.min(slots, x.allocation.station >= 35 ? 3 : 2)
     : 0;
 
   // --- the minimums, in the order the brief ranks them --------------------
@@ -89,12 +103,19 @@ export function allocateSlots(x: SlotInput): SlotPlan {
   // --- what is left goes by the allocation --------------------------------
   const remaining = slots - used;
   if (remaining > 0) {
+    /**
+     * Spare slots go to unmet demand, and a second quality run is not demand.
+     *
+     * Giving it a standing score put two interval sessions in every week beside
+     * two Hyrox sessions — four hard days, which an advanced athlete is allowed
+     * and nobody asked for. Easy running is what a week with room should carry;
+     * a second hard run is a difficulty setting, not a leftover.
+     */
     const scores: [SlotKind, number][] = [
       ["hyrox", isHyrox ? Math.max(0, hyroxWanted - counts.hyrox) : -1],
-      ["easy_run", Math.max(0, want.running - counts.quality_run - counts.long_run
+      ["easy_run", Math.max(0.01, want.running - counts.quality_run - counts.long_run
         - counts.hyrox * HYROX_RUN_CREDIT)],
       ["strength", Math.max(0, want.strength - counts.strength)],
-      ["quality_run", 0.25],
     ];
     for (let i = 0; i < remaining; i++) {
       scores.sort((a, b) => b[1] - a[1]);

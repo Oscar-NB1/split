@@ -201,3 +201,32 @@ test("softening lowers the ramp and the peak, and nothing else", () => {
   assert.equal(s.start_volume, r.start_volume, "week 1 is not what was wrong");
   assert.equal(s.max_block, r.max_block);
 });
+
+test("the station share buys Hyrox sessions, it does not multiply them", () => {
+  // Dividing station demand by the run credit — 1.8 sessions of station work,
+  // each session delivering half, so 3.6 sessions — put three Hyrox sessions in
+  // a week whose station share was 30%. Three-quarters of the week spent on the
+  // thing that is under a third of it.
+  const even = slotsFor({
+    target_sessions: 6, allocation: { running: 50, station: 30, strength: 20 },
+  });
+  assert.equal(even.counts.hyrox, 2, "two, which is the brief's minimum at five slots");
+
+  // a genuinely station-dominant athlete gets the third
+  const carrier = slotsFor({
+    target_sessions: 6, allocation: allocationFor("station_carrier", "compete", "specific"),
+    max_hard: 5,
+  });
+  assert.ok(carrier.counts.hyrox >= 3, `${carrier.counts.hyrox} for a 40% station share`);
+});
+
+test("Hyrox sessions never take most of the week", () => {
+  for (const sessions of [4, 5, 6, 7]) {
+    const s = slotsFor({
+      target_sessions: sessions, allocation: { running: 50, station: 30, strength: 20 },
+      max_hard: 5,
+    });
+    assert.ok(s.counts.hyrox <= Math.ceil(sessions / 2),
+      `${s.counts.hyrox} of ${sessions} sessions`);
+  }
+});
