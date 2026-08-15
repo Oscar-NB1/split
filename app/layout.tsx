@@ -1,19 +1,28 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Instrument_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
 /**
- * Self-hosted at build time rather than fetched from the Google CDN.
+ * The two typefaces, vendored into the repo as variable woff2 files.
  *
- * Three reasons, in order of how much they matter here: this is a PWA that has
- * to work on a phone in a gym with no signal, and a font that arrives over the
- * network does not; the CDN serves different CSS per user-agent, and one of
- * those variants was 404ing on us, silently falling back to the body face and
- * flattening every display heading in the app; and a render-blocking third-party
- * request on first paint is a poor trade for two typefaces.
+ * Not `next/font/google`, which downloads them at build time — that made a clean
+ * build require network access to fonts.gstatic.com and fail without it. Not a
+ * stylesheet link either: the CDN serves different CSS per user-agent, and one
+ * variant was 404ing, silently falling back to the body face and flattening
+ * every display heading in the app.
+ *
+ * Vendoring gives a deterministic, offline, network-free build, and a PWA that
+ * still has its typography on a phone in a gym with no signal. One variable file
+ * per family covers every weight used, at 48kB and 30kB.
  */
-const inter = Inter({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], variable: "--f-body", display: "swap" });
-const instrument = Instrument_Sans({ subsets: ["latin"], weight: ["600", "700"], variable: "--f-display", display: "swap" });
+const inter = localFont({
+  src: "./fonts/inter.woff2",
+  variable: "--f-body", display: "swap", weight: "400 800",
+});
+const instrument = localFont({
+  src: "./fonts/instrument.woff2",
+  variable: "--f-display", display: "swap", weight: "400 700",
+});
 
 export const metadata: Metadata = {
   title: "Split",
