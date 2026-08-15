@@ -1,24 +1,20 @@
-import { SignJWT, jwtVerify } from "jose";
+import { jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { sql, type User } from "./db";
 import { unauthorized } from "./http";
+import { COOKIE, MAX_AGE, sign } from "./session-token";
 
 const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET!);
-const COOKIE = "split_session";
 
 export async function issueSession(userId: string) {
-  const token = await new SignJWT({ sub: userId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("180d")
-    .sign(secret());
+  const token = await sign(userId);
 
   (await cookies()).set(COOKIE, token, {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
     path: "/",
-    maxAge: 60 * 60 * 24 * 180,
+    maxAge: MAX_AGE,
   });
 }
 
