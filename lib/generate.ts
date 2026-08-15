@@ -458,7 +458,9 @@ export function flagsFor(x: Intake, weeks: number): string[] {
     out.push("No pace anchor. The first weeks run on effort and heart rate alone; the baseline test sets real numbers.");
   }
   if (needsStandards(x)) {
-    out.push("No division chosen, so sled and wall ball are prescribed as a share of race weight rather than in kilos. Pick your division and the sessions carry real loads.");
+    out.push(x.division === "unknown"
+      ? "No division chosen, so sled and wall ball are prescribed as a share of race weight rather than in kilos. Pick the division you are entered in and the sessions carry real loads."
+      : "We do not have confirmed loads for your division, so sled and wall ball are prescribed as a share of race weight. The weights you train should be the ones you will actually meet — send them and the sessions carry real kilos.");
   }
   const locked = x.commitments.filter((c) => c.day != null).length;
   if (locked > 0) {

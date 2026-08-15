@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  BASE_VOLUME, COMMITMENT, DIVISION, RUNNING_CEILING, STANDARDS, type Intake,
+  BASE_VOLUME, COMMITMENT, DIVISION, RUNNING_CEILING, STANDARDS, UNLOADED_DIVISIONS,
+  type Intake, standardsFor,
   allocationFor, heavyDays, needsStandards, rampRate, setClock, startVolume, validate,
 } from "../lib/intake";
 import {
@@ -337,8 +338,8 @@ test("the standards table matches the official one, both sled numbers", () => {
     sled_pull_kg: 25, sled_pull_total_kg: 78,
     farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4,
   });
-  assert.equal(STANDARDS.mens_pro.sled_push_total_kg, 202);
-  assert.equal(STANDARDS.mens_pro.sled_pull_total_kg, 153);
+  assert.equal(STANDARDS.mens_pro!.sled_push_total_kg, 202);
+  assert.equal(STANDARDS.mens_pro!.sled_pull_total_kg, 153);
   // women's pro and men's open are the same load on every station
   assert.deepEqual(STANDARDS.womens_pro, STANDARDS.mens_open);
 });
@@ -347,7 +348,7 @@ test("every loaded division scales upward across the four of them", () => {
   const order = ["womens_open", "womens_pro", "mens_pro"] as const;
   for (const key of ["sled_push_kg", "sled_pull_kg", "farmers_kg", "lunge_kg", "wall_ball_kg"] as const) {
     for (let i = 1; i < order.length; i++) {
-      assert.ok(STANDARDS[order[i]][key] > STANDARDS[order[i - 1]][key],
+      assert.ok(STANDARDS[order[i]]![key] > STANDARDS[order[i - 1]]![key],
         `${key} climbs from ${order[i - 1]} to ${order[i]}`);
     }
   }
@@ -380,11 +381,31 @@ test("mixed doubles carries the men's open loads, by reference", () => {
     "and no longer flags a missing standard");
 });
 
-test("every division in the list except unknown has loads", () => {
+test("a division either has confirmed loads or is listed as not having them", () => {
+  // the failure this prevents is a division quietly falling back to percentages
+  // because nobody noticed it was never filled in
   for (const d of DIVISION) {
-    if (d === "unknown") continue;
-    assert.ok(STANDARDS[d], `${d} has standards`);
+    const loaded = !!STANDARDS[d];
+    const known = !UNLOADED_DIVISIONS.includes(d);
+    assert.equal(loaded, known, `${d}: loads and the unloaded list must agree`);
   }
+});
+
+test("division is asked, never derived from sex", () => {
+  // a woman racing mixed doubles pushes the mixed doubles sled, whatever a
+  // sex-by-division table would have inferred for her
+  const her = { ...HER, division: "mixed_doubles" as const };
+  const him = { ...HER, division: "mixed_doubles" as const, partner_role: "lead" as const };
+  assert.deepEqual(standardsFor(her), standardsFor(him),
+    "the same division is the same load, whoever is entered in it");
+  assert.notDeepEqual(standardsFor(her), STANDARDS.womens_open);
+});
+
+test("an unloaded division says what it needs instead of guessing", () => {
+  const dbl = { ...HER, division: "womens_doubles" as const };
+  assert.ok(needsStandards(dbl));
+  assert.match(strengthFor(dbl, "specific") ?? "", /race weight/);
+  assert.ok(generate(dbl).flags.some((f) => /do not have confirmed loads/.test(f)));
 });
 
 test("stations are introduced in order of soreness cost, not all at once", () => {

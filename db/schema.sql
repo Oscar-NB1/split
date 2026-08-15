@@ -427,7 +427,10 @@ create table if not exists athlete_intake (
   goal_race_name   text,
   goal_date        date,
   goal_time_seconds int,
-  division         text,                   -- sets the station standards
+  -- the division they are entered in, which is what sets the station loads.
+  -- Asked, never derived: there is no sex field here, because what an athlete
+  -- trains toward is the weight on the floor of the field they entered.
+  division         text,
   partner_role     text,                   -- protected | even | lead, for doubles
   -- what the week can hold
   days_per_week    int not null,

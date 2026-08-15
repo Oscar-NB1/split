@@ -36,8 +36,19 @@ export const GOAL_KIND = [
 /** Who carries what in a doubles pair. Changes the plan, not just the race day. */
 export const PARTNER_ROLE = ["protected", "even", "lead"] as const;
 
+/**
+ * The division they are actually entered in.
+ *
+ * Asked, never derived. There is no sex field in this intake and no rule that
+ * turns one into a set of weights: what an athlete trains toward is the load they
+ * will meet on the floor of the field they entered, and a woman racing mixed
+ * doubles pushes the mixed doubles sled whatever a sex-by-division table would
+ * have inferred for her.
+ */
 export const DIVISION = [
-  "womens_open", "mens_open", "womens_pro", "mens_pro", "mixed_doubles", "unknown",
+  "womens_open", "mens_open", "womens_pro", "mens_pro",
+  "womens_doubles", "mens_doubles", "mixed_doubles",
+  "relay", "unknown",
 ] as const;
 
 export const SLED_EXPERIENCE = ["never", "lighter", "race_weight"] as const;
@@ -320,7 +331,7 @@ const MENS_OPEN: Standards = {
   farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6,
 };
 
-export const STANDARDS: Record<Exclude<Division, "unknown">, Standards> = {
+export const STANDARDS: Partial<Record<Division, Standards>> = {
   womens_open: {
     sled_push_kg: 50, sled_push_total_kg: 102,
     sled_pull_kg: 25, sled_pull_total_kg: 78,
@@ -342,8 +353,17 @@ export const STANDARDS: Record<Exclude<Division, "unknown">, Standards> = {
   mixed_doubles: MENS_OPEN,
 };
 
-export const standardsFor = (x: Intake): Standards | null =>
-  x.division === "unknown" ? null : STANDARDS[x.division];
+/**
+ * Divisions we do not have confirmed loads for.
+ *
+ * Listed because people enter them, not filled in because nobody has supplied the
+ * numbers. They fall back to a share of race weight and say so — which is a worse
+ * plan than one with real kilos, and a much better one than a plan carrying a
+ * weight somebody guessed.
+ */
+export const UNLOADED_DIVISIONS: Division[] = ["womens_doubles", "mens_doubles", "relay", "unknown"];
+
+export const standardsFor = (x: Intake): Standards | null => STANDARDS[x.division] ?? null;
 
 
 export const needsStandards = (x: Intake) =>
