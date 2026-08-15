@@ -474,3 +474,36 @@ create table if not exists coaching (
   -- coaching yourself is not a relationship
   check (coach_id <> athlete_id)
 );
+
+-- Accounts (2026-08-15). Everything in this app hangs off a user id — activities,
+-- plans, zones, records, the coaching relationship — so this is where a mistake
+-- hands somebody another athlete's training history.
+alter table users alter column email drop not null;   -- a Strava sign-in has none
+alter table users add column if not exists password_hash  text;
+alter table users add column if not exists avatar_url     text;
+alter table users add column if not exists email_verified boolean not null default false;
+alter table users add column if not exists failed_logins  int not null default 0;
+alter table users add column if not exists locked_until   timestamptz;
+
+-- Compared case-insensitively, so unique that way too: "Sarah@example.com" and
+-- "sarah@example.com" are one mailbox, and two accounts would each hold half a
+-- training history.
+create unique index if not exists users_email_lower on users (lower(email));
+
+-- A way of signing in that is not a password. Keyed on the provider's own
+-- subject, never on the email, because people change their email and the subject
+-- is what stays the same.
+--
+-- Separate from oauth_accounts, which is about reading an athlete's data: the
+-- same Strava account can be both, and disconnecting the data should not sign
+-- anyone out.
+create table if not exists identities (
+  provider    text not null,          -- google | apple | strava
+  subject     text not null,
+  user_id     uuid not null references users(id) on delete cascade,
+  email       text,
+  created_at  timestamptz not null default now(),
+  last_used   timestamptz,
+  primary key (provider, subject)
+);
+create index if not exists identities_user on identities (user_id);

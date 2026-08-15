@@ -134,3 +134,34 @@ Open the URL in Safari or Chrome → Share → **Add to Home Screen**. That's th
 - **Zone 2 minutes** are approximated from average HR per activity, not from
   HR streams. Good enough for a weekly challenge, wrong for training analysis.
 - **No push notifications.** The service worker is offline-shell only.
+
+## Signing in
+
+Email and password works with no setup. Social sign-in needs credentials, and
+each provider only appears once its own are present — `GET /api/auth/signup`
+returns the list, so a screen can offer what actually works rather than
+advertising a button that fails.
+
+| Provider | Environment |
+|---|---|
+| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` |
+| Apple | `APPLE_CLIENT_ID` (the Services ID), `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY` (the .p8, newlines escaped) |
+| Strava | already set — the same app that reads activities |
+
+Register `${APP_URL}/api/auth/oauth/<provider>/callback` with each. Apple posts
+that callback instead of redirecting it, which the route handles.
+
+Signing in with Strava also connects Strava: the tokens arrive with the sign-in,
+so asking again on the next screen would be asking twice for permission already
+granted. Strava carries no email, so an account created that way has none until
+one is added.
+
+Existing accounts made by the access code have no password. Give them one with:
+
+```bash
+npx tsx scripts/set-password.ts you@example.com
+```
+
+That is a command rather than a screen on purpose: it only writes where there is
+no password, which is safe to run twice — and, exposed over HTTP, would hand any
+passwordless account to the first anonymous caller.
