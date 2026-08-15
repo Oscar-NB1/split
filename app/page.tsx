@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/session";
 import { sql } from "@/lib/db";
-import Calendar from "@/components/Calendar";
+import Shell from "@/components/app/Shell";
 
 export const dynamic = "force-dynamic";
 
@@ -14,5 +14,5 @@ export default async function Home() {
   `;
   const other = users.find((u) => u.id !== me.id) ?? null;
 
-  return <Calendar me={me} other={other} />;
+  return <Shell me={me} other={other} />;
 }

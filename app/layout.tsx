@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#11151A",
+  themeColor: "#FFFFFF",
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
@@ -18,6 +18,15 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
+      <head>
+        {/* Applied before first paint: reading the stored theme in an effect
+            means every dark-mode load flashes white first. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('split-theme');if(t==='dark')document.documentElement.dataset.theme='dark'}catch(e){}`,
+          }}
+        />
+      </head>
       <body>
         {children}
         <script

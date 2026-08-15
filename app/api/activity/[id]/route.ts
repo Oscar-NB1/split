@@ -8,6 +8,7 @@ import {
   type LapRow, type StreamData,
 } from "@/lib/analysis";
 import { hasBasemap } from "@/lib/map";
+import { ZONES, zoneSeconds } from "@/lib/coach";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -83,6 +84,17 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
 
   const series = streamRow[0]?.data ? downsample(streamRow[0].data, 500) : null;
 
+  // Zone time is computed from the RAW stream, not the downsampled one. The
+  // chart series is bucket-averaged, and averaging a sample that touched Z5 with
+  // its neighbours moves it down a zone — which would quietly under-report every
+  // interval session's hard minutes.
+  const raw = streamRow[0]?.data as Record<string, { data?: (number | null)[] }> | undefined;
+  const zoneSecs = zoneSeconds(
+    raw?.time?.data as number[] | undefined,
+    raw?.heartrate?.data as (number | null)[] | undefined,
+  );
+  const zoneTotal = zoneSecs.reduce((a, b) => a + b, 0);
+
   return NextResponse.json({
     activity: {
       ...activity,
@@ -103,6 +115,12 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
       Object.entries(s).map(([k, v]) => [k, typeof v === "string" ? Number(v) : v]),
     )),
     series,
+    zones: ZONES.map((z, i) => ({
+      tag: z.tag, label: z.label, colour: z.colour,
+      seconds: zoneSecs[i],
+      pct: zoneTotal ? Math.round((zoneSecs[i] / zoneTotal) * 100) : 0,
+    })),
+    zoneTotal,
     route: activity.polyline ? decodePolyline(activity.polyline) : [],
     // whether MAPBOX_TOKEN is configured. The client can't read it (no
     // NEXT_PUBLIC_ prefix, by design), so the server has to say.
