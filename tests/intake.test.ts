@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  BASE_VOLUME, COMMITMENT, RUNNING_CEILING, type Intake,
+  BASE_VOLUME, COMMITMENT, RUNNING_CEILING, STANDARDS, type Intake,
   allocationFor, heavyDays, needsStandards, rampRate, setClock, startVolume, validate,
 } from "../lib/intake";
 import {
@@ -248,7 +248,11 @@ test("station weights are never printed, because the standards are not loaded", 
   const work = strengthFor(HER, "base") ?? "";
   assert.match(work, /% of race weight/, "expressed as a share, not as kilos");
   assert.doesNotMatch(work, /\d+\s?kg/, "no weight nobody verified");
-  assert.ok(generate(HER).flags.some((f) => /Confirm them against the rulebook/.test(f)));
+  assert.ok(generate(HER).flags.some((f) => /not in the standards table/.test(f)),
+    "and the plan says the numbers are missing rather than staying quiet");
+  // a division that IS in the table but hypothetically unloaded says the other thing
+  assert.ok(generate({ ...HER, division: "unknown" }).flags
+    .some((f) => /Confirm them against the rulebook/.test(f)));
 });
 
 test("sled loading climbs by phase, and starts lower for someone who never has", () => {
@@ -321,4 +325,56 @@ test("phase ranges cover every week exactly once", () => {
 
 test("generation is deterministic", () => {
   assert.deepEqual(generate(HER), generate(HER));
+});
+
+// ------------------------------------------------------------- the standards
+
+test("the standards table matches the official one, both sled numbers", () => {
+  // added weight vs total including the sled: confusing them is a 52 kg error
+  assert.deepEqual(STANDARDS.womens_open, {
+    sled_push_kg: 50, sled_push_total_kg: 102,
+    sled_pull_kg: 25, sled_pull_total_kg: 78,
+    farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4, wall_ball_target_m: null,
+  });
+  assert.equal(STANDARDS.mens_pro!.sled_push_total_kg, 202);
+  assert.equal(STANDARDS.mens_pro!.sled_pull_total_kg, 153);
+  // women's pro and men's open are the same load on every station
+  assert.deepEqual(STANDARDS.womens_pro, STANDARDS.mens_open);
+});
+
+test("every loaded division scales upward across the four of them", () => {
+  const order = ["womens_open", "womens_pro", "mens_pro"] as const;
+  for (const key of ["sled_push_kg", "sled_pull_kg", "farmers_kg", "lunge_kg", "wall_ball_kg"] as const) {
+    for (let i = 1; i < order.length; i++) {
+      assert.ok(STANDARDS[order[i]]![key] > STANDARDS[order[i - 1]]![key],
+        `${key} climbs from ${order[i - 1]} to ${order[i]}`);
+    }
+  }
+});
+
+test("real weights are printed once the division is known", () => {
+  const her = { ...HER, division: "womens_open" as const };
+  assert.ok(!needsStandards(her));
+  const specific = strengthFor(her, "specific") ?? "";
+  assert.match(specific, /Sled push 102 kg loaded, 50 m/, "total weight and race distance");
+  assert.match(specific, /Sled pull 78 kg loaded, 50 m/);
+  assert.match(specific, /Wall balls 4 kg/);
+  assert.match(specific, /Sandbag lunges 10 kg/);
+  assert.match(specific, /Farmers carry 2 x 16 kg/);
+  // and the build phase scales the same load rather than inventing another
+  assert.match(strengthFor(her, "build") ?? "", /Sled push 82 kg loaded/);
+});
+
+test("mixed doubles is not in the table, so it is not filled in", () => {
+  // a pair's loads are not derivable from the four singles divisions
+  assert.equal(STANDARDS.mixed_doubles, undefined);
+  assert.ok(needsStandards(HER), "her division still has no verified numbers");
+  assert.doesNotMatch(strengthFor(HER, "specific") ?? "", /\d+ kg loaded/);
+  assert.ok(generate(HER).flags.some((f) => /Mixed doubles weights are not in the standards table/.test(f)));
+});
+
+test("wall ball target height is missing from the source, and is said so", () => {
+  const her = { ...HER, division: "womens_open" as const };
+  assert.equal(STANDARDS.womens_open!.wall_ball_target_m, null);
+  assert.ok(generate(her).flags.some((f) => /target height is not in the standards table/.test(f)));
 });

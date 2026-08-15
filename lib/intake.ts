@@ -283,21 +283,65 @@ export function commitmentVolume(x: Intake, weeklyKm: number): number {
 // -------------------------------------------------------------- the standards
 
 /**
- * Race standards by division — sled weight, wall ball weight and target height,
- * sandbag weight.
+ * The race itself: distances and reps that do not vary by division.
+ */
+export const RACE_SHAPE = {
+  runs: 8, run_m: 1000,
+  ski_m: 1000, row_m: 1000,
+  /** 2 x 25 m, both sleds. */
+  sled_push_m: 50, sled_pull_m: 50,
+  burpee_broad_jump_m: 80,
+  farmers_m: 200, lunge_m: 100,
+  wall_balls: 100,
+} as const;
+
+/**
+ * What each station weighs, by division.
  *
- * DELIBERATELY EMPTY. These numbers must come from the official rulebook, and
- * getting one wrong means an athlete arrives at a station heavier than anything
- * they have trained. Until they are supplied, every prescription that would need
- * them is expressed as a percentage of race weight, and `needsStandards` tells the
- * caller to say so rather than printing a number nobody verified.
+ * Transcribed from the official standards table. Sled weights are given both ways
+ * because both are quoted and confusing them is a 52 kg error: `_kg` is the weight
+ * added to the sled, `_total_kg` includes the sled itself, which is what a gym's
+ * sled actually has to be loaded to.
+ *
+ * Wall ball target height is NOT in the source table and is therefore not here.
+ * It is the one number that changes the movement rather than the load, so it is
+ * left null and flagged rather than guessed.
  */
 export type Standards = {
-  sled_push_kg: number; sled_pull_kg: number;
-  wall_ball_kg: number; wall_ball_target_m: number;
-  sandbag_kg: number; farmers_kg: number;
+  sled_push_kg: number; sled_push_total_kg: number;
+  sled_pull_kg: number; sled_pull_total_kg: number;
+  farmers_kg: number;   // per hand
+  lunge_kg: number;
+  wall_ball_kg: number;
+  wall_ball_target_m: number | null;
 };
-export const STANDARDS: Partial<Record<Division, Standards>> = {};
+
+export const STANDARDS: Partial<Record<Division, Standards>> = {
+  womens_open: {
+    sled_push_kg: 50, sled_push_total_kg: 102,
+    sled_pull_kg: 25, sled_pull_total_kg: 78,
+    farmers_kg: 16, lunge_kg: 10, wall_ball_kg: 4, wall_ball_target_m: null,
+  },
+  womens_pro: {
+    sled_push_kg: 100, sled_push_total_kg: 152,
+    sled_pull_kg: 50, sled_pull_total_kg: 103,
+    farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6, wall_ball_target_m: null,
+  },
+  mens_open: {
+    sled_push_kg: 100, sled_push_total_kg: 152,
+    sled_pull_kg: 50, sled_pull_total_kg: 103,
+    farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6, wall_ball_target_m: null,
+  },
+  mens_pro: {
+    sled_push_kg: 150, sled_push_total_kg: 202,
+    sled_pull_kg: 100, sled_pull_total_kg: 153,
+    farmers_kg: 32, lunge_kg: 30, wall_ball_kg: 9, wall_ball_target_m: null,
+  },
+  // mixed_doubles is deliberately absent: it is not in the source table, and a
+  // doubles pair's loads are not derivable from the four singles divisions.
+};
+
+export const standardsFor = (x: Intake): Standards | null => STANDARDS[x.division] ?? null;
 
 export const needsStandards = (x: Intake) =>
   isHyrox(x.goal_kind) && !STANDARDS[x.division];

@@ -2,7 +2,8 @@ import type { IntentRange } from "./block";
 import { addDays, diffDays, dow, mondayOf } from "./dates";
 import {
   type Commitment, COMMITMENT, GOAL_LABEL, type Intake, type RunningSelf,
-  allocationFor, heavyDays, isHyrox, needsStandards, rampRate, startVolume, todayish,
+  RACE_SHAPE, allocationFor, heavyDays, isHyrox, needsStandards, rampRate,
+  standardsFor, startVolume, todayish,
 } from "./intake";
 import type { Rules, TemplateDay } from "./templates";
 
@@ -176,16 +177,38 @@ export function strengthFor(x: Intake, phase: PhaseName): string | null {
   else lines.push("Split squat 3x10 each", "Hip hinge 3x12", "Press-up 3x12");
   if (has("pull_up_bar")) lines.push("Pull-up 3x6");
 
+  // Real kilos when the division's standards are loaded, a share of race weight
+  // when they are not. Never a number nobody verified: arriving at a station
+  // heavier than anything you have trained on is the failure this avoids.
+  const std = standardsFor(x);
+  const share = sledPct(x, phase);
+  const kg = (full: number) => `${Math.round(full * share)} kg`;
+
   if (has("sled")) {
-    const pct = Math.round(sledPct(x, phase) * 100);
-    lines.push(phase === "specific"
-      ? `Sled push + pull at race weight, race distance`
-      : `Sled push ${pct}% of race weight, 12.5 m x 4`);
+    if (phase === "specific") {
+      lines.push(std
+        ? `Sled push ${std.sled_push_total_kg} kg loaded, ${RACE_SHAPE.sled_push_m} m`
+        : `Sled push at race weight, race distance`);
+      lines.push(std
+        ? `Sled pull ${std.sled_pull_total_kg} kg loaded, ${RACE_SHAPE.sled_pull_m} m`
+        : `Sled pull at race weight, race distance`);
+    } else {
+      lines.push(std
+        ? `Sled push ${kg(std.sled_push_total_kg)} loaded, 12.5 m x 4`
+        : `Sled push ${Math.round(share * 100)}% of race weight, 12.5 m x 4`);
+    }
   }
-  if (has("wall_ball")) lines.push(phase === "base" ? "Wall ball technique 3x10" : "Wall balls 4x15");
+  if (has("wall_ball")) {
+    const w = std ? `${std.wall_ball_kg} kg ` : "";
+    lines.push(phase === "base" ? `Wall ball technique ${w}3x10` : `Wall balls ${w}4x15`);
+  }
   // last, on purpose: the highest soreness cost of any station
-  if (has("sandbag") && phase === "specific") lines.push("Sandbag lunges 3x20 m");
-  if (has("kettlebell")) lines.push("Farmers carry 2x50 m");
+  if (has("sandbag") && phase === "specific") {
+    lines.push(std ? `Sandbag lunges ${std.lunge_kg} kg, 3x20 m` : "Sandbag lunges 3x20 m");
+  }
+  if (has("kettlebell")) {
+    lines.push(std ? `Farmers carry 2 x ${std.farmers_kg} kg, 2x50 m` : "Farmers carry 2x50 m");
+  }
   return lines.join("\n");
 }
 
@@ -328,8 +351,8 @@ export function weekShape(
       title: x.equipment.includes("sled") ? "Strength + sled" : "Strength",
       minutes: 45, slot: "AM", target: work,
       coach_note: needsStandards(x)
-        ? "Sled loads are a share of race weight — confirm your division's standards before loading."
-        : "Two reps in reserve. This supports the running, it does not compete with it.",
+        ? "Sled loads are a share of race weight — your division's standards are not loaded, so confirm them before loading a sled."
+        : "Loads are your division's race weights. Two reps in reserve on the lifts: this supports the running, it does not compete with it.",
     });
   }
 
@@ -432,7 +455,16 @@ export function flagsFor(x: Intake, weeks: number): string[] {
     out.push("No pace anchor. The first weeks run on effort and heart rate alone; the baseline test sets real numbers.");
   }
   if (needsStandards(x)) {
-    out.push("Division standards are not loaded, so sled and wall ball are prescribed as a share of race weight. Confirm them against the rulebook before week 1.");
+    out.push(
+      x.division === "mixed_doubles"
+        ? "Mixed doubles weights are not in the standards table, and a pair's loads are not derivable from the singles divisions. Sled and wall ball are prescribed as a share of race weight until they are supplied."
+        : "Your division's standards are not loaded, so sled and wall ball are prescribed as a share of race weight. Confirm them against the rulebook before week 1.",
+    );
+  } else {
+    const std = standardsFor(x);
+    if (std && std.wall_ball_target_m == null && x.equipment.includes("wall_ball")) {
+      out.push("Wall ball weight is set from your division; the target height is not in the standards table, so check it before the first session.");
+    }
   }
   const locked = x.commitments.filter((c) => c.day != null).length;
   if (locked > 0) {
