@@ -125,3 +125,15 @@ test("a record beats a memory, and the two are never blended", () => {
     preferMeasured({ weekly_km: null, long_run_km: null, source: "measured" },
       { weekly_km: 40, long_run_km: 16 })?.source, "reported");
 });
+
+// -------------------------------------------------- surveying before importing
+
+test("the week key agrees with what the database buckets by", async () => {
+  // both paths bucket Monday-first; if they disagreed, the same athlete would
+  // get different numbers depending on whether their history had imported yet
+  const { __weekKeyForTest } = await import("../lib/recent");
+  // Sun 16 Aug 2026 and Mon 10 Aug 2026 are the same week, Monday-based
+  assert.equal(__weekKeyForTest(new Date("2026-08-16T22:00:00")), "2026-08-10");
+  assert.equal(__weekKeyForTest(new Date("2026-08-10T06:00:00")), "2026-08-10");
+  assert.equal(__weekKeyForTest(new Date("2026-08-17T06:00:00")), "2026-08-17");
+});
