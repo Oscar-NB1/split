@@ -17,6 +17,7 @@ import Picker from "./Picker";
 import Form from "./Form";
 import RestTimer, { type Rest } from "./RestTimer";
 import Record from "./Record";
+import EditProfile from "./EditProfile";
 
 export type User = { id: string; display_name: string };
 export type Session = {
@@ -41,14 +42,14 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record";
+  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
   week: "week", activity: "week",
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
-  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards",
+  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -60,6 +61,7 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
   picker: { to: "program", label: "Cancel" },
   form: { to: "plan", label: "Plan" },
   record: { to: "awards", label: "Awards" },
+  editProfile: { to: "profile", label: "Profile" },
   strategy: { to: "plan", label: "Plan" },
   profile: { to: "week", label: "Week" },
 };
@@ -112,6 +114,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "versus" ? `You vs ${other?.display_name ?? "—"}`
     : view === "profile" ? "Settings"
     : view === "strategy" ? "Race plan"
+    : view === "editProfile" ? "Your details"
     : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
     : view === "program" ? "Edit the week"
@@ -188,7 +191,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "strategy" && <Strategy />}
         {view === "form" && <Form />}
-        {view === "profile" && <Profile me={me} />}
+        {view === "profile" && <Profile me={me} openEdit={() => setView("editProfile")} />}
+        {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
       </div>
 
       {rest && (
