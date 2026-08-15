@@ -507,3 +507,111 @@ create table if not exists identities (
   primary key (provider, subject)
 );
 create index if not exists identities_user on identities (user_id);
+
+-- Brief 2's schema (2026-08-15). Alongside what exists rather than replacing it:
+-- the app still runs on the original tables while the new generator is built.
+--
+-- `race_targets`, not `races`. That name was already taken by the Hyrox results
+-- import — a record of a race that HAPPENED. This is a race being trained for.
+-- Two different things, and overloading one table would make both unreadable.
+alter table users add column if not exists sex                  text;
+alter table users add column if not exists general_training_age text;
+alter table users add column if not exists running_base         text;
+alter table users add column if not exists hyrox_experience     jsonb;
+alter table users add column if not exists sled_experience      text;
+alter table users add column if not exists kit                  text[] not null default '{}';
+alter table users add column if not exists access               text;
+alter table users add column if not exists run_attachment       text;
+-- derived at intake and stored, never recomputed: a plan has to stay
+-- explainable after the athlete changes gyms
+alter table users add column if not exists variant              text;
+alter table users add column if not exists session_preference   text;
+
+create table if not exists race_targets (
+  id            uuid primary key default gen_random_uuid(),
+  athlete_id    uuid not null references users(id) on delete cascade,
+  race_date     date,
+  start_date    date not null,
+  discipline    text not null,
+  division      text,
+  sex_category  text,
+  goal          text not null,          -- finish | strong | compete
+  target_time_s int,
+  created_at    timestamptz not null default now()
+);
+create index if not exists race_targets_athlete on race_targets (athlete_id);
+
+-- Signed five-point deltas. The SIGN picks the training role; the size only
+-- decides how the work is split on race day.
+create table if not exists partners (
+  race_target_id uuid primary key references race_targets(id) on delete cascade,
+  run_delta      int not null check (run_delta between -2 and 2),
+  station_delta  int not null check (station_delta between -2 and 2),
+  result_ref     text,
+  train_together boolean not null default false
+);
+
+create table if not exists schedules (
+  race_target_id  uuid primary key references race_targets(id) on delete cascade,
+  available_days  int[] not null default '{}',
+  target_sessions int not null,
+  allow_doubles   boolean not null default false,
+  want_rest_day   boolean not null default true,
+  commitments     jsonb not null default '[]',
+  absences        jsonb not null default '[]'
+);
+
+-- Append-only: one row per field per capture, never updated in place. A
+-- measurement six months old is still a measurement, and overwriting it loses
+-- the ability to say when something changed.
+create table if not exists capabilities (
+  id          bigserial primary key,
+  athlete_id  uuid not null references users(id) on delete cascade,
+  field       text not null,
+  value       double precision not null,
+  source      text not null,   -- measured_race | measured_benchmark | reported_race | reported_self
+  captured_at timestamptz not null default now()
+);
+create index if not exists capabilities_lookup
+  on capabilities (athlete_id, field, captured_at desc);
+
+create table if not exists benchmark_results (
+  id               uuid primary key default gen_random_uuid(),
+  athlete_id       uuid not null references users(id) on delete cascade,
+  protocol_version int not null,
+  variant          text not null,
+  submaximal       boolean not null default false,
+  completed_at     timestamptz not null default now(),
+  rounds           jsonb not null default '[]',
+  hr               jsonb,
+  aborted          boolean not null default false,
+  abort_round      int
+);
+create index if not exists benchmarks_athlete on benchmark_results (athlete_id, completed_at desc);
+
+-- `resolved_params` is the point: any plan must be explainable and reproducible
+-- six months later, and without the inputs it is not. `superseded_by` keeps the
+-- prior plan, because a regeneration that produces a worse one must be revertible.
+create table if not exists plans (
+  id                uuid primary key default gen_random_uuid(),
+  race_target_id    uuid not null references race_targets(id) on delete cascade,
+  generated_at      timestamptz not null default now(),
+  generator_version text not null,
+  confidence        text not null,
+  resolved_params   jsonb not null,
+  weeks             jsonb not null default '[]',
+  flags             jsonb not null default '[]',
+  superseded_by     uuid references plans(id),
+  active            boolean not null default true
+);
+create index if not exists plans_target on plans (race_target_id, generated_at desc);
+
+-- Versioned config, never inline constants: Hyrox revises standards between
+-- seasons, and a plan built on a stale table is quietly wrong until race day.
+create table if not exists standards (
+  season   text not null,
+  division text not null,
+  sex      text not null,
+  loads    jsonb not null,
+  primary key (season, division, sex)
+);
