@@ -1,8 +1,14 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fmt } from "@/lib/dates";
 import { hms, pace, ROLE_LABEL, type Segment } from "@/lib/analysis";
-import { kindLabel } from "@/lib/coach";
+import { kindColour, kindLabel } from "@/lib/coach";
+import { prescribedPace } from "@/lib/signals";
+import Thread from "./Thread";
+
+const TEAL = "#0A8FB0", NAVY_D = "#0E2740";
+const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
+const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
 
 type Stats = {
   count: number; distance_m: number; moving_seconds: number;
@@ -21,7 +27,7 @@ type Payload = {
     moving_seconds: number | null; elapsed_seconds: number | null;
     distance_m: number | null; elevation_m: number | null;
     avg_hr: number | null; max_hr: number | null; avg_speed_ms: number | null;
-    session_title: string | null; planned_minutes: number | null;
+    session_id: string | null; session_title: string | null; planned_minutes: number | null;
     session_status: string | null; effort_points: number | null;
   };
   segments: Segment[]; isIntervals: boolean;
@@ -34,10 +40,22 @@ type Payload = {
   route: [number, number][]; basemap: boolean; detail_pending: boolean;
 };
 
+const heroStyle = (kind: string | null): React.CSSProperties => ({
+  padding: "20px 18px 20px",
+  background: `linear-gradient(165deg, color-mix(in srgb, ${kindColour(kind)} 14%, var(--off)) 0%, var(--off) 80%)`,
+});
+const band: React.CSSProperties = {
+  padding: "16px 18px", background: PAPER, borderBottom: `1px solid ${LINE}`,
+  display: "flex", flexDirection: "column", gap: 10,
+};
+const caps: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase",
+};
+
 export default function Activity({ id, meId }: { id: string; meId: string }) {
   const [d, setD] = useState<Payload | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"segments" | "km">("segments");
+  const [view, setView] = useState<"segments" | "laps">("segments");
 
   useEffect(() => {
     let live = true;
@@ -52,196 +70,168 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
     return () => { live = false; };
   }, [id]);
 
-  if (err) return <div className="pad"><div className="errbox" role="alert">{err}</div></div>;
-  if (!d) return <div className="pad"><p className="empty">Loading…</p></div>;
+  if (err) return <div style={{ padding: 18 }}><div className="errbox" role="alert">{err}</div></div>;
+  if (!d) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
   const a = d.activity;
   const km = a.distance_m ? a.distance_m / 1000 : 0;
   const live = d.segments.filter((s) => s.role !== "stub");
-  const hasSegments = live.filter((s) => s.role === "work").length > 0;
-  const rows = tab === "segments" && hasSegments ? live : d.splits;
+  const hasSegments = live.some((s) => s.role === "work");
+  const prescribed = a.session_title ? prescribedPace(a.session_title) : null;
+  const endT = d.series?.t[d.series.t.length - 1] ?? 0;
 
   return (
-    <div>
-      <div className="hero">
-        <div className="eyebrow">
-          {fmt(a.local_date, { weekday: "short", day: "numeric", month: "long" })}
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <div style={heroStyle(a.sport_type)}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+          textTransform: "uppercase", color: "var(--teal)" }}>
+          {fmt(a.local_date, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
           {a.sport_type ? ` · ${kindLabel(a.sport_type)}` : ""}
           {a.user_id !== meId ? ` · ${a.display_name}` : ""}
         </div>
-        <h1 className="h1" style={{ marginTop: 7 }}>{a.name ?? "Activity"}</h1>
+        <div style={{ fontFamily: "var(--display)", fontSize: 25, fontWeight: 700,
+          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 7 }}>{a.name ?? "Activity"}</div>
       </div>
 
       {d.detail_pending && (
-        <div className="band">
-          <p className="muted">
-            Splits and graphs for this one haven&apos;t imported yet. The hourly sweep
-            picks it up.
-          </p>
+        <div style={band}>
+          <p className="muted">Splits and graphs for this one haven&apos;t imported yet.</p>
         </div>
       )}
 
-      {/* -------------------------------------------------------- headline */}
-      <div className="band">
-        <div className="statgrid">
-          <Stat l="Distance" v={km ? km.toFixed(2) : "—"} />
-          <Stat l="Moving" v={hms(a.moving_seconds)} />
-          <Stat l="Avg pace" v={pace(a.avg_speed_ms)} />
-          <Stat l="Avg HR" v={a.avg_hr ? String(Math.round(a.avg_hr)) : "—"} />
-          <Stat l="Max HR" v={a.max_hr ? String(Math.round(a.max_hr)) : "—"} />
-          <Stat l="Elevation" v={a.elevation_m != null ? `${Math.round(a.elevation_m)}` : "—"} />
+      {d.route.length > 1 && (
+        <div style={{ background: PAPER, borderBottom: `1px solid ${LINE}` }}>
+          <div style={{ position: "relative", width: "100%", height: 200, background: OFF }}>
+            <RouteMap points={d.route} activityId={a.id} basemap={d.basemap} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 10, padding: "10px 18px 14px" }}>
+            <span style={{ fontSize: 11, color: INK40 }}>{d.route.length} GPS points</span>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
+              textTransform: "uppercase", color: "var(--teal)" }}>GPS · Strava</span>
+          </div>
+        </div>
+      )}
+
+      <div style={band}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px 12px" }}>
+          {[
+            ["Distance", km ? km.toFixed(2) : "—"],
+            ["Moving", hms(a.moving_seconds)],
+            ["Avg pace", pace(a.avg_speed_ms)],
+            ["Avg HR", a.avg_hr ? String(Math.round(a.avg_hr)) : "—"],
+            ["Max HR", a.max_hr ? String(Math.round(a.max_hr)) : "—"],
+            ["Elevation", a.elevation_m != null ? String(Math.round(a.elevation_m)) : "—"],
+          ].map(([l, v]) => (
+            <div key={l}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
+                textTransform: "uppercase", color: INK55 }}>{l}</div>
+              <div style={{ fontFamily: "var(--display)", fontSize: 20, fontWeight: 700,
+                lineHeight: 1.15, marginTop: 3 }}>{v}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* ------------------------------------------------------------ route */}
-      {d.route.length > 1 && (
-        <div style={{ background: "var(--paper)", borderBottom: "1px solid var(--line)" }}>
-          <RouteMap points={d.route} activityId={a.id} basemap={d.basemap} />
-          <div className="rowsplit" style={{ padding: "10px 18px 14px" }}>
-            <span style={{ fontSize: 11, color: "var(--ink-40)" }}>{d.route.length} GPS points</span>
-            <span className="eyebrow" style={{ fontSize: 10 }}>GPS · Strava</span>
-          </div>
-        </div>
-      )}
-
-      {/* --------------------------------------------------------- HR trace */}
-      {d.series?.hr.some((v) => v != null) && (
-        <div className="band">
-          <div className="rowsplit">
-            <span className="caps" style={{ color: "var(--ink)" }}>Heart rate</span>
-            <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
+      {d.series && d.series.hr.some((v) => v != null) && (
+        <div style={band}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={caps}>Heart rate</span>
+            <span style={{ fontSize: 11, color: INK55 }}>
               {a.avg_hr ? `avg ${Math.round(a.avg_hr)}` : ""}
-              {a.max_hr ? ` · max ${Math.round(a.max_hr)}` : ""}
+              {a.max_hr ? ` · peak ${Math.round(a.max_hr)}` : ""}
             </span>
           </div>
-          <Trace series={d.series} field="hr" segments={live} format={(v) => `${Math.round(v)} bpm`} />
+          <HrChart series={d.series} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: INK40 }}>
+            <span>0:00</span><span>{hms(endT / 2)}</span><span>{hms(endT)}</span>
+          </div>
         </div>
       )}
 
-      {/* ----------------------------------------------------------- zones */}
       {d.zoneTotal > 0 && (
-        <div className="band">
-          <div className="rowsplit">
-            <span className="caps" style={{ color: "var(--ink)" }}>Heart rate zones</span>
-            <span style={{ fontSize: 11, color: "var(--ink-55)" }}>{hms(d.zoneTotal)} with a strap</span>
+        <div style={band}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={caps}>Heart rate zones</span>
+            <span style={{ fontSize: 11, color: INK55 }}>{hms(d.zoneTotal)} with a strap</span>
           </div>
           {d.zones.map((z) => (
-            <div className="zone" key={z.tag}>
-              <span className="zt"><i style={{ background: z.colour }} />{z.tag}</span>
-              <span className="track"><i style={{ width: `${z.pct}%`, background: z.colour }} /></span>
-              <span className="pct">{z.pct}%</span>
-              <span className="rng">{z.label}</span>
+            <div key={z.tag} style={{ display: "grid", gridTemplateColumns: "44px 1fr 34px 82px",
+              alignItems: "center", gap: 8 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11,
+                fontWeight: 700 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 3, flex: "none",
+                  background: z.colour }} />
+                {z.tag}
+              </span>
+              <div style={{ height: 15, background: OFF, borderRadius: 3, overflow: "hidden" }}>
+                <div style={{ height: 15, borderRadius: 3, width: `${z.pct}%`, background: z.colour }} />
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, textAlign: "right",
+                color: z.pct >= 25 ? "var(--ink)" : INK55 }}>{z.pct}%</span>
+              <span style={{ fontSize: 11, color: INK40, textAlign: "right" }}>{z.label}</span>
             </div>
           ))}
-          <p style={{ fontSize: 10, color: "var(--ink-40)", lineHeight: 1.5 }}>
-            Counted off the raw stream with its own timestamps, so a watch that drops to
-            smart recording still reports the right minutes. Zones are set from max 189.
-          </p>
         </div>
       )}
 
-      {/* ------------------------------------------------------------ pace */}
-      {km > 0.1 && d.series?.speed.some((v) => v != null && v > 0.5) && (
-        <div className="band">
-          <div className="rowsplit">
-            <span className="caps" style={{ color: "var(--ink)" }}>Pace</span>
-            <span style={{ fontSize: 11, color: "var(--ink-55)" }}>min/km</span>
+      {(hasSegments || d.splits.length > 0) && (
+        <SplitTable d={d} view={view} setView={setView} hasSegments={hasSegments}
+          prescribed={prescribed} />
+      )}
+
+      {a.session_title && (
+        <div style={band}>
+          <span style={caps}>Prescribed vs logged</span>
+          <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)" }}>
+            {a.session_title}
+            {a.planned_minutes ? ` · ${a.planned_minutes} min planned` : ""}
+            {prescribed ? ` at ${pace(1000 / prescribed)} /km` : ""}
           </div>
-          <Trace series={d.series} field="speed" segments={live}
-            format={(v) => `${pace(v)} /km`} paceAxis />
-        </div>
-      )}
-
-      {/* ----------------------------------------------------------- splits */}
-      {rows.length > 0 && (
-        <div className="band">
-          <div className="rowsplit">
-            <span className="caps" style={{ color: "var(--ink)" }}>
-              {tab === "segments" && hasSegments ? "Segments" : "Kilometre splits"}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <Verdict d={d} prescribed={prescribed} />
+            <span style={{ fontSize: 11, fontWeight: 600, color: INK55, background: OFF,
+              borderRadius: "var(--r-pill)", padding: "6px 12px" }}>
+              {a.session_status === "adjusted" ? "Scaled down" : "Matched automatically"}
             </span>
-            {hasSegments && d.splits.length > 0 && (
-              <div className="pillrow" style={{ padding: 3 }}>
-                <button aria-pressed={tab === "segments"} onClick={() => setTab("segments")}>Segments</button>
-                <button aria-pressed={tab === "km"} onClick={() => setTab("km")}>Km</button>
-              </div>
-            )}
-          </div>
-          <div className="splithead">
-            <span>{tab === "segments" && hasSegments ? "Type" : "Km"}</span><span />
-            <span style={{ textAlign: "right" }}>{tab === "segments" && hasSegments ? "Time" : "Pace"}</span>
-            <span style={{ textAlign: "right" }}>HR</span>
-          </div>
-          <SplitRows rows={rows} isSegments={tab === "segments" && hasSegments} />
-          {tab === "segments" && hasSegments && (
-            <p style={{ fontSize: 10, color: "var(--ink-40)", lineHeight: 1.5 }}>
-              Work and recovery are separated by lap speed — Strava doesn&apos;t label them.
-              Warm-up and cool-down are counted on their own.
-            </p>
-          )}
-        </div>
-      )}
-
-      {/* ---------------------------------------------- work vs recovery */}
-      {d.isIntervals && (
-        <div className="band">
-          <span className="caps" style={{ color: "var(--ink)" }}>Work vs recovery</span>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <RoleCard title="Work" s={d.stats.work} accent="var(--navy)" />
-            <RoleCard title="Recovery" s={d.stats.rest} accent="var(--ink-40)" />
           </div>
         </div>
       )}
 
-      {/* ------------------------------------------------- the race itself */}
       {d.race && d.stationSplits.length > 0 && (
-        <div className="band">
-          <div className="rowsplit">
-            <span className="caps" style={{ color: "var(--ink)" }}>Race splits</span>
-            <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
+        <div style={band}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={caps}>Station splits</span>
+            <span style={{ fontSize: 11, color: INK55 }}>
               {d.race.event_name} · {hms(d.race.overall_seconds)}
             </span>
           </div>
-          <div className="splithead" style={{ gridTemplateColumns: "1fr 54px 44px" }}>
-            <span>Split</span>
-            <span style={{ textAlign: "right" }}>Time</span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 52px 54px", gap: 8,
+            fontSize: 9, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase",
+            color: INK40 }}>
+            <span>Lap</span><span style={{ textAlign: "right" }}>Time</span>
             <span style={{ textAlign: "right" }}>Rank</span>
           </div>
           {d.stationSplits.map((r, i) => (
-            <div key={i} className="splitrow" style={{ gridTemplateColumns: "1fr 54px 44px" }}>
-              <span className="lb" style={{ color: r.kind === "run" ? "var(--ink-55)" : "var(--ink)" }}>
-                {r.label}
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 52px 54px", gap: 8,
+              alignItems: "center", padding: "5px 0", borderBottom: "1px solid var(--line-2)" }}>
+              <span style={{ fontSize: 13, color: r.kind === "run" ? INK55 : "var(--ink)" }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, textAlign: "right" }}>{hms(r.seconds)}</span>
+              <span style={{ fontSize: 12, color: INK55, textAlign: "right" }}>
+                {r.place ? `#${r.place}` : "—"}
               </span>
-              <span className="pc mono">{hms(r.seconds)}</span>
-              <span className="hr mono">{r.place ? `#${r.place}` : "—"}</span>
             </div>
           ))}
-          <p style={{ fontSize: 10, color: "var(--ink-40)", lineHeight: 1.5 }}>
-            From the official result on results.hyrox.com, not from the watch — Garmin numbers
-            its laps rather than naming them, so a training session cannot be matched to
-            stations this way.
-          </p>
+          <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
+            From the official result, not the watch — Garmin numbers its laps rather than naming them.
+          </span>
         </div>
       )}
 
-      {/* --------------------------------------------- prescribed vs logged */}
-      {a.session_title && (
-        <div className="band">
-          <span className="caps" style={{ color: "var(--ink)" }}>Prescribed vs logged</span>
-          <p style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)" }}>
-            {a.session_title}
-            {a.planned_minutes ? ` · ${a.planned_minutes} min planned` : ""}
-            {a.moving_seconds ? ` · ${Math.round(a.moving_seconds / 60)} min logged` : ""}
-          </p>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <span className={`tag ${a.session_status === "done" ? "done" : a.session_status === "adjusted" ? "adj" : "plan"}`}>
-              {a.session_status ?? "planned"}
-            </span>
-            {a.effort_points ? <span className="tag plan">{a.effort_points} effort points</span> : null}
-          </div>
-        </div>
-      )}
+      <Review d={d} prescribed={prescribed} />
+      {a.session_id && <SessionFeedback sessionId={a.session_id} meId={meId} />}
 
-      <div className="pad">
+      <div style={{ padding: "16px 18px 26px" }}>
         <a href={`https://www.strava.com/activities/${a.provider_activity_id}`}
           target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>Open on Strava ↗</a>
       </div>
@@ -249,191 +239,265 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
   );
 }
 
-const Stat = ({ l, v }: { l: string; v: string }) => (
-  <div><div className="l">{l}</div><div className="v">{v}</div></div>
-);
+/**
+ * The HR trace: area plus line, 330×100, two faint gridlines — as the design
+ * draws it. The domain is padded 8 below and 6 above so the trace never touches
+ * the frame; a line grazing the top edge reads as clipped even when it is not.
+ */
+function HrChart({ series }: { series: NonNullable<Payload["series"]> }) {
+  const { line, area } = useMemo(() => {
+    const W = 330, H = 100;
+    const vals = series.hr;
+    const nums = vals.filter((v): v is number => v != null);
+    if (nums.length < 2) return { line: "", area: "" };
+    const lo = Math.min(...nums) - 8, hi = Math.max(...nums) + 6;
+    const pts: [number, number][] = [];
+    vals.forEach((v, i) => {
+      if (v == null) return;
+      pts.push([(i / Math.max(1, vals.length - 1)) * W,
+        H - ((v - lo) / (hi - lo)) * (H - 10) - 5]);
+    });
+    const l = pts.map((p, i) => `${i ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+    return { line: l, area: `${l} L${W} ${H} L0 ${H} Z` };
+  }, [series]);
 
-function RoleCard({ title, s, accent }: { title: string; s: Stats; accent: string }) {
   return (
-    <div className="card" style={{ padding: 13, borderLeft: `2px solid ${accent}` }}>
-      <div className="rowsplit" style={{ marginBottom: 8 }}>
-        <span className="caps" style={{ fontSize: 10, color: "var(--ink)" }}>{title}</span>
-        <span style={{ fontSize: 10, color: "var(--ink-40)" }}>{s.count}×</span>
-      </div>
-      {[
-        ["Avg HR", s.avg_hr ? `${Math.round(s.avg_hr)}` : "—"],
-        [title === "Work" ? "Peak" : "Highest", s.peak_segment_hr ? `${Math.round(s.peak_segment_hr)}` : "—"],
-        [title === "Work" ? "Easiest" : "Lowest", s.lowest_segment_hr ? `${Math.round(s.lowest_segment_hr)}` : "—"],
-        ["Total time", hms(s.moving_seconds)],
-        // a standing recovery has a pace, and it is nonsense; suppress it rather
-        // than print "avg 35:17 /km" next to a set of 90-second rests
-        ["Avg pace", s.avg_speed_ms && s.avg_speed_ms >= MOVING_MS ? pace(s.avg_speed_ms) : "—"],
-        ["Best", s.best_speed_ms && s.best_speed_ms >= MOVING_MS ? pace(s.best_speed_ms) : "—"],
-      ].map(([k, v]) => (
-        <div key={k} className="rowsplit" style={{ padding: "4px 0", fontSize: 12 }}>
-          <span style={{ color: "var(--ink-55)" }}>{k}</span>
-          <span className="mono" style={{ fontWeight: 600 }}>{v}</span>
-        </div>
-      ))}
-    </div>
+    <svg viewBox="0 0 330 100" preserveAspectRatio="none" style={{ width: "100%", height: 100 }}>
+      <line x1="0" y1="30" x2="330" y2="30" stroke="rgba(18,49,77,.09)" />
+      <line x1="0" y1="65" x2="330" y2="65" stroke="rgba(18,49,77,.09)" />
+      <path d={area} fill="rgba(10,143,176,.16)" />
+      <path d={line} fill="none" stroke={TEAL} strokeWidth="1.7" />
+    </svg>
   );
 }
 
 /**
- * Below this, "pace" stops meaning anything. A standing recovery between reps
- * covers a few metres in ninety seconds, which is a true 43:52/km and a useless
- * thing to print — the number a coach reads there is the duration.
+ * Splits or segments, the bar scaled so the fastest is full width.
+ *
+ * A pace turns navy when a work rep came in more than 5 s/km FASTER than
+ * prescribed. That is not praise: every rep faster than prescription is stolen
+ * from Sunday, and willpower has failed four times on record.
  */
-const MOVING_MS = 1.2; // ~13:50/km, slower than a walk
-
-function SplitRows({ rows, isSegments }: { rows: (Segment | Split)[]; isSegments: boolean }) {
-  // Segments are read as durations (a rep is "400m in 84s"), kilometre splits as
-  // pace. So the bar encodes time for one and speed for the other, rather than
-  // one encoding that suits neither.
-  const secs = rows.map((r) => Number(r.moving_seconds) || 0);
-  const longest = Math.max(...secs, 1);
-  const speeds = rows.map((r) => Number(r.avg_speed_ms) || 0);
-  const fastest = Math.max(...speeds, 0.01);
+function SplitTable({
+  d, view, setView, hasSegments, prescribed,
+}: {
+  d: Payload; view: "segments" | "laps"; setView: (v: "segments" | "laps") => void;
+  hasSegments: boolean; prescribed: number | null;
+}) {
+  const live = d.segments.filter((s) => s.role !== "stub");
+  const useSeg = hasSegments && view === "segments";
+  const rows = useSeg
+    ? live.map((s) => ({
+        label: ROLE_LABEL[s.role], work: s.role === "work",
+        per: s.avg_speed_ms ? 1000 / Number(s.avg_speed_ms) : 0,
+        seconds: Number(s.moving_seconds) || 0, hr: s.avg_hr,
+      }))
+    : d.splits.map((s) => ({
+        label: `${s.split} km`, work: false,
+        per: s.avg_speed_ms ? 1000 / Number(s.avg_speed_ms) : 0,
+        seconds: Number(s.moving_seconds) || 0, hr: s.avg_hr,
+      }));
+  if (rows.length === 0) return null;
+  const paces = rows.filter((r) => r.per > 0).map((r) => r.per);
+  const best = paces.length ? Math.min(...paces) : 1;
 
   return (
-    <>
+    <div style={band}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+        <span style={caps}>{useSeg ? "Segments" : "Kilometre splits"}</span>
+        {hasSegments && d.splits.length > 0 && (
+          <div style={{ display: "flex", gap: 3, background: OFF,
+            borderRadius: "var(--r-pill)", padding: 3 }}>
+            {(["segments", "laps"] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)} style={{
+                borderRadius: "var(--r-pill)", padding: "6px 12px", fontSize: 11, fontWeight: 700,
+                background: view === v ? "var(--navy)" : "transparent",
+                color: view === v ? "#fff" : INK55,
+              }}>{v === "segments" ? "Segments" : "Km"}</button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "68px 1fr 54px 44px", gap: 8,
+        fontSize: 9, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase",
+        color: INK40 }}>
+        <span>{useSeg ? "Type" : "Km"}</span><span />
+        <span style={{ textAlign: "right" }}>{useSeg ? "Time" : "Pace"}</span>
+        <span style={{ textAlign: "right" }}>HR</span>
+      </div>
       {rows.map((r, i) => {
-        const seg = r as Segment;
-        const sp = r as Split;
-        const label = isSegments ? ROLE_LABEL[seg.role] : `${sp.split} km`;
-        const isWork = isSegments && seg.role === "work";
-        const speed = Number(r.avg_speed_ms) || 0;
-        const moving = speed >= MOVING_MS;
-        const width = isSegments
-          ? ((Number(r.moving_seconds) || 0) / longest) * 100
-          : (speed / fastest) * 100;
+        const tooFast = !!prescribed && r.work && r.per > 0 && r.per < prescribed - 5;
         return (
-          <div className="splitrow" key={i}>
-            <span className="lb" style={{ color: isWork ? "var(--ink)" : "var(--ink-55)" }}>{label}</span>
-            <span className="bar">
-              <i className={isWork ? "work" : undefined} style={{ width: `${Math.max(2, width)}%` }} />
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "68px 1fr 54px 44px",
+            alignItems: "center", gap: 8, padding: "5px 0",
+            borderBottom: "1px solid var(--line-2)" }}>
+            <span style={{ fontSize: 11, fontWeight: r.work ? 700 : 500,
+              color: r.work ? "var(--ink)" : INK55 }}>{r.label}</span>
+            <div style={{ height: 15, display: "flex", alignItems: "center" }}>
+              <div style={{ height: 15, borderRadius: 3,
+                width: `${Math.max(14, r.per > 0 ? (best / r.per) * 100 : 14).toFixed(0)}%`,
+                background: r.work ? TEAL : "rgba(10,143,176,.35)" }} />
+            </div>
+            <span style={{ fontSize: 13, fontWeight: 700, textAlign: "right",
+              color: tooFast ? NAVY_D : "var(--ink)" }}>
+              {useSeg ? hms(r.seconds) : r.per > 0 ? pace(1000 / r.per) : "—"}
             </span>
-            <span className="pc mono">
-              {isSegments
-                ? hms(r.moving_seconds)
-                : moving ? pace(r.avg_speed_ms) : "—"}
+            <span style={{ fontSize: 11, color: INK55, textAlign: "right" }}>
+              {r.hr ? Math.round(Number(r.hr)) : "—"}
             </span>
-            <span className="hr mono">{r.avg_hr ? Math.round(Number(r.avg_hr)) : "—"}</span>
           </div>
         );
       })}
-    </>
+      {useSeg && prescribed && (
+        <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
+          A navy pace is a rep run more than 5 s/km faster than prescribed. Every rep faster
+          than prescription is stolen from Sunday.
+        </span>
+      )}
+    </div>
+  );
+}
+
+function Verdict({ d, prescribed }: { d: Payload; prescribed: number | null }) {
+  const work = d.stats.work;
+  const reps = d.segments.filter((s) => s.role === "work" && s.avg_speed_ms);
+  const firstFastest = reps.length >= 3
+    && reps.every((r, i) => i === 0 || Number(r.avg_speed_ms) <= Number(reps[0].avg_speed_ms));
+  const tooFast = !!prescribed && !!work.avg_speed_ms && 1000 / work.avg_speed_ms < prescribed - 5;
+
+  const [text, bg, fg] = firstFastest
+    ? ["Rep 1 fastest — failed", "rgba(192,122,62,.16)", "#C07A3E"]
+    : tooFast
+      ? ["Run too fast", "rgba(232,192,81,.20)", "#8A6510"]
+      : d.activity.session_status === "adjusted"
+        ? ["Adjusted", OFF, INK55]
+        : ["On prescription", "var(--teal-tint2)", TEAL];
+
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, borderRadius: "var(--r-pill)",
+      padding: "6px 12px", background: bg, color: fg }}>{text}</span>
   );
 }
 
 /**
- * One measure over elapsed time, with the interval structure shaded behind it.
+ * The review, computed rather than written.
  *
- * Two stacked charts rather than one with twin axes: bpm and min/km share no
- * scale, and overlaying them on two y-axes lets a reader see a crossing point
- * that means nothing.
+ * The design calls this "Auto review", and the architecture note puts the model
+ * layer last on purpose. These are rules over the numbers already on the screen:
+ * each line states a fact and what it implies, so it says the same thing twice
+ * and can be argued with.
  */
-function Trace({
-  series, field, segments, format, paceAxis,
-}: {
-  series: NonNullable<Payload["series"]>;
-  field: "hr" | "speed";
-  segments: Segment[];
-  format: (v: number) => string;
-  paceAxis?: boolean;
-}) {
-  const box = useRef<HTMLDivElement>(null);
-  const [w, setW] = useState(340);
-  const [hover, setHover] = useState<number | null>(null);
-  const H = 116, PAD = { l: 34, r: 6, t: 8, b: 4 };
+function Review({ d, prescribed }: { d: Payload; prescribed: number | null }) {
+  const lines: { text: string; tone: "good" | "warn" | "flat" }[] = [];
+  const z = d.zones;
+  const hard = (z[3]?.pct ?? 0) + (z[4]?.pct ?? 0);
+  const easy = (z[0]?.pct ?? 0) + (z[1]?.pct ?? 0);
+  const work = d.stats.work, rest = d.stats.rest;
+  const reps = d.segments.filter((s) => s.role === "work" && s.avg_speed_ms);
 
-  useEffect(() => {
-    if (!box.current) return;
-    const ro = new ResizeObserver(([e]) => setW(Math.max(240, e.contentRect.width)));
-    ro.observe(box.current);
-    return () => ro.disconnect();
-  }, []);
-
-  const vals = series[field];
-  const { lo, hi, path, ticks } = useMemo(() => {
-    const nums = vals.filter((v): v is number => v != null);
-    if (!nums.length) return { lo: 0, hi: 1, path: "", ticks: [] as number[] };
-    let lo: number, hi: number;
-    if (paceAxis) {
-      // Pace is 1000/speed and explodes toward zero, so one traffic light would
-      // squash the whole run into a few pixels. Domain is the 2nd–98th centile.
-      const s = [...nums].sort((a, b) => a - b);
-      lo = s[Math.floor(0.02 * s.length)]; hi = s[Math.floor(0.98 * s.length)];
-      if (!(hi > lo)) { lo = s[0]; hi = s[s.length - 1]; }
-    } else { lo = Math.min(...nums); hi = Math.max(...nums); }
-    const p = (hi - lo) * 0.08 || 1; lo -= p; hi += p;
-
-    const tMax = series.t[series.t.length - 1] || 1;
-    const px = (t: number) => PAD.l + (t / tMax) * (w - PAD.l - PAD.r);
-    const py = (v: number) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b - 12);
-    let dstr = "", pen = false;
-    vals.forEach((v, i) => {
-      if (v == null) { pen = false; return; }
-      const y = py(Math.max(lo, Math.min(hi, v)));
-      dstr += `${pen ? "L" : "M"}${px(series.t[i]).toFixed(1)} ${y.toFixed(1)}`;
-      pen = true;
+  if (d.zoneTotal > 0) {
+    if (hard >= 70) lines.push({ tone: "warn", text: `${hard}% of this session sat in Z4 or Z5. That is a race, not a training run.` });
+    else if (easy >= 70) lines.push({ tone: "good", text: `${easy}% in Z1–Z2 — an easy run actually run easy, which is the instruction the plan repeats most.` });
+    else lines.push({ tone: "flat", text: `${hard}% Z4–Z5 against ${easy}% Z1–Z2.` });
+  }
+  if (reps.length >= 3) {
+    const first = 1000 / Number(reps[0].avg_speed_ms);
+    if (reps.slice(1).every((r) => 1000 / Number(r.avg_speed_ms) >= first)) {
+      lines.push({ tone: "warn", text: "Rep 1 was the fastest, so the session is logged as failed whatever the average says. That rule exists because willpower has failed four times on record." });
+    } else {
+      lines.push({ tone: "good", text: "Rep 1 was not the fastest. That is the session passing its own test." });
+    }
+  }
+  if (prescribed && work.avg_speed_ms) {
+    const delta = Math.round(1000 / work.avg_speed_ms - prescribed);
+    lines.push({
+      tone: Math.abs(delta) <= 5 ? "good" : "warn",
+      text: `Work reps held ${pace(work.avg_speed_ms)} /km against ${pace(1000 / prescribed)} prescribed — ${delta === 0 ? "exactly on it" : `${Math.abs(delta)} s/km ${delta < 0 ? "quick" : "slow"}`}.`,
     });
-    const step = (hi - lo) / 3;
-    return { lo, hi, path: dstr, ticks: [0, 1, 2, 3].map((i) => lo + i * step) };
-  }, [vals, series.t, w, paceAxis]);
-
-  const tMax = series.t[series.t.length - 1] || 1;
-  const px = (t: number) => PAD.l + (t / tMax) * (w - PAD.l - PAD.r);
-  const py = (v: number) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b - 12);
-  const hv = hover != null ? vals[hover] : null;
+  }
+  if (work.count > 0 && rest.count > 0 && work.avg_hr && rest.avg_hr) {
+    const drop = Math.round(work.avg_hr - rest.avg_hr);
+    lines.push({
+      tone: drop >= 10 ? "good" : "warn",
+      text: `Heart rate came down ${drop} bpm on the recoveries. The plan wants 10–15; at Heerenveen the stations gave 3, which is why the whole race redlined.`,
+    });
+  }
+  if (lines.length === 0) return null;
+  const dot = (t: string) => (t === "good" ? TEAL : t === "warn" ? "#C07A3E" : INK40);
 
   return (
-    <div className="chartwrap" ref={box}>
-      <svg viewBox={`0 0 ${w} ${H}`} height={H} role="img" aria-label="Trace over time"
-        onPointerMove={(e) => {
-          const r = e.currentTarget.getBoundingClientRect();
-          const t = (((e.clientX - r.left) / r.width * w) - PAD.l) / (w - PAD.l - PAD.r) * tMax;
-          let best = 0, bd = Infinity;
-          series.t.forEach((tt, i) => { const dd = Math.abs(tt - t); if (dd < bd) { bd = dd; best = i; } });
-          setHover(best);
-        }}
-        onPointerLeave={() => setHover(null)}>
-        {segments.filter((s) => s.role === "work").map((s) => {
-          const x1 = px(s.start_s), x2 = px(Math.min(s.end_s, tMax));
-          return x2 - x1 < 0.5 ? null : (
-            <rect key={s.lap_index} x={x1} y={PAD.t} width={x2 - x1}
-              height={H - PAD.t - PAD.b - 12} fill="var(--teal-tint)" />
-          );
-        })}
-        {ticks.map((v, i) => (
-          <g key={i}>
-            <line x1={PAD.l} y1={py(v)} x2={w - PAD.r} y2={py(v)} stroke="var(--grid)" />
-            <text x={PAD.l - 5} y={py(v) + 3.5} textAnchor="end"
-              style={{ fontSize: 9, fill: "var(--ink-40)" }}>
-              {paceAxis ? pace(v) : Math.round(v)}
-            </text>
-          </g>
-        ))}
-        <path d={path} fill="none" stroke="#0A8FB0" strokeWidth="1.8" strokeLinejoin="round" />
-        {hover != null && hv != null && (
-          <>
-            <line x1={px(series.t[hover])} y1={PAD.t} x2={px(series.t[hover])}
-              y2={H - PAD.b - 12} stroke="var(--ink-40)" />
-            <circle cx={px(series.t[hover])} cy={py(hv)} r="4" fill="#0A8FB0"
-              stroke="var(--paper)" strokeWidth="2" />
-          </>
-        )}
-      </svg>
-      <div className="axis">
-        <span>0:00</span>
-        <span style={{ fontWeight: 600, color: "var(--ink)" }}>
-          {hover != null && hv != null
-            ? `${format(hv)} · ${hms(series.t[hover])}${series.dist[hover] ? ` · ${(series.dist[hover] / 1000).toFixed(2)} km` : ""}`
-            : ""}
-        </span>
-        <span>{hms(tMax)}</span>
+    <div style={band}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={caps}>Review</span>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
+          textTransform: "uppercase", color: INK40 }}>Computed</span>
       </div>
+      {lines.map((l, i) => (
+        <div key={i} style={{ display: "grid", gridTemplateColumns: "8px 1fr", gap: 10,
+          alignItems: "start" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", marginTop: 5,
+            background: dot(l.tone) }} />
+          <span style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)" }}>{l.text}</span>
+        </div>
+      ))}
+      <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
+        Rules over the numbers above, not written prose — so it says the same thing twice.
+      </span>
     </div>
+  );
+}
+
+function SessionFeedback({ sessionId, meId }: { sessionId: string; meId: string }) {
+  const [d, setD] = useState<{
+    feedback: { rpe: number | null; length_feel: string | null } | null;
+    comments: { id: string; body: string; created_at: string; author_id: string; display_name: string }[];
+  } | null>(null);
+
+  const load = async () => {
+    const r = await fetch(`/api/session/${sessionId}`);
+    if (r.ok) setD(await r.json());
+  };
+  useEffect(() => { load(); }, [sessionId]);
+
+  const send = async (body: Record<string, unknown>) => {
+    const r = await fetch(`/api/session/${sessionId}`, {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return r.ok;
+  };
+
+  if (!d) return null;
+  const rpe = d.feedback?.rpe ?? null;
+  const feel = d.feedback?.length_feel ?? null;
+
+  return (
+    <>
+      <div style={band}>
+        <span style={caps}>How did it feel?</span>
+        <div style={{ display: "flex", gap: 4 }}>
+          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+            <button key={n} onClick={async () => { await send({ action: "feedback", rpe: n }); load(); }}
+              style={{ flex: 1, height: 34, borderRadius: 8, fontSize: 12, fontWeight: 700,
+                background: rpe === n ? "var(--navy)" : OFF,
+                color: rpe === n ? "#fff" : INK55 }}>{n}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {["short", "right", "long"].map((f) => (
+            <button key={f} onClick={async () => { await send({ action: "feedback", length_feel: f }); load(); }}
+              style={{ flex: 1, padding: "9px 0", borderRadius: "var(--r-pill)", fontSize: 11,
+                fontWeight: 700, border: "1px solid",
+                background: feel === f ? "var(--teal-tint)" : "transparent",
+                color: feel === f ? TEAL : INK55,
+                borderColor: feel === f ? TEAL : LINE }}>
+              {f === "short" ? "Too short" : f === "right" ? "About right" : "Too long"}
+            </button>
+          ))}
+        </div>
+      </div>
+      <Thread comments={d.comments} meId={meId} send={send} reload={load} />
+    </>
   );
 }
 
@@ -450,23 +514,23 @@ function RouteMap({ points, activityId, basemap }: {
     const spanY = maxY - Math.min(...lats) || 1e-6;
     const pad = Math.max(spanX, spanY) * 0.06;
     return {
-      d: points.map(([la, ln], i) => `${i ? "L" : "M"}${(ln * kx - minX).toFixed(6)} ${(maxY - la).toFixed(6)}`).join(""),
+      d: points.map(([la, ln], i) =>
+        `${i ? "L" : "M"}${(ln * kx - minX).toFixed(6)} ${(maxY - la).toFixed(6)}`).join(""),
       vb: `${-pad} ${-pad} ${spanX + pad * 2} ${spanY + pad * 2}`,
     };
   }, [points]);
 
+  if (basemap && !failed) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={`/api/activity/${activityId}/map`} alt="Route recorded by GPS"
+      onError={() => setFailed(true)}
+      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />;
+  }
   return (
-    <div className="routebox">
-      {basemap && !failed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={`/api/activity/${activityId}/map`} alt="Route recorded by GPS"
-          onError={() => setFailed(true)} />
-      ) : (
-        <svg viewBox={vb} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Route">
-          <path d={d} fill="none" stroke="#0A8FB0" strokeWidth="2.5"
-            vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-        </svg>
-      )}
-    </div>
+    <svg viewBox={vb} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Route"
+      style={{ width: "100%", height: "100%" }}>
+      <path d={d} fill="none" stroke={TEAL} strokeWidth="2.5" vectorEffect="non-scaling-stroke"
+        strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
   );
 }
