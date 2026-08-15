@@ -103,7 +103,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/week?week=${monday}`);
-    if (res.status === 401) { location.href = "/login"; return; }
+    if (res.status === 401) { location.href = "/"; return; }
     if (!res.ok) { setError("Couldn't load this week."); return; }
     setData(await res.json());
     setError(null);

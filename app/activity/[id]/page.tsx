@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function ActivityPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await currentUser();
-  if (!me) redirect("/login");
+  if (!me) redirect("/");
   const { id } = await params;
 
   return (

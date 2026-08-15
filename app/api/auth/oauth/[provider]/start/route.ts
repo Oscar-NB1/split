@@ -17,12 +17,12 @@ export async function GET(
     const { provider } = await ctx.params;
     const p = provider as Provider;
     if (!PROVIDERS.includes(p) || !configured(p)) {
-      return NextResponse.redirect(`${home}/login?auth=unavailable`);
+      return NextResponse.redirect(`${home}/?auth=unavailable`);
     }
     const me = await currentUser();
     return NextResponse.redirect(authorizeUrl(p, await signState({ link: me?.id ?? null })));
   } catch (e) {
     console.error("oauth start", e);
-    return NextResponse.redirect(`${home}/login?auth=failed`);
+    return NextResponse.redirect(`${home}/?auth=failed`);
   }
 }

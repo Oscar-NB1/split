@@ -61,7 +61,7 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
     let live = true;
     fetch(`/api/activity/${id}`)
       .then(async (r) => {
-        if (r.status === 401) { location.href = "/login"; return null; }
+        if (r.status === 401) { location.href = "/"; return null; }
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "failed");
         return r.json();
       })

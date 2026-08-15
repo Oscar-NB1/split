@@ -55,7 +55,7 @@ export default function Past({ openActivity }: { openActivity: (id: string) => v
 
   useEffect(() => {
     fetch("/api/past").then(async (r) => {
-      if (r.status === 401) { location.href = "/login"; return; }
+      if (r.status === 401) { location.href = "/"; return; }
       const j = await r.json();
       setRows(j.activities); setKinds(j.kinds);
     });

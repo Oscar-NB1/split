@@ -173,7 +173,7 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
 
   useEffect(() => {
     fetch("/api/intake").then(async (r) => {
-      if (r.status === 401) { location.href = "/login"; return; }
+      if (r.status === 401) { location.href = "/"; return; }
       const j = await r.json();
       setOpts(j.options);
       // retaking it starts from the last answers rather than from blank

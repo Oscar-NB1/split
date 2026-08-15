@@ -32,7 +32,7 @@ export default function Strategy() {
 
   useEffect(() => {
     fetch("/api/strategy").then(async (r) => {
-      if (r.status === 401) { location.href = "/login"; return; }
+      if (r.status === 401) { location.href = "/"; return; }
       const j = await r.json();
       setRows(j.segments); setRoxEach(j.rox_seconds);
       setConnected(j.intervals_connected); setExportedAt(j.exported_at);

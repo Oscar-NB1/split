@@ -26,7 +26,7 @@ export default function Races({ meId }: { meId: string }) {
 
   const load = useCallback(async () => {
     const res = await fetch("/api/races");
-    if (res.status === 401) { location.href = "/login"; return; }
+    if (res.status === 401) { location.href = "/"; return; }
     if (res.ok) setRaces((await res.json()).races);
     else setError("Couldn't load races.");
   }, []);
@@ -41,7 +41,7 @@ export default function Races({ meId }: { meId: string }) {
         body: JSON.stringify({ url }),
       });
       const json = await res.json().catch(() => ({}));
-      if (res.status === 401) { location.href = "/login"; return; }
+      if (res.status === 401) { location.href = "/"; return; }
       if (!res.ok) { setError(json.error ?? "That didn't import."); return; }
       setNote(
         `Imported ${json.event_name ?? "race"} — ${json.splits} splits` +

@@ -35,7 +35,7 @@ export function useSession(id: string) {
 
   const load = useCallback(async () => {
     const r = await fetch(`/api/session/${id}`);
-    if (r.status === 401) { location.href = "/login"; return; }
+    if (r.status === 401) { location.href = "/"; return; }
     if (!r.ok) { setErr((await r.json().catch(() => ({}))).error ?? "Couldn't load it."); return; }
     setD(await r.json());
   }, [id]);

@@ -42,7 +42,7 @@ export default function Strava({ onDone }: { onDone?: () => void }) {
 
   const load = () =>
     fetch("/api/connections/strava").then(async (r) => {
-      if (r.status === 401) { location.href = "/login"; return; }
+      if (r.status === 401) { location.href = "/"; return; }
       const j: State = await r.json();
       setS(j);
       setWantPrivate(j.granted.includes("activity:read_all"));

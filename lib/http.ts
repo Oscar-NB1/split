@@ -54,7 +54,7 @@ export function redirectingRoute<A extends unknown[]>(fn: (...args: A) => Promis
       return await fn(...args);
     } catch (e) {
       if (e instanceof HttpError && e.status === 401) {
-        return NextResponse.redirect(`${process.env.APP_URL}/login`);
+        return NextResponse.redirect(`${process.env.APP_URL}/`);
       }
       console.error("unhandled route error", e);
       return NextResponse.redirect(`${process.env.APP_URL}/settings?error=1`);

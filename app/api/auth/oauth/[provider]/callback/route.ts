@@ -12,11 +12,11 @@ const back = (to: string, outcome: string) =>
 
 async function handle(req: NextRequest, provider: string, params: URLSearchParams) {
   const p = provider as Provider;
-  if (!PROVIDERS.includes(p)) return back("/login", "unavailable");
+  if (!PROVIDERS.includes(p)) return back("/", "unavailable");
 
   const state = await readState(params.get("state"));
-  if (!state) return back("/login", "state");
-  if (params.get("error") || !params.get("code")) return back("/login", "cancelled");
+  if (!state) return back("/", "state");
+  if (params.get("error") || !params.get("code")) return back("/", "cancelled");
 
   const linkTo = (state.link as string | null) ?? null;
 
@@ -33,7 +33,7 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
       // Strava carries no email, so it can never reach the conflict case — but
       // the check stays, because a provider that starts returning one should not
       // silently start joining accounts on an unverified address.
-      if (outcome.kind === "conflict") return back("/login", "email-in-use");
+      if (outcome.kind === "conflict") return back("/", "email-in-use");
 
       await link(profile, outcome.userId);
       await fillProfileGaps(outcome.userId, profile);
@@ -61,13 +61,13 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
     }
 
     const outcome = await resolveIdentity(profile);
-    if (outcome.kind === "conflict") return back("/login", "email-in-use");
+    if (outcome.kind === "conflict") return back("/", "email-in-use");
     await fillProfileGaps(outcome.userId, profile);
     await issueSession(outcome.userId);
     return back("/", outcome.kind === "created" ? "created" : "signed-in");
   } catch (e) {
     console.error("oauth callback", p, e);
-    return back("/login", "failed");
+    return back("/", "failed");
   }
 }
 

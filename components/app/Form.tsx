@@ -28,7 +28,7 @@ export default function Form({ only }: { only?: "pace" | "volume" }) {
 
   useEffect(() => {
     fetch("/api/form").then(async (r) => {
-      if (r.status === 401) { location.href = "/login"; return; }
+      if (r.status === 401) { location.href = "/"; return; }
       if (r.ok) setD(await r.json());
     });
   }, []);

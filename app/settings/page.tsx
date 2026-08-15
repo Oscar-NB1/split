@@ -15,7 +15,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function Settings() {
   const me = await currentUser();
-  if (!me) redirect("/login");
+  if (!me) redirect("/");
 
   return (
     <div className="app">
