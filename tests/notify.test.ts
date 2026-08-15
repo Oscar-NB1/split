@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { isQuiet, nextSendableAt, QUIET_FROM, QUIET_TO } from "../lib/notify";
 import { beats, describe as describeRecord, METRICS } from "../lib/records";
 import { countLeadingSkips } from "../lib/rules";
+import { MAX_SESSION_SECONDS, MAX_SPEED_MS } from "../lib/bounds";
 
 // ------------------------------------------------------------- quiet hours
 
@@ -122,4 +123,13 @@ test("record formatting does not hide an absurd value", () => {
   // rather than as a plausible time
   assert.equal(METRICS.best_1km.format(15), "0:15");
   assert.equal(METRICS.longest_session_min.format(1146), "1146 min");
+});
+
+test("the activity bounds live in one place, and are the ones that were needed", () => {
+  // 7 m/s over a kilometre is 2:23 — the 15-second kilometre was 66 m/s
+  assert.ok(MAX_SPEED_MS < 66, "must exclude the 3,412 m / 15 s split");
+  assert.ok(MAX_SPEED_MS > 6, "must not exclude a genuine 2:40/km rep");
+  // the watch left running was 68,740 s; a long run is ~2 h
+  assert.ok(MAX_SESSION_SECONDS < 68740, "must exclude the nineteen-hour session");
+  assert.ok(MAX_SESSION_SECONDS >= 3 * 3600, "must not clip a genuine long run");
 });

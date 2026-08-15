@@ -1,4 +1,5 @@
 import { sql } from "./db";
+import { MAX_SESSION_SECONDS, MAX_SPEED_MS } from "./bounds";
 
 /**
  * Personal bests.
@@ -81,8 +82,7 @@ export function beats(metric: Metric, value: number, previous: number | null): b
  * impossible: 7 m/s sustained over a kilometre is 2:23/km, faster than any
  * amateur and comfortably outside this athlete's range.
  */
-const MAX_SPEED_MS = 7.0;
-const MAX_SESSION_SECONDS = 6 * 3600;
+
 
 /**
  * The best run of N consecutive kilometre splits inside one activity.

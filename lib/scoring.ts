@@ -1,4 +1,5 @@
 import { sql } from "./db";
+import { MAX_SESSION_SECONDS } from "./bounds";
 import { addDays, diffWeeks, iso, mondayOf } from "./dates";
 
 /**
@@ -52,12 +53,16 @@ export async function challengeScores(ws: string, metric: Metric) {
   }
   if (metric === "longest_session") {
     return sql<{ user_id: string; score: number }[]>`
-      select user_id, coalesce(max(moving_seconds)/60,0)::int as score from activities
+      select user_id, coalesce(max(least(moving_seconds, ${MAX_SESSION_SECONDS}))/60,0)::int as score
+      from activities
       where local_date >= ${ws} and local_date < ${end} group by user_id`;
   }
-  // zone2: time under 160 bpm, approximated from average HR per activity
+  // zone2: time under 160 bpm, approximated from average HR per activity.
+  // Clamped, or a watch left running for nineteen hours wins the week: that
+  // single activity contributed 1,146 minutes to a Zone-2 score.
   return sql<{ user_id: string; score: number }[]>`
-    select user_id, coalesce(sum(moving_seconds)/60,0)::int as score from activities
+    select user_id, coalesce(sum(least(moving_seconds, ${MAX_SESSION_SECONDS}))/60,0)::int as score
+    from activities
     where local_date >= ${ws} and local_date < ${end}
       and avg_hr is not null and avg_hr < 160
     group by user_id`;

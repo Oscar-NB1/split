@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { route } from "@/lib/http";
+import { MAX_SESSION_SECONDS, MAX_SPEED_MS } from "@/lib/bounds";
 
 /**
  * Career totals, personal records and medal tiers — all computed from stored
@@ -24,7 +25,7 @@ const TIERS = ["Bronze", "Silver", "Gold", "Platinum"] as const;
  * overstated lifetime hours by about 4%. Clamped rather than excluded: the
  * session did happen, it is only its duration that cannot be trusted.
  */
-const MAX_SESSION_SECONDS = 6 * 3600;
+
 
 /**
  * The same bound lib/records.ts uses, and it has to be here too.
@@ -35,7 +36,7 @@ const MAX_SESSION_SECONDS = 6 * 3600;
  * second place, because the rule lived next to one query instead of next to the
  * data. 7 m/s over a kilometre is 2:23, already faster than any amateur.
  */
-const MAX_SPEED_MS = 7.0;
+
 
 type MedalDef = {
   cat: string; unit: string; steps: number[]; invert?: boolean; icon: string;

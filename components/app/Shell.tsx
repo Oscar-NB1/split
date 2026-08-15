@@ -162,7 +162,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Strength id={sessionId} meId={me.id} onChanged={load} startRest={setRest} />
         )}
         {view === "past" && <Past openActivity={openActivity} />}
-        {view === "versus" && <Versus data={data} me={me} other={other} />}
+        {view === "versus" && <Versus />}
         {view === "awards" && (
           <Awards meId={me.id} openActivity={openActivity}
             openRecord={(dist) => { setRecordDist(dist); setView("record"); }} />
