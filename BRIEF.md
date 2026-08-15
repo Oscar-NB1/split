@@ -72,7 +72,7 @@ Both are detours around the same closed door.
 
 ## Data model
 
-Ten tables. `users` (two rows). `oauth_accounts` holds every external
+Twelve tables. `users` (two rows). `oauth_accounts` holds every external
 credential keyed by provider — the Strava tokens, but also the Runna feed URL
 and the intervals.icu key, which aren't OAuth but live there to keep credential
 handling in one place. `activities` is immutable fact from Strava.
@@ -98,6 +98,15 @@ which laps were work — `lib/analysis.ts` infers it from the distribution of la
 speeds, and warm-up and cool-down are pulled out separately so they don't
 flatter the recovery averages.
 
+**Races come from the official timing site, not from a training app.** RoxFit
+has no public developer API and reads from Garmin and Strava, so it holds no
+race data of its own; Strava records a race as one blob (the existing entry is
+literally named `Hyrox Mechelen - 1.00.45`). The eight run splits and eight
+station times only exist on results.hyrox.com, so `lib/hyrox.ts` parses an
+athlete's result page and `races` / `race_splits` store it. Splits are labelled
+rows rather than sixteen columns, because doubles, relay and adaptive divisions
+have different station sets and HYROX has changed stations between seasons.
+
 ## File map
 
 ### Core libraries — `lib/`
@@ -113,6 +122,7 @@ flatter the recovery averages.
 | `intervals.ts` | Renders a session into intervals.icu workout syntax and pushes it. Rests are written as time or distance on purpose: rest-to-heart-rate degrades to a plain timer once it reaches a Garmin watch. |
 | `scoring.ts` | Weekly challenge metrics, the rotation between them, and the streak rule. |
 | `detail.ts` | Splits, laps and streams. Splits and laps are two fields of the *same* detailed payload, so they cost one request between them; streams cost a second. Everything is idempotent and gated on a "we asked" marker, never on row counts. |
+| `hyrox.ts` | Parses a results.hyrox.com athlete result into a race and its splits. Pins the fetchable host (a server fetching a user-supplied URL is an SSRF hole) and fails with a specific message rather than storing a race with no splits. |
 | `analysis.ts` | Pure functions over stored rows: work/rest segment classification, time-weighted role stats, stream downsampling, polyline decoding, pace formatting. No I/O, which is why it's the best-tested file here. |
 
 ### API routes — `app/api/`
@@ -125,6 +135,7 @@ flatter the recovery averages.
 | `sessions` (POST) | Create a session on either calendar. |
 | `sessions/[id]` (PATCH) | The four actions: move, scale, skip, note. This file is where the "what if she can't do it" behaviour actually lives. |
 | `week` | Everything one screen needs — sessions, unmatched activities, streaks, the challenge — in one round trip. |
+| `races` | GET lists every race with its splits; POST imports one from a pasted result URL, updating on re-import rather than duplicating. |
 | `activity/[id]` | Everything the detail view needs for one activity, likewise in one round trip. Streams are downsampled server-side — 3,600 raw samples to draw a 700px line is ~250kB for 500 usable pixels. |
 | `intervals` | Stores the intervals.icu key (POST) and the Runna feed URL (PUT). |
 | `cron` | Hourly: Runna sync, template materialisation, push to watch. Each wrapped so one broken feed can't stop the others. |
@@ -136,6 +147,7 @@ flatter the recovery averages.
 | `globals.css` | The whole design system. Two athlete colours (amber / teal) rather than one accent, because everything in this app is comparative. Mobile-first; the 7-column desktop grid is the override. |
 | `Calendar.tsx` | The app. Three tabs, week navigation, the day strip on mobile, the split rails, the tug bar, and the action sheets. |
 | `ActivityDetail.tsx` | The detail view: headline stats, work-vs-recovery cards, HR and pace charts with the interval structure shaded behind them, the GPS route, and the segment/split tables. Charts are hand-written SVG — no charting dependency. |
+| `Races.tsx` | Paste a result link; the race renders as run and station bars with roxzone, rank, and a link to whichever Strava activity it matched. |
 | `Connections.tsx` | Settings — the four connections, each with the manual step it needs. |
 | `login` · `settings` · `page` | Thin server components; all three redirect to login without a session. |
 
@@ -143,7 +155,7 @@ flatter the recovery averages.
 
 | File | What it does |
 |---|---|
-| `db/schema.sql` | Ten tables, run once. Idempotent — re-run to upgrade. |
+| `db/schema.sql` | Twelve tables, run once. Idempotent — re-run to upgrade. |
 | `scripts/seed-users.ts` | Creates the two user rows from env. |
 | `scripts/backfill-strava.ts` | One-time history import, paced under the rate limit. Re-runnable. |
 | `scripts/backfill-detail.ts` | Splits, laps and streams for activities already imported. Pause is *derived* from the rate limit (100 req/15 min = one activity every ~18s), not guessed. |

@@ -135,6 +135,9 @@ export default function Calendar({ me, other }: { me: User; other: User | null }
               <div className="n mono">{raceIn}</div>
               <div className="l">days · target race</div>
             </div>
+            <a href="/races" className="clock y" style={{ textDecoration: "none" }}>
+              <div className="n mono">🏁</div><div className="l">races</div>
+            </a>
             <a href="/settings" className="clock y" style={{ textDecoration: "none" }}>
               <div className="n mono">⚙</div><div className="l">settings</div>
             </a>

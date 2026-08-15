@@ -180,6 +180,51 @@ create table if not exists activity_laps (
 -- hour forever, burning quota to learn the same nothing.
 alter table activities add column if not exists detail_fetched_at timestamptz;
 
+-- ------------------------------------------------------------------ races
+-- A HYROX result imported from results.hyrox.com (2026-08-15).
+--
+-- Strava records a race as one undifferentiated blob — the existing entry is
+-- literally called "Hyrox Mechelen - 1.00.45", with the finish time typed into
+-- the name. The eight run splits and eight station times only exist on the
+-- official timing site, so they are fetched from there and stored here.
+--
+-- `activity_id` links the race to what the watch recorded, which is also where
+-- the date comes from: the result page carries the event as "Warsaw 2026" and
+-- no date at all.
+create table if not exists races (
+  id             uuid primary key default gen_random_uuid(),
+  user_id        uuid not null references users(id) on delete cascade,
+  activity_id    uuid references activities(id) on delete set null,
+  source_url     text not null,
+  external_id    text not null,        -- mikatiming's `idp`, one per result
+  athlete_name   text,
+  bib            text,
+  event_name     text,
+  division       text,
+  age_group      text,
+  race_date      date,
+  overall_seconds int,
+  rank_overall   int,
+  rank_age_group int,
+  imported_at    timestamptz not null default now(),
+  -- re-importing the same result updates it rather than duplicating
+  unique (user_id, external_id)
+);
+
+-- Splits are stored as labelled rows rather than sixteen fixed columns, because
+-- the format is not ours to fix: doubles, relay and adaptive divisions have
+-- different station sets, and HYROX has changed stations between seasons. A new
+-- format lands as new rows, not a migration.
+create table if not exists race_splits (
+  race_id  uuid not null references races(id) on delete cascade,
+  ord      int  not null,               -- order on the official result page
+  label    text not null,               -- e.g. "Running 3", "50m Sled Push"
+  kind     text not null,               -- run | station | roxzone | total | other
+  seconds  int  not null,
+  place    int,
+  primary key (race_id, ord)
+);
+
 -- The lap column was first declared `start_offset_s`, which is wrong about its
 -- own contents: Strava's `start_index` is an offset into the stream arrays, not
 -- a number of seconds, and the two only coincide when the watch sampled at
