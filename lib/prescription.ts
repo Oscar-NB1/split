@@ -211,3 +211,25 @@ export function paceCue(zone: string | null, prescribed: number | null): string 
   if (zone === "Z1") return "Walk it. Standing rest counts.";
   return null;
 }
+
+/**
+ * How long to rest after a set, from the set scheme.
+ *
+ * Heavy and low-rep needs longer: a triple at 90% is not recoverable in ninety
+ * seconds, and a set of twelve does not need three minutes. Derived from the
+ * prescription rather than stored, so changing "3x5" to "3x10" changes the rest
+ * without anyone editing a second field.
+ */
+export function restFor(reps: number | null | undefined): number {
+  const r = reps ?? 8;
+  return r <= 5 ? 180 : r <= 8 ? 120 : 90;
+}
+
+/** m:ss, or h:mm:ss past an hour. */
+export function mmss(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return h
+    ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`
+    : `${m}:${String(r).padStart(2, "0")}`;
+}

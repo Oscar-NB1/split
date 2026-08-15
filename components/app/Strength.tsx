@@ -1,8 +1,9 @@
 "use client";
 import { fmt } from "@/lib/dates";
-import { tonnage } from "@/lib/prescription";
+import { restFor, tonnage } from "@/lib/prescription";
 import Thread from "./Thread";
 import { Rpe, useSession, type SetRow } from "./Brief";
+import type { Rest } from "./RestTimer";
 
 /**
  * Strength logging.
@@ -13,8 +14,11 @@ import { Rpe, useSession, type SetRow } from "./Brief";
  * prescription to compare against is just a number.
  */
 export default function Strength({
-  id, meId, onChanged,
-}: { id: string; meId: string; onChanged: () => void }) {
+  id, meId, onChanged, startRest,
+}: {
+  id: string; meId: string; onChanged: () => void;
+  startRest: (r: Rest | null) => void;
+}) {
   const { d, setD, err, load, send } = useSession(id);
 
   if (err) return <div className="pad"><div className="errbox" role="alert">{err}</div></div>;
@@ -36,6 +40,38 @@ export default function Strength({
     const row = d!.sets.find((x) => x.id === setId)!;
     const next = { ...row, ...changes };
     send({ action: "set", set_id: setId, load_kg: next.load_kg, reps: next.reps, done: next.done });
+
+    // Ticking a set starts the rest. Un-ticking does not — that is a correction,
+    // not the end of a set.
+    if (changes.done === true) startRest(restAfter(row));
+  }
+
+  /**
+   * What follows this set: the next set of the same lift, the first set of the
+   * next lift, or the end of the session.
+   */
+  function restAfter(row: SetRow): Rest {
+    const rest = restFor(row.prescribed_reps);
+    const sameLift = d!.sets.filter((x) => x.ord === row.ord).sort((a, b) => a.set_no - b.set_no);
+    const nextInLift = sameLift.find((x) => x.set_no === row.set_no + 1);
+    const load = (x: SetRow) => (x.load_kg != null ? `${x.load_kg} kg` : "BW");
+
+    if (nextInLift) {
+      return { rest, left: rest, next: {
+        name: row.exercise,
+        line: `Set ${nextInLift.set_no} · ${load(nextInLift)} × ${nextInLift.reps ?? "—"}`,
+      } };
+    }
+    const nextLift = d!.sets
+      .filter((x) => x.ord === row.ord + 1)
+      .sort((a, b) => a.set_no - b.set_no)[0];
+    if (nextLift) {
+      return { rest, left: rest, next: {
+        name: nextLift.exercise,
+        line: `Set 1 · ${load(nextLift)} × ${nextLift.reps ?? "—"}`,
+      } };
+    }
+    return { rest, left: rest, next: { name: "Session complete", line: "All sets logged" } };
   }
 
   return (

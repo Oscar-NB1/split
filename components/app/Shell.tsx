@@ -15,6 +15,7 @@ import Strength from "./Strength";
 import Program from "./Program";
 import Picker from "./Picker";
 import Form from "./Form";
+import RestTimer, { type Rest } from "./RestTimer";
 
 export type User = { id: string; display_name: string };
 export type Session = {
@@ -67,6 +68,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ date: string; slot: "AM" | "PM" } | null>(null);
+  // The rest timer lives here rather than in Strength: it renders above the tab
+  // bar, and it has to keep running while you scroll the session.
+  const [rest, setRest] = useState<Rest | null>(null);
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,7 +154,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Brief id={sessionId} meId={me.id} openActivity={openActivity} onChanged={load} />
         )}
         {view === "strength" && sessionId && (
-          <Strength id={sessionId} meId={me.id} onChanged={load} />
+          <Strength id={sessionId} meId={me.id} onChanged={load} startRest={setRest} />
         )}
         {view === "past" && <Past openActivity={openActivity} />}
         {view === "versus" && <Versus data={data} me={me} other={other} />}
@@ -175,6 +179,10 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         {view === "form" && <Form />}
         {view === "profile" && <Profile me={me} />}
       </div>
+
+      {rest && (
+        <RestTimer rest={rest} onChange={setRest} onDismiss={() => setRest(null)} />
+      )}
 
       <nav className="tabbar">
         {TABS.map(([v, label]) => (

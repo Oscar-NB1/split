@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseSteps, parseStrength, repCount, tonnage } from "../lib/prescription";
+import { mmss, parseSteps, parseStrength, repCount, restFor, tonnage } from "../lib/prescription";
 
 // the real prescription the plan writes for week 1's Tuesday
 const KEY = [
@@ -99,4 +99,29 @@ test("tonnage counts only completed sets", () => {
     { load_kg: null, reps: 12, done: true }, // bodyweight: no kilograms to count
   ];
   assert.equal(tonnage(sets), 1000);
+});
+
+test("rest follows the set scheme: heavy and low-rep needs longer", () => {
+  // a triple at 90% is not recoverable in ninety seconds; a set of twelve does
+  // not need three minutes
+  assert.equal(restFor(3), 180);
+  assert.equal(restFor(5), 180);
+  assert.equal(restFor(6), 120);
+  assert.equal(restFor(8), 120);
+  assert.equal(restFor(12), 90);
+  assert.equal(restFor(20), 90);
+});
+
+test("rest has a sane default when no reps are prescribed", () => {
+  assert.equal(restFor(null), 120);
+  assert.equal(restFor(undefined), 120);
+});
+
+test("the clock reads m:ss, and h:mm:ss past an hour", () => {
+  assert.equal(mmss(90), "1:30");
+  assert.equal(mmss(180), "3:00");
+  assert.equal(mmss(9), "0:09");
+  assert.equal(mmss(3661), "1:01:01");
+  // a countdown must never render a negative
+  assert.equal(mmss(-5), "0:00");
 });
