@@ -16,6 +16,7 @@ import Program from "./Program";
 import Picker from "./Picker";
 import Form from "./Form";
 import RestTimer, { type Rest } from "./RestTimer";
+import Record from "./Record";
 
 export type User = { id: string; display_name: string };
 export type Session = {
@@ -40,14 +41,14 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form";
+  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
   week: "week", activity: "week",
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
-  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan",
+  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -58,6 +59,7 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
   program: { to: "plan", label: "Plan" },
   picker: { to: "program", label: "Cancel" },
   form: { to: "plan", label: "Plan" },
+  record: { to: "awards", label: "Awards" },
   strategy: { to: "plan", label: "Plan" },
   profile: { to: "week", label: "Week" },
 };
@@ -71,6 +73,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   // The rest timer lives here rather than in Strength: it renders above the tab
   // bar, and it has to keep running while you scroll the session.
   const [rest, setRest] = useState<Rest | null>(null);
+  const [recordDist, setRecordDist] = useState<string | null>(null);
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -109,6 +112,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "versus" ? `You vs ${other?.display_name ?? "—"}`
     : view === "profile" ? "Settings"
     : view === "strategy" ? "Race plan"
+    : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
     : view === "program" ? "Edit the week"
     : view === "picker" ? "Add a session"
@@ -119,7 +123,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     view === "past" ? "Past" : view === "awards" ? "Awards" : view === "versus" ? "Versus"
     : view === "profile" ? "Profile" : view === "strategy" ? "Strategy"
     : view === "plan" ? "Plan" : view === "program" ? "Program"
-    : view === "picker" ? "Add" : view === "form" ? "Form" : "Split";
+    : view === "picker" ? "Add" : view === "form" ? "Form"
+    : view === "record" ? "Record" : "Split";
 
   return (
     <div className="app">
@@ -158,7 +163,13 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "past" && <Past openActivity={openActivity} />}
         {view === "versus" && <Versus data={data} me={me} other={other} />}
-        {view === "awards" && <Awards meId={me.id} openActivity={openActivity} />}
+        {view === "awards" && (
+          <Awards meId={me.id} openActivity={openActivity}
+            openRecord={(dist) => { setRecordDist(dist); setView("record"); }} />
+        )}
+        {view === "record" && recordDist && (
+          <Record dist={recordDist} openActivity={openActivity} />
+        )}
         {view === "plan" && (
           <Plan monday={monday} goStrategy={() => setView("strategy")}
             goProgram={() => setView("program")} goForm={() => setView("form")} />
