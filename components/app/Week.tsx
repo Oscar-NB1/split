@@ -71,9 +71,13 @@ export default function Week({
   const uid = who === "me" ? me.id : other?.id;
   const all = [...data.sessions, ...data.unplanned].filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
-  const week = weekOf(monday);
+  // Someone with no plan of their own is not "before the block" — there is no
+  // block. Showing the other athlete's rebuild weeks and 55:00 goal as hers was
+  // the bug this gate closes.
+  const mine = data?.has_plan !== false;
+  const week = mine ? weekOf(monday) : null;
   const intent = week ? weekIntent(week.n) : null;
-  const beforeBlock = !week && monday < BLOCK_START;
+  const beforeBlock = mine && !week && monday < BLOCK_START;
 
   const dayList = all
     .filter((s) => s.planned_date === dates[day])
@@ -88,15 +92,18 @@ export default function Week({
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
           textTransform: "uppercase", color: "var(--teal)" }}>
-          {intent ? intent.phase : beforeBlock ? "Before the block" : "Off block"}
+          {intent ? intent.phase : !mine ? "No block" : beforeBlock ? "Before the block" : "Off block"}
         </div>
         <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
           lineHeight: 1.1, letterSpacing: "-.02em" }}>
           {week ? `${week.km} km, and two hard days.`
+            : !mine ? "No block on your account."
             : beforeBlock ? "The block starts Monday." : "Off block."}
         </div>
         <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
-          {week?.note || (beforeBlock
+          {week?.note || (!mine
+            ? "Anything you log still appears here, and still counts in the head-to-head."
+            : beforeBlock
             ? `Fifteen weeks to ${GOAL}. Week 1 is ${WEEKS[0].km} km — bought with consistency, not intensity.`
             : "Tuesday and Saturday are the week. Everything else supports them.")}
         </div>

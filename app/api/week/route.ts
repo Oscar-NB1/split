@@ -10,7 +10,7 @@ import { prescribedPace } from "@/lib/signals";
 
 /** Everything one week's screen needs, in a single round trip. */
 export const GET = route(async (req: NextRequest) => {
-  await requireUser();
+  const me = await requireUser();
   // snapped to a Monday: a mid-week date used to give this week's challenge
   // metric over a Wednesday-to-Wednesday scoring window
   const asked = new URL(req.url).searchParams.get("week");
@@ -87,8 +87,23 @@ export const GET = route(async (req: NextRequest) => {
     await Promise.all(users.map(async (u) => [u.id, await streakFor(u.id)])),
   );
 
+  // Whether THIS athlete has a block of their own.
+  //
+  // The block — its race date, its 15 weeks, its 55:00–56:30 goal — is declared in
+  // lib/coach.ts as module constants, so every screen that read them showed the
+  // same block to whoever was signed in. The second athlete, who has no plan and
+  // no Strava connection, was shown his Rotterdam race and his target as hers,
+  // reading "0/15 weeks done" against a block she is not doing. The same mistake
+  // as the HR zones, which were one athlete's maximum applied to both.
+  const [plan] = await sql<{ has_plan: boolean }[]>`
+    select exists (
+      select 1 from plan_templates where athlete_id = ${me.id} and active
+    ) as has_plan
+  `;
+
   return NextResponse.json({
     week_start: ws,
+    has_plan: plan?.has_plan ?? false,
     users,
     sessions,
     unplanned,

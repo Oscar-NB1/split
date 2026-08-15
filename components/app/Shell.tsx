@@ -31,7 +31,10 @@ export type Session = {
   significance?: string | null;
 };
 export type WeekData = {
-  week_start: string; users: User[]; sessions: Session[]; unplanned: Session[];
+  week_start: string;
+  /** Does the signed-in athlete have a block of their own? */
+  has_plan?: boolean;
+  users: User[]; sessions: Session[]; unplanned: Session[];
   streaks: Record<string, number>;
   reps_off?: number;
   challenge: { metric: string; label: string; scores: { user_id: string; score: number }[] };
@@ -107,8 +110,11 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     setView(s.kind === "strength" ? "strength" : "brief");
   };
   const back = BACK[view];
-  const week = weekOf(monday);
-  const left = daysToRace(today());
+  // The block belongs to whoever's plan it is. Without one, the header must not
+  // count down to someone else's race.
+  const mine = data?.has_plan !== false;
+  const week = mine ? weekOf(monday) : null;
+  const left = mine ? daysToRace(today()) : -1;
 
   const sub =
     view === "past" ? "Everything logged"
@@ -123,6 +129,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "program" ? "Edit the week"
     : view === "picker" ? "Add a session"
     : week ? `Week ${week.n} · ${week.km} km target`
+    : !mine ? "No block yet"
     : left > 0 ? `${left} days to race` : "Off block";
 
   const title =

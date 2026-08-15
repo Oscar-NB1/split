@@ -68,7 +68,21 @@ export default function Plan({
         ))}
       </div>
 
-      {tab !== "Block" ? (
+      {data?.has_plan === false ? (
+        // The block is not this athlete's, so it is not shown as though it were.
+        // Pace and volume against plan are equally meaningless without one.
+        <div style={{ background: PAPER, border: `1px solid ${LINE}`,
+          borderRadius: "var(--r-card)", padding: 18,
+          display: "flex", flexDirection: "column", gap: 8 }}>
+          <span style={{ fontFamily: "var(--display)", fontSize: 19, fontWeight: 700,
+            lineHeight: 1.2, letterSpacing: "-.02em" }}>No block on your account.</span>
+          <span style={{ fontSize: 12, color: INK55, lineHeight: 1.55 }}>
+            The fifteen-week Hyrox block belongs to the other athlete, so it is not shown
+            here as if it were yours. Everything you log still appears on the week and
+            still counts in the head-to-head.
+          </span>
+        </div>
+      ) : tab !== "Block" ? (
         <Form only={tab === "Form" ? "pace" : "volume"} />
       ) : (
         <>
