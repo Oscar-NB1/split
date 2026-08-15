@@ -66,6 +66,25 @@ export function beats(metric: Metric, value: number, previous: number | null): b
 }
 
 /**
+ * Bounds that separate a personal best from a broken watch.
+ *
+ * Both of these were found by running this over real history, which produced
+ * "Fastest kilometre: 0:15" and "Longest session: 1146 min" and would have shown
+ * them on the Awards screen as achievements:
+ *
+ *   - A 3,412 m split recorded as 15 s of moving time against 1,205 s elapsed —
+ *     819 km/h. The GPS jumped and `moving_seconds` is the field that lies.
+ *   - A weight-training session of 68,740 s, moving equal to elapsed: a watch
+ *     left running for nineteen hours.
+ *
+ * Judged on speed rather than on time, because speed is what is physically
+ * impossible: 7 m/s sustained over a kilometre is 2:23/km, faster than any
+ * amateur and comfortably outside this athlete's range.
+ */
+const MAX_SPEED_MS = 7.0;
+const MAX_SESSION_SECONDS = 6 * 3600;
+
+/**
  * The best run of N consecutive kilometre splits inside one activity.
  *
  * Partitioned by activity so a window can never span two runs — the sum has to
@@ -80,6 +99,8 @@ async function bestRun(activityId: string, n: number): Promise<number | null> {
                order by split rows between ${n - 1} preceding and current row) as have
         from activity_splits
        where activity_id = ${activityId} and moving_seconds > 0 and distance_m >= 995
+         -- a split faster than this is a GPS jump, not a personal best
+         and distance_m / moving_seconds <= ${MAX_SPEED_MS}
     ) x where have = ${n} order by total asc limit 1
   `;
   return row ? Number(row.total) : null;
@@ -102,14 +123,20 @@ export async function candidates(
   if (!a) return [];
 
   const out: { metric: Metric; value: number }[] = [];
-  const minutes = (a.moving_seconds ?? 0) / 60;
-  if (minutes > 0) out.push({ metric: "longest_session_min", value: minutes });
+  const seconds = a.moving_seconds ?? 0;
+  // a watch left running is not a long session
+  if (seconds > 0 && seconds <= MAX_SESSION_SECONDS) {
+    out.push({ metric: "longest_session_min", value: seconds / 60 });
+  }
 
   const isRun = /run/i.test(a.sport_type ?? "");
   if (!isRun) return out;
 
   const km = Number(a.distance_m ?? 0) / 1000;
-  if (km > 0) out.push({ metric: "longest_run_km", value: km });
+  // and a "run" averaging above the sprint bound is a bad GPS trace
+  if (km > 0 && seconds > 0 && (km * 1000) / seconds <= MAX_SPEED_MS) {
+    out.push({ metric: "longest_run_km", value: km });
+  }
 
   const [k1, k5, k10] = await Promise.all([bestRun(activityId, 1), bestRun(activityId, 5), bestRun(activityId, 10)]);
   if (k1 != null) out.push({ metric: "best_1km", value: k1 });
@@ -118,8 +145,8 @@ export async function candidates(
 
   // only counts as aerobic if it was actually run aerobically
   const hr = a.avg_hr == null ? null : Number(a.avg_hr);
-  if (km >= 10 && hr != null && hr <= 155 && a.moving_seconds) {
-    out.push({ metric: "aerobic_pace", value: a.moving_seconds / km });
+  if (km >= 10 && hr != null && hr <= 155 && seconds > 0 && seconds <= MAX_SESSION_SECONDS) {
+    out.push({ metric: "aerobic_pace", value: seconds / km });
   }
   return out;
 }

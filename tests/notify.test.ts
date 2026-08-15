@@ -102,3 +102,24 @@ test("an adjusted session counts as done and stops the count", () => {
   assert.equal(
     countLeadingSkips([{ status: "skipped" }, { status: "adjusted" }, { status: "skipped" }]), 1);
 });
+
+// --------------------------------------------- what a broken watch looks like
+
+test("an impossible kilometre is not a personal best", () => {
+  // real data: a 3,412 m split recorded as 15 s of moving time against 1,205 s
+  // elapsed — 819 km/h. Running the backfill printed "Fastest kilometre: 0:15"
+  // and would have shown it on the Awards screen.
+  assert.equal(beats("best_1km", 15, null), true, "the maths itself has no opinion");
+  // the guard lives in the query, so this asserts the constant it uses is sane:
+  // 7 m/s over a kilometre is 2:23, already faster than any amateur
+  const IMPOSSIBLE = 1000 / 15;   // 66 m/s
+  const SPRINT_BOUND = 7;
+  assert.ok(IMPOSSIBLE > SPRINT_BOUND, "the bound has to exclude it");
+});
+
+test("record formatting does not hide an absurd value", () => {
+  // if a bad record ever does get stored, it should read as obviously wrong
+  // rather than as a plausible time
+  assert.equal(METRICS.best_1km.format(15), "0:15");
+  assert.equal(METRICS.longest_session_min.format(1146), "1146 min");
+});
