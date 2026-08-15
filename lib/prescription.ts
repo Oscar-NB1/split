@@ -173,3 +173,41 @@ export function tonnage(sets: { load_kg: number | null; reps: number | null; don
     0,
   );
 }
+
+// ------------------------------------------------------- human descriptions
+
+/** What a zone means in words, so a step reads as an instruction. */
+export const ZONE_WORD: Record<string, string> = {
+  Z1: "recovery — walk or very easy",
+  Z2: "conversational",
+  Z3: "steady",
+  Z4: "hard — race pace",
+  Z5: "maximum",
+};
+
+/** "15m" → "15 min", "800m" → "800 m", "1000m" → "1.0 km". */
+export function humanDose(dose: string): string {
+  const m = dose.match(/^(\d+(?:\.\d+)?)\s*(km|k|m|min|s|sec|mi)$/i);
+  if (!m) return dose;
+  const n = Number(m[1]);
+  const unit = m[2].toLowerCase();
+  // intervals.icu writes minutes as "15m" and metres as "800m". A bare "m"
+  // under 60 with no other clue is minutes; above that it is metres. Ambiguous
+  // by design in the source format, so this is where the guess is made once.
+  if (unit === "m") return n <= 60 ? `${n} min` : n >= 1000 ? `${(n / 1000).toFixed(1)} km` : `${n} m`;
+  if (unit === "km" || unit === "k") return `${n} km`;
+  if (unit === "min") return `${n} min`;
+  if (unit === "s" || unit === "sec") return `${n}s`;
+  return dose;
+}
+
+/** The pace instruction for a step, given the session's prescribed pace. */
+export function paceCue(zone: string | null, prescribed: number | null): string | null {
+  if (!prescribed) return null;
+  const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")} /km`;
+  if (zone === "Z4" || zone === "Z5") return `At ${fmt(prescribed)}`;
+  // the plan's easy-run instruction, relative to the session's own target
+  if (zone === "Z2") return `No faster than ${fmt(prescribed + 45)}`;
+  if (zone === "Z1") return "Walk it. Standing rest counts.";
+  return null;
+}
