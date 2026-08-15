@@ -53,10 +53,32 @@ export type Block = {
   goal_seconds: number | null;
   weeks: PlanWeek[];
   intents: IntentRange[];
+  /**
+   * How much of this plan is measured rather than assumed.
+   *
+   * `estimated` — built from the athlete's answers, so volume is held 15% below
+   * the ceiling and the ramp capped. `awaiting` — a benchmark is scheduled and
+   * the numbers rebuild from its result. `measured` — paces, limiter and roxzone
+   * come from real numbers. Surfaced permanently rather than as a notification,
+   * because it is what explains cautious numbers without anyone having to ask.
+   */
+  plan_state: "estimated" | "awaiting" | "measured" | null;
+  benchmark: {
+    variant?: string; submaximal?: boolean; protocol_version?: number;
+    scheduled?: boolean; retests?: number[];
+  } | null;
+  guardrails: string[];
+  /** Seconds per kilometre, or null when there is no pace anchor yet. */
+  easy_pace: number | null;
+  /** What the generator decided against the answers, and why. */
+  corrections: { title: string; body: string }[];
 };
 
 export type Row = {
   id: string; name: string; start_date: string;
+  plan_state: Block["plan_state"]; benchmark: Block["benchmark"];
+  guardrails: string[] | null; easy_pace: number | null;
+  corrections: Block["corrections"] | null;
   race_date: string | null; race_name: string | null;
   goal_label: string | null; goal_seconds: number | null;
   volume: { km: number; note?: string }[] | null;
@@ -99,6 +121,11 @@ export function toBlock(row: Row): Block {
     goal_seconds: row.goal_seconds,
     weeks,
     intents: Array.isArray(row.intents) ? row.intents : [],
+    plan_state: row.plan_state ?? null,
+    benchmark: row.benchmark && Object.keys(row.benchmark).length ? row.benchmark : null,
+    guardrails: Array.isArray(row.guardrails) ? row.guardrails : [],
+    easy_pace: row.easy_pace ?? null,
+    corrections: Array.isArray(row.corrections) ? row.corrections : [],
   };
 }
 

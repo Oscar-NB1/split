@@ -90,22 +90,23 @@ test("a logged benchmark restores the full ceiling and lifts the ramp cap", () =
   assert.ok(!r.corrections.some((c) => /15% below/.test(c.title)));
 });
 
-test("the 12% cap is a ceiling, and nothing currently reaches it", () => {
-  // Measured lifts the cap from 8% to 12%, but the ramp is min(cap, base, running)
-  // and the base allowance tops out at 10 for every answer — so 12 is reachable
-  // only if a future training-base tier allows it. Asserted so that if someone
-  // raises the cap expecting a faster climb, this says where the real limit is.
+test("several years of training is what makes the 12% cap reachable", () => {
+  // Before, the base allowance topped out at 10 for every answer, so a measured
+  // plan "ramping up to 12%" was true of the ceiling and of nothing else.
   const best = resolve({
     ...HER, benchmark: "logged", runningSelf: "Competitive", base: "Several years",
   });
-  assert.equal(best.baseRamp, 10, "the highest base allowance any answer produces");
+  assert.equal(best.baseRamp, 12);
   assert.equal(best.runRamp, 12);
-  assert.equal(best.ramp, 10, "the base allowance is the binding constraint, not the cap");
+  assert.equal(best.ramp, 12, "the cap is reachable now, and only here");
 });
 
-test("scheduling the benchmark puts the plan in awaiting rather than measured", () => {
-  assert.equal(resolve({ ...HER, benchmark: "scheduled" }).planState, "awaiting");
-  assert.equal(resolve({ ...HER, benchmark: "skipped" }).planState, "estimated");
+test("the ramp is still the lowest of the three, whichever binds", () => {
+  const runBound = resolve({ ...HER, benchmark: "logged", base: "Several years" });
+  assert.equal(runBound.baseRamp, 12);
+  assert.equal(runBound.ramp, 8, "her running still binds at 8");
+  const capBound = resolve({ ...HER, runningSelf: "Competitive", base: "Several years" });
+  assert.equal(capBound.ramp, 8, "and without a benchmark the 8% cap binds");
 });
 
 // ------------------------------------------------------------ the safety gate

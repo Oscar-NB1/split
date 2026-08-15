@@ -460,3 +460,16 @@ alter table plan_templates add column if not exists benchmark   jsonb not null d
 alter table plan_templates add column if not exists guardrails  jsonb not null default '[]';
 alter table plan_templates add column if not exists easy_pace   int;
 alter table plan_templates add column if not exists corrections jsonb not null default '[]';
+
+-- Who coaches whom (2026-08-15). Read from here rather than hardcoded, so a
+-- second athlete appears on the profile without a code change — and, more
+-- importantly, so "may I open this person's plan" has one answer in one place.
+-- An `athlete` parameter on a request is an access-control question.
+create table if not exists coaching (
+  coach_id   uuid not null references users(id) on delete cascade,
+  athlete_id uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (coach_id, athlete_id),
+  -- coaching yourself is not a relationship
+  check (coach_id <> athlete_id)
+);

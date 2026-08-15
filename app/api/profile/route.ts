@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { coachedBy, coachees } from "@/lib/coaching";
 import { route } from "@/lib/http";
 
 /** The athlete's own settings: zones come from hr_max, switches from notify. */
@@ -27,6 +28,10 @@ export const GET = route(async () => {
   return NextResponse.json({
     ...(row ?? { hr_max: null, notify: {} }),
     weight_kg: row?.weight_kg == null ? null : Number(row.weight_kg),
+    // read from the coaching table rather than hardcoded, so a second athlete
+    // appears here without a code change
+    coachees: await coachees(me.id),
+    coached_by: await coachedBy(me.id),
     connected: conns.map((c) => c.provider),
     connections: conns,
     activities: counts?.activities ?? 0,

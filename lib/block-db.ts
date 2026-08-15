@@ -11,7 +11,8 @@ import { type Block, type Row, toBlock } from "./block";
 
 const SELECT = sql`
   select id, name, start_date::text as start_date, race_date::text as race_date,
-         race_name, goal_label, goal_seconds, volume, intents, weeks
+         race_name, goal_label, goal_seconds, volume, intents, weeks,
+         plan_state, benchmark, guardrails, easy_pace, corrections
 `;
 
 /** The athlete's active block, or null if they have none. */
@@ -29,7 +30,8 @@ export async function blocksForAll(): Promise<Record<string, Block>> {
   const rows = await sql<(Row & { athlete_id: string })[]>`
     select t.id, t.athlete_id, t.name, t.start_date::text as start_date,
            t.race_date::text as race_date, t.race_name, t.goal_label,
-           t.goal_seconds, t.volume, t.intents, t.weeks
+           t.goal_seconds, t.volume, t.intents, t.weeks,
+           t.plan_state, t.benchmark, t.guardrails, t.easy_pace, t.corrections
       from plan_templates t where t.active order by t.start_date desc
   `;
   const out: Record<string, Block> = {};

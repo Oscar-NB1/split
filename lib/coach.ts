@@ -27,43 +27,18 @@ import { addDays } from "./dates";
 /**
  * Heart-rate zones.
  *
- * Set from a measured max of 189 bpm. Z2 topping out at 152 is the number the
- * plan turns on: easy runs currently sit at 146–158, and the instruction is to
- * push them 5–8 bpm down. The Week screen's "watch for" line and this table
- * have to agree, so both are defined here.
+ * The arithmetic and the table rules moved to lib/zones.ts when zones became
+ * editable — a nudged ceiling has to stay between its neighbours, and a table
+ * with a gap in it is worse than no table at all. Re-exported here so the
+ * screens that already import from this file keep working.
  */
-export type Zone = { tag: string; label: string; min: number; max: number; colour: string };
-
-export const DEFAULT_HR_MAX = 189;
-
-/**
- * Zone ceilings as a fraction of maximum heart rate.
- *
- * Taken from the boundaries the plan states for a measured max of 189 — 140,
- * 152, 168, 181 — which are 74.1%, 80.4%, 88.9% and 95.8%. Expressing them as
- * percentages rather than as fixed numbers is what makes the table correct for a
- * second athlete: her max is not his, and applying his zones to her heart rate
- * would report her easy runs as threshold work.
- */
-const ZONE_PCT = [0.741, 0.804, 0.889, 0.958];
-const ZONE_COLOUR = ["#9CCFDE", "#0A8FB0", "#E8C051", "#C07A3E", "#12314D"];
-
-/** The zone table for one athlete. */
-export function zonesFor(hrMax: number | null | undefined): Zone[] {
-  const max = hrMax && hrMax > 100 ? hrMax : DEFAULT_HR_MAX;
-  const ceilings = ZONE_PCT.map((p) => Math.round(max * p));
-  return ceilings.concat(9999).map((ceil, i) => {
-    const min = i === 0 ? 0 : ceilings[i - 1] + 1;
-    return {
-      tag: `Z${i + 1}`,
-      label: i === 0 ? `≤ ${ceil} bpm` : i === 4 ? `${min}+` : `${min}–${ceil}`,
-      min, max: ceil, colour: ZONE_COLOUR[i],
-    };
-  });
-}
+export type { Zone } from "./zones";
+export { DEFAULT_HR_MAX, ZONE_PCT, fromMax as zonesFor } from "./zones";
+import { type Zone, fromMax } from "./zones";
+import { DEFAULT_HR_MAX as MAX } from "./zones";
 
 /** The default table, for anywhere no athlete is in scope. */
-export const ZONES: Zone[] = zonesFor(DEFAULT_HR_MAX);
+export const ZONES = fromMax(MAX);
 
 /**
  * Seconds spent in each zone, from the heart-rate stream.

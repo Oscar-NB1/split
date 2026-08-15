@@ -130,7 +130,10 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
   // The conservatism differential: not knowing has a cost, and it is stated.
   const startKm = estimated ? Math.round(rawStart * 0.85) : rawStart;
 
-  const baseRamp = x.base === "Over a year" || x.base === "Several years" ? 10 : 8;
+  // Several years of training is what the 12% cap exists for. Without this the
+  // cap was unreachable — the base allowance topped out at 10 for every answer,
+  // so "measured plans ramp up to 12%" was true of the ceiling and of nothing else.
+  const baseRamp = x.base === "Several years" ? 12 : x.base === "Over a year" ? 10 : 8;
   const runRamp = RUN_RAMP[x.runningSelf] ?? 10;
   const cap = estimated ? 8 : 12;
   const resolvedRamp = Math.min(cap, baseRamp, runRamp);

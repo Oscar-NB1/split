@@ -9,7 +9,8 @@ import {
 } from "@/lib/analysis";
 import { hasBasemap } from "@/lib/map";
 import { stationOfSplit } from "@/lib/stations";
-import { zoneSeconds, zonesFor } from "@/lib/coach";
+import { zoneSeconds } from "@/lib/coach";
+import { sanitise as zonesOf } from "@/lib/zones";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -40,6 +41,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     display_name: string; session_id: string | null; session_title: string | null;
     planned_minutes: number | null; session_status: string | null; effort_points: number | null;
     hr_max: number | null;
+    zones: unknown;
   }[]>`
     select a.id, a.user_id, a.provider_activity_id, a.sport_type, a.name,
            a.start_time, a.local_date::text as local_date,
@@ -48,7 +50,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
            a.raw #>> '{map,summary_polyline}' as polyline,
            u.display_name,
            p.id as session_id, p.title as session_title, p.planned_minutes,
-           p.status as session_status, p.effort_points, u.hr_max
+           p.status as session_status, p.effort_points, u.hr_max, u.zones
       from activities a
       join users u on u.id = a.user_id
       left join planned_sessions p on p.activity_id = a.id and p.status <> 'moved'
@@ -109,7 +111,10 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
   // interval session's hard minutes.
   // the ATHLETE'S zones, not the app's: a table built from one person's maximum
   // reports the other person's easy runs as threshold work
-  const zones = zonesFor(activity.hr_max);
+  // and their EDITED zones where they have them: a nudged Z2 ceiling has to move
+  // the zone-time bars on the activity too, or the two screens disagree about
+  // what the same run was
+  const zones = zonesOf(activity.zones, activity.hr_max);
   const raw = streamRow[0]?.data as Record<string, { data?: (number | null)[] }> | undefined;
   const zoneSecs = zoneSeconds(
     raw?.time?.data as number[] | undefined,
