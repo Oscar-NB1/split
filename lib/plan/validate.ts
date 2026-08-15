@@ -14,6 +14,9 @@ export type PlanWeek = Week & { sessions: { kind: SlotKind | string; km?: number
 
 export type Violation = { assertion: string; week?: number; detail: string };
 
+/** Sessions measured in sets and loads rather than kilometres. */
+const NO_TARGET_NEEDED = new Set(["strength", "hyrox", "benchmark", "rest"]);
+
 export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
   const out: Violation[] = [];
   const peak = Math.max(...weeks.map((w) => w.km), 0);
@@ -59,13 +62,19 @@ export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
         detail: `${long} km of a ${w.km} km week, before advanced` });
     }
 
-    if (w.sessions.length > 0 && w.sessions.some((s) => s.km === undefined && s.kind !== "strength")) {
-      // every session needs something measurable to aim at
-      const vague = w.sessions.filter((s) => s.km === undefined && s.kind !== "strength");
-      if (vague.length) {
-        out.push({ assertion: "measurable target", week: w.n,
-          detail: `${vague.length} session(s) with nothing to aim at` });
-      }
+    /**
+     * Every session WE prescribe needs something measurable to aim at.
+     *
+     * A commitment does not: kickboxing on a Thursday is the athlete's own
+     * session, and the plan schedules around it rather than prescribing it.
+     * Flagging those put fifteen assertion failures on an otherwise valid
+     * plan — the assertion was measuring the wrong set.
+     */
+    const vague = w.sessions.filter((s) =>
+      s.km === undefined && !NO_TARGET_NEEDED.has(String(s.kind)) && !("commitment" in s));
+    if (vague.length) {
+      out.push({ assertion: "measurable target", week: w.n,
+        detail: `${vague.length} session(s) with nothing to aim at` });
     }
   }
 

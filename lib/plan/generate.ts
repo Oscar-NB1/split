@@ -39,6 +39,8 @@ export type Params = ResolveInput & {
 export type Session = {
   day: number; kind: SlotKind | string; hard: boolean;
   label: string; km?: number;
+  /** true when this is the athlete's own session, scheduled around rather than prescribed */
+  commitment?: boolean;
   prescription: ReturnType<typeof prescribe> | null;
 };
 
@@ -125,9 +127,11 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       const isBench = benchmarks.has(w.n) && isQuality && !benchTaken;
       if (isBench) benchTaken = true;
       const share = SHARE[s.kind as SlotKind];
+      const isCommitment = p.commitments.some((c) => c.activity === s.kind);
       return {
         day: s.day,
         kind: isBench ? "benchmark" : s.kind,
+        ...(isCommitment ? { commitment: true } : {}),
         hard: s.hard,
         label: isBench ? "Benchmark test" : isQuality ? rung.label : String(s.kind),
         km: share ? Math.round(runnable * share * 10) / 10 : undefined,

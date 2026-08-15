@@ -7,9 +7,11 @@
  * produce so it can be compared with the hand-written block before anything
  * replaces it.
  *
- * Every input below is either taken from his actual training data or stated in
- * the plan document. The two that are neither are left neutral and named at the
- * bottom, because a test plan built on invented answers tests nothing.
+ * Most inputs are taken from his actual training data or stated in the plan
+ * document. Three were never answered — partner deltas, commitments, division —
+ * and are filled in here with stated assumptions, at his direction, so the
+ * pipeline can be exercised end to end. They are printed as assumptions rather
+ * than presented as his answers.
  */
 import { sql } from "../lib/db";
 import { addDays, mondayOf } from "../lib/dates";
@@ -71,9 +73,12 @@ async function main() {
     // no benchmark has been run, so there is no anchor and no measurement
     confidence: "estimated",
     anchor: anchorFrom([]),
-    // left neutral on purpose — see the note at the end
-    partner: null,
-    commitments: [],
+    // ASSUMED for the test — see the note at the end
+    partner: { run_delta: 1, station_delta: -1 },   // Olivier quicker on foot; sled pull is Oscar's
+    commitments: [{
+      activity: "kickboxing", per_week: 2, fixed_days: [0, 3],
+      intensity: "high", mode: "add", locked: true,
+    }],
     absences: [],
     exclusions: [],
     week_start: (n) => addDays(mondayOf(START), (n - 1) * 7),
@@ -105,12 +110,13 @@ async function main() {
   console.log(`\nAssertion failures: ${plan.violations.length === 0 ? "none" : JSON.stringify(plan.violations)}`);
 
   console.log(`
-Not answered, so left neutral:
-  · partner deltas — how he compares with Olivier on running and on stations.
-    Without them the role is 'balanced' and the split does not specialise.
-  · commitments — kickboxing and strength are in the hand-written block, and
-    nobody has said which are locked or how often.
-  · division — needed for station loads, and it decides real kilos.`);
+Assumed, not answered — change these and the block changes:
+  · partner: Olivier quicker on foot, Oscar stronger at the stations
+    → role '${plan.role}'. A different pair of signs is a different block.
+  · commitments: kickboxing twice a week, Monday and Thursday, locked.
+    Credited at 0x — it costs the legs and builds none of this.
+  · division: not set, so station loads are still a share of race weight
+    rather than kilos.`);
   process.exit(0);
 }
 
