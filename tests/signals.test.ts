@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BAND, MAX_SHIFT, MIN_STREAK, prescribedPace, read, secs, type Signal } from "../lib/signals";
+import { daysToRace } from "../lib/coach";
 
 const sig = (on: string, prescribed: number, achieved: number, weight = 1, type = "Interval"): Signal =>
   ({ on, label: `${on} session`, type, weight, prescribed, achieved });
@@ -140,4 +141,22 @@ test("something that is not a pace is not read as one", () => {
   assert.equal(prescribedPace("Race @ 09:30"), null, "9:30 is a clock time, not a pace");
   assert.equal(prescribedPace("Sim @ 58:00"), null, "58:00 is a finish time");
   assert.equal(prescribedPace("Reps @ 1:30"), null, "1:30/km is nobody's pace");
+});
+
+test("days-to-race counts down, not up", () => {
+  // diffDays(a, b) is a - b. Getting the order wrong returned -105 for a race
+  // three months out, which read as "block complete" on two screens and made the
+  // 28/14/7/1-day countdown notifications look up MARKS[-105] and never fire.
+  assert.equal(daysToRace("2026-08-15"), 105, "race is 28 Nov 2026");
+  assert.equal(daysToRace("2026-11-27"), 1, "the night before");
+  assert.equal(daysToRace("2026-11-28"), 0, "race day");
+  assert.ok(daysToRace("2026-12-01") < 0, "after the race");
+});
+
+test("the countdown marks are days that can actually occur", () => {
+  // every mark must be reachable by counting down from the block start
+  const fromStart = daysToRace("2026-08-17");
+  for (const mark of [28, 14, 7, 1]) {
+    assert.ok(mark < fromStart, `${mark} days out falls inside the block`);
+  }
 });

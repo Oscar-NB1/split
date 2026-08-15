@@ -207,7 +207,8 @@ async function raceCountdown() {
      where significance = 'race' and planned_date >= current_date
   `;
   for (const r of rows) {
-    const days = diffDays(today(), r.planned_date);
+    // days REMAINING: diffDays is a - b, so the race date comes first
+    const days = diffDays(r.planned_date, today());
     const mark = MARKS[days];
     if (!mark) continue;
     await queue(r.user_id, "race", `race:${r.planned_date}:${days}`, {

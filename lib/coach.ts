@@ -109,7 +109,15 @@ export function weekOf(date: string): PlanWeek | null {
   return WEEKS.find((w) => w.start === monday) ?? null;
 }
 
-export const daysToRace = (from: string) => diffDays(from, RACE_DATE);
+/**
+ * Days remaining until race day. Positive before it, negative after.
+ *
+ * The argument order matters and was wrong: `diffDays(a, b)` is `a - b`, so
+ * `diffDays(from, RACE_DATE)` returns -105 for a race three months out. Every
+ * caller then read the block as finished, and the race countdown looked up
+ * MARKS[-105] and silently never fired.
+ */
+export const daysToRace = (from: string) => diffDays(RACE_DATE, from);
 
 /**
  * Heart-rate zones.

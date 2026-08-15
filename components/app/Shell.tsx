@@ -174,8 +174,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Record dist={recordDist} openActivity={openActivity} />
         )}
         {view === "plan" && (
-          <Plan monday={monday} goStrategy={() => setView("strategy")}
-            goProgram={() => setView("program")} goForm={() => setView("form")} />
+          <Plan data={data} monday={monday} goStrategy={() => setView("strategy")}
+            goProgram={() => setView("program")} openSession={openSession} />
         )}
         {view === "program" && (
           <Program

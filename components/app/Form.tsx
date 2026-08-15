@@ -19,9 +19,12 @@ type Data = {
  * separately — volume collapsed, and quality sessions were run too fast — so
  * showing them as one number would hide exactly the thing worth seeing.
  */
-export default function Form() {
+export default function Form({ only }: { only?: "pace" | "volume" }) {
   const [d, setD] = useState<Data | null>(null);
-  const [tab, setTab] = useState<"pace" | "volume">("pace");
+  const [own, setOwn] = useState<"pace" | "volume">("pace");
+  // hosted inside Plan's tabs, the screen shows one half and hides its own switch
+  const tab = only ?? own;
+  const setTab = setOwn;
 
   useEffect(() => {
     fetch("/api/form").then(async (r) => {
@@ -38,16 +41,21 @@ export default function Form() {
     : { t: "On plan", bg: "var(--off)", fg: "var(--ink-55)" };
 
   return (
-    <div className="pad">
-      <div>
-        <div className="eyebrow">Form</div>
-        <h1 className="h2" style={{ marginTop: 5 }}>Is the block working?</h1>
-      </div>
+    <div className={only ? "" : "pad"}
+      style={only ? { display: "flex", flexDirection: "column", gap: 14 } : undefined}>
+      {!only && (
+        <div>
+          <div className="eyebrow">Form</div>
+          <h1 className="h2" style={{ marginTop: 5 }}>Is the block working?</h1>
+        </div>
+      )}
 
-      <div className="pillrow">
-        <button aria-pressed={tab === "pace"} onClick={() => setTab("pace")}>Pace vs plan</button>
-        <button aria-pressed={tab === "volume"} onClick={() => setTab("volume")}>Volume</button>
-      </div>
+      {!only && (
+        <div className="pillrow">
+          <button aria-pressed={tab === "pace"} onClick={() => setTab("pace")}>Pace vs plan</button>
+          <button aria-pressed={tab === "volume"} onClick={() => setTab("volume")}>Volume</button>
+        </div>
+      )}
 
       {tab === "pace" && (
         <>
