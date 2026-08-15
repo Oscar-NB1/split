@@ -29,6 +29,8 @@ type Payload = {
   splits: Split[];
   series: { t: number[]; hr: (number | null)[]; speed: (number | null)[]; dist: number[] } | null;
   zones: ZoneRow[]; zoneTotal: number;
+  race: { id: string; event_name: string | null; overall_seconds: number | null } | null;
+  stationSplits: { label: string; seconds: number; kind: string; place: number | null }[];
   route: [number, number][]; basemap: boolean; detail_pending: boolean;
 };
 
@@ -187,6 +189,37 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
             <RoleCard title="Work" s={d.stats.work} accent="var(--navy)" />
             <RoleCard title="Recovery" s={d.stats.rest} accent="var(--ink-40)" />
           </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------- the race itself */}
+      {d.race && d.stationSplits.length > 0 && (
+        <div className="band">
+          <div className="rowsplit">
+            <span className="caps" style={{ color: "var(--ink)" }}>Race splits</span>
+            <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
+              {d.race.event_name} · {hms(d.race.overall_seconds)}
+            </span>
+          </div>
+          <div className="splithead" style={{ gridTemplateColumns: "1fr 54px 44px" }}>
+            <span>Split</span>
+            <span style={{ textAlign: "right" }}>Time</span>
+            <span style={{ textAlign: "right" }}>Rank</span>
+          </div>
+          {d.stationSplits.map((r, i) => (
+            <div key={i} className="splitrow" style={{ gridTemplateColumns: "1fr 54px 44px" }}>
+              <span className="lb" style={{ color: r.kind === "run" ? "var(--ink-55)" : "var(--ink)" }}>
+                {r.label}
+              </span>
+              <span className="pc mono">{hms(r.seconds)}</span>
+              <span className="hr mono">{r.place ? `#${r.place}` : "—"}</span>
+            </div>
+          ))}
+          <p style={{ fontSize: 10, color: "var(--ink-40)", lineHeight: 1.5 }}>
+            From the official result on results.hyrox.com, not from the watch — Garmin numbers
+            its laps rather than naming them, so a training session cannot be matched to
+            stations this way.
+          </p>
         </div>
       )}
 

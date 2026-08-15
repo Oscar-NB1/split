@@ -3,7 +3,7 @@ import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { route } from "@/lib/http";
 import { classifySegments, statsFor, type LapRow } from "@/lib/analysis";
-import { read, type Signal } from "@/lib/signals";
+import { prescribedPace, read, type Signal } from "@/lib/signals";
 import { GOAL, WEEKS } from "@/lib/coach";
 
 /**
@@ -23,13 +23,6 @@ import { GOAL, WEEKS } from "@/lib/coach";
  * guessed at — a signal invented from an average is worse than a missing one,
  * because the engine will act on it.
  */
-
-/** "8 × 1000 m @ 4:15" → 255 seconds per kilometre. */
-export function prescribedPace(title: string): number | null {
-  const m = title.match(/@\s*(\d{1,2}):(\d{2})/);
-  if (!m) return null;
-  return Number(m[1]) * 60 + Number(m[2]);
-}
 
 /** Time trials and races say more about fitness than a tempo does. */
 function weightFor(significance: string | null, title: string): number {

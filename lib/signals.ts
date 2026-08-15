@@ -117,3 +117,23 @@ export function clock(sec: number): string {
 
 /** "+4 s/km" — a delta, with its sign kept. */
 export const secs = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(Math.round(v))} s/km`;
+
+/**
+ * "8 × 1000 m @ 4:15" → 255 seconds per kilometre.
+ *
+ * The plan states the prescribed pace in the session title, which is the only
+ * place it is written as a number — the intervals.icu target says "1000m Z4",
+ * which is a zone, not a pace. A title with no stated pace produces no signal
+ * rather than a guessed one.
+ */
+export function prescribedPace(title: string): number | null {
+  const m = title.match(/@\s*(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  // A leading zero means a clock: nobody writes a pace as "04:15", and "@ 09:30"
+  // is a start time. Without this, a session titled "Race @ 09:30" reports a
+  // 9:30/km prescription and the engine treats the whole race as a huge miss.
+  if (m[1].length === 2 && m[1][0] === "0") return null;
+  const sec = Number(m[1]) * 60 + Number(m[2]);
+  // and a pace outside 2:00–9:00 per km is a finish time, not a target
+  return sec >= 120 && sec <= 540 ? sec : null;
+}

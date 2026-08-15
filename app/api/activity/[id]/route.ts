@@ -8,6 +8,7 @@ import {
   type LapRow, type StreamData,
 } from "@/lib/analysis";
 import { hasBasemap } from "@/lib/map";
+import { stationOfSplit } from "@/lib/stations";
 import { zoneSeconds, zonesFor } from "@/lib/coach";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -85,6 +86,23 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
 
   const series = streamRow[0]?.data ? downsample(streamRow[0].data, 500) : null;
 
+  // Station splits, when this activity is a race we have imported a result for.
+  //
+  // They deliberately do NOT come from the laps. Every lap Garmin records is
+  // named "Lap 13" — 2,571 of them here, none carrying a station name — so
+  // matching training laps to stations is a dead end until someone names them on
+  // the watch. The official result does carry them, so the comparison is
+  // race-to-target rather than training-to-race.
+  const [race] = await sql<{ id: string; event_name: string | null; overall_seconds: number | null }[]>`
+    select id, event_name, overall_seconds from races where activity_id = ${id} limit 1
+  `;
+  const stationSplits = race
+    ? (await sql<{ label: string; seconds: number; kind: string; place: number | null }[]>`
+        select label, seconds, kind, place from race_splits
+         where race_id = ${race.id} and kind in ('station','run','roxzone') order by ord
+      `).map((r) => ({ ...r, station: stationOfSplit(r.label) }))
+    : [];
+
   // Zone time is computed from the RAW stream, not the downsampled one. The
   // chart series is bucket-averaged, and averaging a sample that touched Z5 with
   // its neighbours moves it down a zone — which would quietly under-report every
@@ -120,6 +138,8 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
       Object.entries(s).map(([k, v]) => [k, typeof v === "string" ? Number(v) : v]),
     )),
     series,
+    race: race ?? null,
+    stationSplits,
     zones: zones.map((z, i) => ({
       tag: z.tag, label: z.label, colour: z.colour,
       seconds: zoneSecs[i],

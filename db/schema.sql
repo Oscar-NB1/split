@@ -358,3 +358,11 @@ alter table users add column if not exists zones jsonb;          -- explicit ove
 alter table users add column if not exists dob date;
 alter table users add column if not exists weight_kg numeric;
 alter table users add column if not exists injury_notes text;
+
+-- The join that makes a training session's laps comparable to the race plan
+-- (2026-08-15). A Hyrox session's laps are named by the watch ("Lap 7"), so
+-- without this there is no way to line a sled push in training up against the
+-- sled push in a result. Set at import, never derived at read time.
+alter table activity_laps add column if not exists station_key text;
+create index if not exists activity_laps_station on activity_laps (station_key)
+  where station_key is not null;

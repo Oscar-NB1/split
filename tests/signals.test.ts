@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { BAND, MAX_SHIFT, MIN_STREAK, read, secs, type Signal } from "../lib/signals";
+import { BAND, MAX_SHIFT, MIN_STREAK, prescribedPace, read, secs, type Signal } from "../lib/signals";
 
 const sig = (on: string, prescribed: number, achieved: number, weight = 1, type = "Interval"): Signal =>
   ({ on, label: `${on} session`, type, weight, prescribed, achieved });
@@ -121,4 +121,23 @@ test("deltas render with their sign kept", () => {
   assert.equal(secs(4), "+4 s/km");
   assert.equal(secs(-4), "−4 s/km");
   assert.equal(secs(0), "0 s/km");
+});
+
+test("prescribed pace is read from the title, where the plan states it", () => {
+  assert.equal(prescribedPace("RACE SESSION · 8 × 1000 m @ 4:15"), 255);
+  assert.equal(prescribedPace("5 × 800 m @ 4:20"), 260);
+  assert.equal(prescribedPace("6 × 1000 m @ 4:05"), 245);
+});
+
+test("a title with no pace produces no signal rather than a guess", () => {
+  assert.equal(prescribedPace("BENCHMARK · 5 × 1000 m"), null);
+  assert.equal(prescribedPace("Long run 18 km"), null);
+  assert.equal(prescribedPace("Hyrox continuous"), null);
+});
+
+test("something that is not a pace is not read as one", () => {
+  // a start time, or a finish time, must not become a per-kilometre target
+  assert.equal(prescribedPace("Race @ 09:30"), null, "9:30 is a clock time, not a pace");
+  assert.equal(prescribedPace("Sim @ 58:00"), null, "58:00 is a finish time");
+  assert.equal(prescribedPace("Reps @ 1:30"), null, "1:30/km is nobody's pace");
 });

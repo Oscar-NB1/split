@@ -1,5 +1,6 @@
 import { sql } from "./db";
 import { StravaHttpError, stravaGet } from "./strava";
+import { stationOf } from "./stations";
 
 /**
  * Per-km splits and the HR/pace time series for an activity.
@@ -96,13 +97,14 @@ export async function saveLaps(activityId: string, detail: unknown): Promise<num
       insert into activity_laps (
         activity_id, lap_index, name, distance_m, moving_seconds, elapsed_seconds,
         start_index, avg_speed_ms, max_speed_ms, avg_hr, max_hr, avg_cadence,
-        elevation_diff_m
+        elevation_diff_m, station_key
       ) values (
         ${activityId}, ${l.lap_index ?? i}, ${l.name ?? null}, ${l.distance ?? null},
         ${l.moving_time ?? null}, ${l.elapsed_time ?? null}, ${l.start_index ?? null},
         ${l.average_speed ?? null}, ${l.max_speed ?? null},
         ${l.average_heartrate ?? null}, ${l.max_heartrate ?? null},
-        ${l.average_cadence ?? null}, ${l.total_elevation_gain ?? null}
+        ${l.average_cadence ?? null}, ${l.total_elevation_gain ?? null},
+        ${stationOf(l.name)}
       )
       on conflict (activity_id, lap_index) do update set
         name             = excluded.name,
@@ -115,7 +117,8 @@ export async function saveLaps(activityId: string, detail: unknown): Promise<num
         avg_hr           = excluded.avg_hr,
         max_hr           = excluded.max_hr,
         avg_cadence      = excluded.avg_cadence,
-        elevation_diff_m = excluded.elevation_diff_m
+        elevation_diff_m = excluded.elevation_diff_m,
+        station_key      = excluded.station_key
     `;
   }
   return laps.length;
