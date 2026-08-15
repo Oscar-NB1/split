@@ -4,7 +4,8 @@ import { requireUser } from "@/lib/session";
 import { route } from "@/lib/http";
 import { classifySegments, statsFor, type LapRow } from "@/lib/analysis";
 import { prescribedPace, read, type Signal } from "@/lib/signals";
-import { GOAL, WEEKS } from "@/lib/coach";
+import { blockFor } from "@/lib/block-db";
+import type { PlanWeek } from "@/lib/block";
 
 /**
  * Am I ahead of the plan or behind it?
@@ -32,10 +33,17 @@ function weightFor(significance: string | null, title: string): number {
   return 1.0;
 }
 
-const GOAL_SECONDS = 56 * 60 + 30; // the slow end of the stated 55:00–56:30
-
+/**
+ * What a projection is judged against when the athlete has no stated target.
+ *
+ * The goal used to be a constant here — the slow end of one athlete's 55:00–56:30
+ * — and so every athlete's form was read against it. It now comes from their own
+ * block. Without one there is no target, and the verdict says so rather than
+ * being scored against a stranger's race.
+ */
 export const GET = route(async () => {
   const me = await requireUser();
+  const block = await blockFor(me.id);
 
   const rows = await sql<{
     id: string; title: string; planned_date: string; significance: string | null;
@@ -93,7 +101,7 @@ export const GET = route(async () => {
     });
   }
 
-  const verdict = read(signals, GOAL_SECONDS);
+  const verdict = block?.goal_seconds ? read(signals, block.goal_seconds) : null;
 
   // planned against logged volume, week by week — the other half of "form"
   const logged = await sql<{ wk: string; km: string }[]>`
@@ -107,10 +115,11 @@ export const GET = route(async () => {
 
   return NextResponse.json({
     verdict,
-    goal: GOAL_SECONDS,
-    goalLabel: GOAL,
+    goal: block?.goal_seconds ?? null,
+    goalLabel: block?.goal_label ?? null,
+    has_plan: !!block,
     skipped,
-    volume: WEEKS.map((w) => ({
+    volume: (block?.weeks ?? []).map((w: PlanWeek) => ({
       n: w.n, start: w.start, planned: w.km, logged: loggedBy[w.start] ?? null, note: w.note,
     })),
     history: logged.map((l) => ({ wk: l.wk, km: Number(l.km) })),

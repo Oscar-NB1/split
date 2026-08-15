@@ -1,5 +1,6 @@
 import type { Rules, TemplateDay } from "../templates";
-import { WEEKS } from "../coach";
+import type { IntentRange } from "../block";
+
 
 /**
  * Hyrox doubles, Mon 17 Aug → Sat 28 Nov 2026, with Olivier. Target 55:00–56:30.
@@ -18,6 +19,36 @@ import { WEEKS } from "../coach";
 
 export const PLAN_NAME = "Hyrox doubles · Nov 2026";
 export const PLAN_START = "2026-08-17";
+
+/**
+ * The block's own facts, which used to live as module constants in lib/coach.ts
+ * and are now written into the athlete's plan row. They belong to this plan, not
+ * to the app: a second athlete's block has a different race and a different goal.
+ */
+export const RACE_DATE = "2026-11-28";
+export const RACE_NAME = "Hyrox Doubles · Rotterdam";
+export const GOAL_LABEL = "55:00\u201356:30";
+/** The slow end of the stated range — what a projection is judged against. */
+export const GOAL_SECONDS = 56 * 60 + 30;
+
+/** Volume table from the plan. Peak 50 km is the proven Feb/Mar ceiling. */
+export const VOLUME: { km: number; note: string }[] = [
+  { km: 34, note: "" },
+  { km: 38, note: "" },
+  { km: 42, note: "" },
+  { km: 30, note: "Down week + benchmark: 5 × 1000 m, 90 s walk" },
+  { km: 42, note: "" },
+  { km: 46, note: "" },
+  { km: 50, note: "Peak volume — the proven Feb/Mar ceiling, not above it" },
+  { km: 34, note: "Down week + 5K TT, negative split" },
+  { km: 46, note: "Race session starts: 8 × 1000 m @ 4:15, 75 s standing" },
+  { km: 50, note: "Full simulation with Olivier" },
+  { km: 38, note: "B-race Wednesday 28th" },
+  { km: 46, note: "" },
+  { km: 42, note: "Dress rehearsal · 6 × 1000 @ 4:05" },
+  { km: 32, note: "Taper" },
+  { km: 18, note: "RACE — Sat 28 Nov, target 55:00–56:30" },
+];
 
 /** No auto-progression, no auto-deload: the fifteen weeks are already written. */
 export const RULES: Rules = {
@@ -102,7 +133,7 @@ const STRENGTH_B =
  * with the running rebuild.
  */
 export function week(n: number): TemplateDay[] {
-  const w = WEEKS.find((x) => x.n === n);
+  const w = VOLUME[n - 1];
   if (!w) return [];
   const days: TemplateDay[] = [];
   const bRace = n === 11;
@@ -191,4 +222,88 @@ export function week(n: number): TemplateDay[] {
 }
 
 /** All fifteen weeks, as the `weeks` jsonb the template engine reads. */
-export const WEEK_SHAPES: TemplateDay[][] = WEEKS.map((w) => week(w.n));
+export const WEEK_SHAPES: TemplateDay[][] = VOLUME.map((_, i) => week(i + 1));
+
+/**
+ * What each phase is *for*, and what has to survive a bad week.
+ *
+ * The plan's whole argument is that the last block failed for two separate
+ * reasons — volume collapsed, and quality sessions were run too fast — so every
+ * phase names both the thing to protect and the failure mode to watch for.
+ *
+ * Expressed as inclusive week ranges rather than the chain of ifs this replaces.
+ * The ifs could only ever describe one plan; a range list is data, so a second
+ * athlete's block can carry its own.
+ */
+export const INTENTS: IntentRange[] = [
+  {
+    from: 1, to: 3,
+    phase: "Rebuild \u00b7 weeks 1\u20133",
+    purpose:
+      "Get running volume back to a level your body already knows. Nothing here is meant to hurt \u2014 the block is bought with consistency in August, not intensity.",
+    protect: ["Tue \u00b7 Runna key session", "Sat \u00b7 Hyrox continuous"],
+    sacrifice: "Friday strength goes first, then Thursday kickboxing. Never the long run.",
+    watch: "Easy runs above 152 bpm are the failure mode. They cost Tuesday and Saturday.",
+  },
+  {
+    from: 4, to: 4,
+    phase: "Down week + benchmark",
+    purpose:
+      "Volume drops by a third so the benchmark is run on fresh legs. The test is the point of the week; everything else is filler around it.",
+    protect: ["Benchmark \u00b7 5 \u00d7 1000 m"],
+    sacrifice: "Drop a strength session and the second kickboxing without hesitation.",
+    watch: "Do not train through the benchmark. A tired test tells you nothing.",
+  },
+  {
+    from: 5, to: 7,
+    phase: "Build \u00b7 weeks 5\u20137",
+    purpose:
+      "Volume climbs to the 50 km ceiling you proved in February. Pace targets stay honest; the adaptation you want is holding the same pace at a lower heart rate.",
+    protect: ["Tue \u00b7 Runna key session", "Sat \u00b7 Hyrox continuous", "Sun \u00b7 Long run"],
+    sacrifice: "Wednesday intervals can become an easy run. Strength drops to once.",
+    watch: "Two hard days a week. Kickboxing rounds are not a third.",
+  },
+  {
+    from: 8, to: 8,
+    phase: "Down week + time trial",
+    purpose:
+      "Volume drops by a third so the benchmark is run on fresh legs. The test is the point of the week; everything else is filler around it.",
+    protect: ["Benchmark \u00b7 5K time trial"],
+    sacrifice: "Drop a strength session and the second kickboxing without hesitation.",
+    watch: "Do not train through the benchmark. A tired test tells you nothing.",
+  },
+  {
+    from: 9, to: 10,
+    phase: "Race specific \u00b7 weeks 9\u201310",
+    purpose:
+      "The key session becomes the race: 8 \u00d7 1000 m at race pace off short standing rest. Station work moves from fitness to rehearsal \u2014 transitions, splits, roxzone.",
+    protect: ["Tue \u00b7 Race session 8 \u00d7 1000 m", "Sat \u00b7 Full simulation"],
+    sacrifice: "Everything else. These two sessions are the block.",
+    watch: "Rep 1 fastest means the session failed, whatever the average says.",
+  },
+  {
+    from: 11, to: 13,
+    phase: "Sharpen \u00b7 weeks 11\u201313",
+    purpose:
+      "Race pace at lower cost, plus the B-race as a live rehearsal of pacing and transitions. Volume holds; intensity gets more specific.",
+    protect: ["Tue \u00b7 Race session", "Sat \u00b7 Dress rehearsal"],
+    sacrifice: "Second kickboxing session. Strength stays once, light.",
+    watch: "Roxzone discipline. Every 5 s per transition is 40 s on the clock.",
+  },
+  {
+    from: 14, to: 14,
+    phase: "Taper \u00b7 week 14",
+    purpose: "Volume drops a third, intensity stays. The work is done; this week only protects it.",
+    protect: ["Tue \u00b7 Short race-pace touch"],
+    sacrifice: "Any session you feel unsure about. When in doubt, rest.",
+    watch: "Do not chase a session you missed. Missed work in taper is free.",
+  },
+  {
+    from: 15, to: 15,
+    phase: "Race week",
+    purpose: "Two short sharpeners and rest. Nothing you do now makes you fitter.",
+    protect: ["Sat 28 Nov \u00b7 Race"],
+    sacrifice: "Any session you feel unsure about. When in doubt, rest.",
+    watch: "Do not chase a session you missed. Missed work in taper is free.",
+  },
+];

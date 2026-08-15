@@ -6,8 +6,12 @@ import { effortPoints, kindFor, pickClosest, statusFor, type StravaActivity } fr
 import { eventBody, targetIsStructure, toWorkoutText } from "../lib/intervals";
 import { kindFromTitle, minutesFromText, parseIcs } from "../lib/runna";
 import { metricForWeek, weekStart } from "../lib/scoring";
-import { PLAN_START, WEEK_SHAPES } from "../lib/plans/hyrox-nov-2026";
-import { RACE_DATE } from "../lib/coach";
+import * as hyroxNov from "../lib/plans/hyrox-nov-2026";
+
+/** Every plan in the app, checked by the same rules. */
+const PLANS = [
+  ["hyrox-nov-2026", hyroxNov],
+] as const;
 import { addDays } from "../lib/dates";
 
 const RULES: Required<Rules> = {
@@ -308,22 +312,46 @@ test("any day of the week resolves to that week's metric", () => {
 });
 
 /**
- * The plan's race day and the constant the UI counts down to must be the same
- * date. They are two independent declarations — lib/plans/… builds the week
- * shapes, lib/coach.ts holds RACE_DATE for the header and the Plan screen — and
- * nothing but this test makes them agree.
+ * A plan's race day and the date it declares as its race must agree.
+ *
+ * They are two independent statements — the week shapes place a session on a day,
+ * and RACE_DATE is written onto the plan row for the countdown to read. Nothing
+ * but this makes them the same day, and when the second plan was written they
+ * were not: its ten weeks put the race on 21 October while it declared the 28th,
+ * so the athlete would have had a race on her calendar a week before her race.
  */
-test("the plan's race day is the date the app counts down to", () => {
-  const races: { week: number; day: number }[] = [];
-  WEEK_SHAPES.forEach((week, i) =>
-    week.forEach((d) => { if (d.significance === "race") races.push({ week: i, day: d.day }); }));
+for (const [name, plan] of PLANS) {
+  test(`${name}: the race day the weeks produce is the race day it declares`, () => {
+    const races: { week: number; day: number }[] = [];
+    plan.WEEK_SHAPES.forEach((week, i) =>
+      week.forEach((d) => { if (d.significance === "race") races.push({ week: i, day: d.day }); }));
+    assert.ok(races.length > 0, "a plan aimed at a race contains one");
 
-  assert.equal(races.length, 2, "a B-race and the race itself");
-  const main = races[races.length - 1];
-  assert.equal(addDays(PLAN_START, main.week * 7 + main.day), RACE_DATE);
+    const main = races[races.length - 1];
+    assert.equal(
+      addDays(plan.PLAN_START, main.week * 7 + main.day),
+      plan.RACE_DATE,
+      "the last race session falls on the declared race date",
+    );
+  });
 
-  // Both sit far beyond the three-week materialisation horizon, which is why
-  // races are written for the whole block rather than the horizon: the countdown
-  // reads race rows, and a row that does not exist yet cannot be announced.
-  for (const r of races) assert.ok(r.week > 3, `week ${r.week + 1} is outside the horizon`);
-});
+  test(`${name}: every week has a volume target and an intent`, () => {
+    // both are stored as JSON on the plan row, so a missing week is a week the
+    // Plan screen renders as 0 km with no phase — silently
+    assert.equal(plan.VOLUME.length, plan.WEEK_SHAPES.length, "one volume row per week");
+    for (let n = 1; n <= plan.WEEK_SHAPES.length; n++) {
+      assert.ok(plan.INTENTS.find((i) => n >= i.from && n <= i.to), `week ${n} has an intent`);
+      assert.ok(plan.VOLUME[n - 1].km > 0, `week ${n} has a volume target`);
+    }
+  });
+
+  test(`${name}: the intent ranges neither overlap nor leave a gap`, () => {
+    const sorted = [...plan.INTENTS].sort((a, b) => a.from - b.from);
+    assert.equal(sorted[0].from, 1, "starts at week 1");
+    assert.equal(sorted[sorted.length - 1].to, plan.WEEK_SHAPES.length, "ends at the last week");
+    for (let i = 1; i < sorted.length; i++) {
+      assert.equal(sorted[i].from, sorted[i - 1].to + 1,
+        `week ${sorted[i - 1].to + 1} is covered exactly once`);
+    }
+  });
+}

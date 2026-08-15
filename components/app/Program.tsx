@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { addDays, fmt, today } from "@/lib/dates";
-import { WEEKS, kindColour, kindLabel, weekDates, weekOf } from "@/lib/coach";
+import { kindColour, kindLabel, weekDates } from "@/lib/coach";
+import { weekOf } from "@/lib/block";
 import type { Session, User, WeekData } from "./Shell";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -45,7 +46,10 @@ export default function Program({
   const uid = who === "me" ? me.id : other?.id;
   const all = data.sessions.filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
-  const week = weekOf(monday);
+  // the week strip is the athlete's own block, so an athlete without one gets no
+  // strip rather than a row of someone else's week numbers
+  const WEEKS = data.block?.weeks ?? [];
+  const week = weekOf(data.block, monday);
 
   async function patch(id: string, body: Record<string, unknown>) {
     const r = await fetch(`/api/sessions/${id}`, {
@@ -98,6 +102,7 @@ export default function Program({
         </div>
       )}
 
+      {WEEKS.length > 0 && (
       <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingBottom: 4 }}>
         {WEEKS.map((w) => (
           <button key={w.n} onClick={() => setMonday(w.start)} style={{
@@ -112,6 +117,7 @@ export default function Program({
           </button>
         ))}
       </div>
+      )}
 
       <div style={{ fontSize: 11, lineHeight: 1.55, padding: "11px 13px",
         borderRadius: "var(--r-card)", background: week?.note ? CREAM : PAPER,

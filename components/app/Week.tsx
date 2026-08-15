@@ -1,9 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { addDays, dow, fmt, today } from "@/lib/dates";
-import {
-  BLOCK_START, GOAL, WEEKS, kindColour, kindLabel, weekDates, weekIntent, weekOf,
-} from "@/lib/coach";
+import { kindColour, kindLabel, weekDates } from "@/lib/coach";
+import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
 import { prescribedPace } from "@/lib/signals";
 import type { Session, User, WeekData } from "./Shell";
 
@@ -73,11 +72,11 @@ export default function Week({
   const dates = weekDates(monday);
   // Someone with no plan of their own is not "before the block" — there is no
   // block. Showing the other athlete's rebuild weeks and 55:00 goal as hers was
-  // the bug this gate closes.
-  const mine = data?.has_plan !== false;
-  const week = mine ? weekOf(monday) : null;
-  const intent = week ? weekIntent(week.n) : null;
-  const beforeBlock = mine && !week && monday < BLOCK_START;
+  // the bug this closes.
+  const block = data?.block ?? null;
+  const week = weekOf(block, monday);
+  const intent = week ? intentFor(block, week.n) : null;
+  const beforeBlock = isBefore(block, monday);
 
   const dayList = all
     .filter((s) => s.planned_date === dates[day])
@@ -92,19 +91,19 @@ export default function Week({
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
           textTransform: "uppercase", color: "var(--teal)" }}>
-          {intent ? intent.phase : !mine ? "No block" : beforeBlock ? "Before the block" : "Off block"}
+          {intent ? intent.phase : !block ? "No block" : beforeBlock ? "Before the block" : "Off block"}
         </div>
         <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
           lineHeight: 1.1, letterSpacing: "-.02em" }}>
           {week ? `${week.km} km, and two hard days.`
-            : !mine ? "No block on your account."
+            : !block ? "No block on your account."
             : beforeBlock ? "The block starts Monday." : "Off block."}
         </div>
         <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
-          {week?.note || (!mine
+          {week?.note || (!block
             ? "Anything you log still appears here, and still counts in the head-to-head."
             : beforeBlock
-            ? `Fifteen weeks to ${GOAL}. Week 1 is ${WEEKS[0].km} km — bought with consistency, not intensity.`
+            ? `${block.weeks.length} weeks to ${block.goal_label ?? block.name}. Week 1 is ${block.weeks[0]?.km ?? 0} km — bought with consistency, not intensity.`
             : "Tuesday and Saturday are the week. Everything else supports them.")}
         </div>
       </div>

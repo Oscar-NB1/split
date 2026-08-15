@@ -1,4 +1,4 @@
-import { addDays, diffDays, mondayOf } from "./dates";
+import { addDays } from "./dates";
 
 /**
  * The block: Hyrox doubles, Mon 17 Aug → Sat 28 Nov 2026, with Olivier.
@@ -10,114 +10,19 @@ import { addDays, diffDays, mondayOf } from "./dates";
  * that has to.
  */
 
-export const BLOCK_START = "2026-08-17";
-export const RACE_DATE = "2026-11-28";
-export const RACE_NAME = "Hyrox Doubles · Rotterdam";
-export const GOAL = "55:00–56:30";
-
-export type PlanWeek = { n: number; start: string; km: number; note: string };
-
-/** Volume table from the plan. Peak 50 km is the proven Feb/Mar ceiling. */
-export const WEEKS: PlanWeek[] = [
-  { n: 1, start: "2026-08-17", km: 34, note: "" },
-  { n: 2, start: "2026-08-24", km: 38, note: "" },
-  { n: 3, start: "2026-08-31", km: 42, note: "" },
-  { n: 4, start: "2026-09-07", km: 30, note: "Down week + benchmark: 5 × 1000 m, 90 s walk" },
-  { n: 5, start: "2026-09-14", km: 42, note: "" },
-  { n: 6, start: "2026-09-21", km: 46, note: "" },
-  { n: 7, start: "2026-09-28", km: 50, note: "Peak volume — the proven Feb/Mar ceiling, not above it" },
-  { n: 8, start: "2026-10-05", km: 34, note: "Down week + 5K TT, negative split" },
-  { n: 9, start: "2026-10-12", km: 46, note: "Race session starts: 8 × 1000 m @ 4:15, 75 s standing" },
-  { n: 10, start: "2026-10-19", km: 50, note: "Full simulation with Olivier" },
-  { n: 11, start: "2026-10-26", km: 38, note: "B-race Wednesday 28th" },
-  { n: 12, start: "2026-11-02", km: 46, note: "" },
-  { n: 13, start: "2026-11-09", km: 42, note: "Dress rehearsal · 6 × 1000 @ 4:05" },
-  { n: 14, start: "2026-11-16", km: 32, note: "Taper" },
-  { n: 15, start: "2026-11-23", km: 18, note: "RACE — Sat 28 Nov, target 55:00–56:30" },
-];
-
-export type Intent = {
-  phase: string;
-  purpose: string;
-  protect: string[];
-  sacrifice: string;
-  watch: string;
-};
-
 /**
- * What a week is *for*, and what has to survive a bad one.
+ * Everything block-specific has moved to the database.
  *
- * The plan's whole argument is that the last block failed for two separate
- * reasons — volume collapsed, and quality sessions were run too fast — so every
- * phase names both the thing to protect and the failure mode to watch for.
- */
-export function weekIntent(n: number): Intent {
-  if (n <= 3) return {
-    phase: "Rebuild · weeks 1–3",
-    purpose:
-      "Get running volume back to a level your body already knows. Nothing here is meant to hurt — the block is bought with consistency in August, not intensity.",
-    protect: ["Tue · Runna key session", "Sat · Hyrox continuous"],
-    sacrifice: "Friday strength goes first, then Thursday kickboxing. Never the long run.",
-    watch: "Easy runs above 152 bpm are the failure mode. They cost Tuesday and Saturday.",
-  };
-  if (n === 4 || n === 8) return {
-    phase: n === 4 ? "Down week + benchmark" : "Down week + time trial",
-    purpose:
-      "Volume drops by a third so the benchmark is run on fresh legs. The test is the point of the week; everything else is filler around it.",
-    protect: [n === 4 ? "Benchmark · 5 × 1000 m" : "Benchmark · 5K time trial"],
-    sacrifice: "Drop a strength session and the second kickboxing without hesitation.",
-    watch: "Do not train through the benchmark. A tired test tells you nothing.",
-  };
-  if (n <= 7) return {
-    phase: "Build · weeks 5–7",
-    purpose:
-      "Volume climbs to the 50 km ceiling you proved in February. Pace targets stay honest; the adaptation you want is holding the same pace at a lower heart rate.",
-    protect: ["Tue · Runna key session", "Sat · Hyrox continuous", "Sun · Long run"],
-    sacrifice: "Wednesday intervals can become an easy run. Strength drops to once.",
-    watch: "Two hard days a week. Kickboxing rounds are not a third.",
-  };
-  if (n <= 10) return {
-    phase: "Race specific · weeks 9–10",
-    purpose:
-      "The key session becomes the race: 8 × 1000 m at race pace off short standing rest. Station work moves from fitness to rehearsal — transitions, splits, roxzone.",
-    protect: ["Tue · Race session 8 × 1000 m", "Sat · Full simulation"],
-    sacrifice: "Everything else. These two sessions are the block.",
-    watch: "Rep 1 fastest means the session failed, whatever the average says.",
-  };
-  if (n <= 13) return {
-    phase: "Sharpen · weeks 11–13",
-    purpose:
-      "Race pace at lower cost, plus the B-race as a live rehearsal of pacing and transitions. Volume holds; intensity gets more specific.",
-    protect: ["Tue · Race session", "Sat · Dress rehearsal"],
-    sacrifice: "Second kickboxing session. Strength stays once, light.",
-    watch: "Roxzone discipline. Every 5 s per transition is 40 s on the clock.",
-  };
-  return {
-    phase: n === 14 ? "Taper · week 14" : "Race week",
-    purpose: n === 14
-      ? "Volume drops a third, intensity stays. The work is done; this week only protects it."
-      : "Two short sharpeners and rest. Nothing you do now makes you fitter.",
-    protect: n === 14 ? ["Tue · Short race-pace touch"] : ["Sat 28 Nov · Race"],
-    sacrifice: "Any session you feel unsure about. When in doubt, rest.",
-    watch: "Do not chase a session you missed. Missed work in taper is free.",
-  };
-}
-
-/** Which plan week a date falls in, or null outside the block. */
-export function weekOf(date: string): PlanWeek | null {
-  const monday = mondayOf(date);
-  return WEEKS.find((w) => w.start === monday) ?? null;
-}
-
-/**
- * Days remaining until race day. Positive before it, negative after.
+ * BLOCK_START, RACE_DATE, RACE_NAME, GOAL, the fifteen-row WEEKS table,
+ * weekIntent() and weekOf() were declared here as module constants — one block,
+ * shared by whoever was signed in. The second athlete was shown the first's race
+ * and target as hers. They now live on the athlete's own plan row and are loaded
+ * by lib/block.ts.
  *
- * The argument order matters and was wrong: `diffDays(a, b)` is `a - b`, so
- * `diffDays(from, RACE_DATE)` returns -105 for a race three months out. Every
- * caller then read the block as finished, and the race countdown looked up
- * MARKS[-105] and silently never fired.
+ * What is left in this file is genuinely app-wide: zone arithmetic, which is
+ * derived from the athlete's own measured maximum, and the colour and label
+ * vocabulary for session kinds, which is the same for everyone.
  */
-export const daysToRace = (from: string) => diffDays(RACE_DATE, from);
 
 /**
  * Heart-rate zones.

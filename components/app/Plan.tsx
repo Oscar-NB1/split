@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { fmt, mondayOf, today } from "@/lib/dates";
 import {
-  BLOCK_START, GOAL, RACE_DATE, RACE_NAME, TEMPLATE_WEEK, WEEKS,
-  daysToRace, kindColour, weekOf,
+  TEMPLATE_WEEK, kindColour,
 } from "@/lib/coach";
+import { daysToRace, weekOf } from "@/lib/block";
 import Form from "./Form";
 import type { Session, WeekData } from "./Shell";
 
@@ -50,10 +50,12 @@ export default function Plan({
 
   const now = today();
   const thisMonday = mondayOf(now);
+  const block = data?.block ?? null;
+  const WEEKS = block?.weeks ?? [];
   const done = WEEKS.filter((w) => w.start < thisMonday).length;
   const totalKm = WEEKS.reduce((n, w) => n + w.km, 0);
-  const left = daysToRace(now);
-  const current = weekOf(thisMonday);
+  const left = daysToRace(block, now);
+  const current = weekOf(block, thisMonday);
 
   return (
     <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
@@ -68,7 +70,7 @@ export default function Plan({
         ))}
       </div>
 
-      {data?.has_plan === false ? (
+      {!block ? (
         // The block is not this athlete's, so it is not shown as though it were.
         // Pace and volume against plan are equally meaningless without one.
         <div style={{ background: PAPER, border: `1px solid ${LINE}`,
@@ -91,10 +93,14 @@ export default function Plan({
             display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={{ fontFamily: "var(--display)", fontSize: 21, fontWeight: 700,
-                lineHeight: 1.15, letterSpacing: "-.02em" }}>Hyrox doubles · 15 weeks</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: TEAL }}>{RACE_NAME}</span>
+                lineHeight: 1.15, letterSpacing: "-.02em" }}>
+                {block.name} · {WEEKS.length} weeks
+              </span>
+              {block.race_name && (
+                <span style={{ fontSize: 12, fontWeight: 600, color: TEAL }}>{block.race_name}</span>
+              )}
               <span style={{ fontSize: 12, color: INK55 }}>
-                Target {GOAL} — from 1:00:45 Mechelen
+                {block.goal_label ? `Target ${block.goal_label}` : "No target time set yet"}
               </span>
             </div>
 
@@ -128,10 +134,12 @@ export default function Plan({
             <div style={{ borderTop: `1px dashed ${LINE}`, paddingTop: 12, display: "flex",
               alignItems: "center", justifyContent: "space-between", gap: 10 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-70)" }}>
-                {left > 0 ? `${left} days to race day` : left === 0 ? "Race day" : "Block complete"}
+                {left == null ? `${WEEKS.length} weeks, no race date set`
+                  : left > 0 ? `${left} days to race day`
+                  : left === 0 ? "Race day" : "Block complete"}
               </span>
               <span style={{ fontSize: 10, color: INK40 }}>
-                {fmt(BLOCK_START, { day: "numeric", month: "short" })} → {fmt(RACE_DATE, { day: "numeric", month: "short" })}
+                {fmt(block.start, { day: "numeric", month: "short" })} → {fmt(block.race_date ?? block.end, { day: "numeric", month: "short" })}
               </span>
             </div>
           </div>
@@ -188,7 +196,7 @@ export default function Plan({
                 <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
                     textTransform: "uppercase", color: INK40 }}>
-                    {fmt(w.start, { day: "numeric", month: "short" })} – {fmt(WEEKS[i + 1]?.start ?? RACE_DATE, { day: "numeric", month: "short" })}
+                    {fmt(w.start, { day: "numeric", month: "short" })} – {fmt(WEEKS[i + 1]?.start ?? block.race_date ?? block.end, { day: "numeric", month: "short" })}
                   </span>
                   <span style={{ fontFamily: "var(--display)", fontSize: 19, fontWeight: 700 }}>
                     Week {w.n}

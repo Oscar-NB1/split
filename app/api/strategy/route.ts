@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { badRequest, route } from "@/lib/http";
-import { RACE_DATE } from "@/lib/coach";
+import { blockFor } from "@/lib/block-db";
 import { intervalsConnected, pushRacePlan } from "@/lib/intervals";
 import {
   DEFAULT_ROX, SEED, type Segment,
@@ -26,15 +26,31 @@ const load = (userId: string, date: string) => sql<Row[]>`
     from race_plans where user_id = ${userId} and race_date = ${date}
 `;
 
+/**
+ * The race the plan is aimed at, or a 400.
+ *
+ * There is no app-wide race date any more — it belongs to the athlete's block, so
+ * an athlete without one has no race to plan for and must be told that rather
+ * than shown the other athlete's.
+ */
+async function raceDateFor(userId: string): Promise<string> {
+  const block = await blockFor(userId);
+  if (!block?.race_date) {
+    throw badRequest("There is no race on your plan yet, so there is nothing to build a strategy for.");
+  }
+  return block.race_date;
+}
+
 export const GET = route(async () => {
   const me = await requireUser();
-  const [row] = await load(me.id, RACE_DATE);
+  const raceDate = await raceDateFor(me.id);
+  const [row] = await load(me.id, raceDate);
   // an athlete who has never opened the screen gets the plan's own numbers,
   // marked as such so the UI can say the plan is not yet theirs
   const segments = row ? sanitise(row.segments) : SEED;
   const rox = row ? row.rox_seconds : DEFAULT_ROX;
   return NextResponse.json({
-    race_date: RACE_DATE,
+    race_date: raceDate,
     segments,
     rox_seconds: rox,
     saved: !!row,
@@ -46,12 +62,13 @@ export const GET = route(async () => {
 
 export const PUT = route(async (req: NextRequest) => {
   const me = await requireUser();
+  const raceDate = await raceDateFor(me.id);
   const body = await req.json();
   const segments = sanitise(body.segments);
   const rox = sanitiseRox(body.rox_seconds);
   await sql`
     insert into race_plans (user_id, race_date, segments, rox_seconds, updated_at)
-    values (${me.id}, ${RACE_DATE}, ${sql.json(segments as never)}, ${rox}, now())
+    values (${me.id}, ${raceDate}, ${sql.json(segments as never)}, ${rox}, now())
     on conflict (user_id, race_date) do update set
       segments = excluded.segments, rox_seconds = excluded.rox_seconds, updated_at = now()
   `;
@@ -68,7 +85,8 @@ export const PUT = route(async (req: NextRequest) => {
  */
 export const POST = route(async () => {
   const me = await requireUser();
-  const [row] = await load(me.id, RACE_DATE);
+  const raceDate = await raceDateFor(me.id);
+  const [row] = await load(me.id, raceDate);
   const segments = row ? sanitise(row.segments) : SEED;
   const rox = row ? row.rox_seconds : DEFAULT_ROX;
 
@@ -80,7 +98,7 @@ export const POST = route(async () => {
   }
 
   const eventId = await pushRacePlan(me.id, {
-    date: RACE_DATE,
+    date: raceDate,
     name: "RACE · Hyrox Doubles",
     body: raceWorkoutText(segments, rox),
     eventId: row?.event_id ?? null,
@@ -90,7 +108,7 @@ export const POST = route(async () => {
   // numbers that were actually sent rather than leaving no record of them
   await sql`
     insert into race_plans (user_id, race_date, segments, rox_seconds, event_id, exported_at, updated_at)
-    values (${me.id}, ${RACE_DATE}, ${sql.json(segments as never)}, ${rox}, ${eventId}, now(), now())
+    values (${me.id}, ${raceDate}, ${sql.json(segments as never)}, ${rox}, ${eventId}, now(), now())
     on conflict (user_id, race_date) do update set
       segments = excluded.segments, rox_seconds = excluded.rox_seconds,
       event_id = excluded.event_id, exported_at = now(), updated_at = now()

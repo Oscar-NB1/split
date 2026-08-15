@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { blockFor } from "@/lib/block-db";
 import { challengeScores, metricForWeek, METRICS, streakFor, weekStart } from "@/lib/scoring";
 import { route } from "@/lib/http";
 import { addDays, mondayOf, today } from "@/lib/dates";
@@ -87,23 +88,19 @@ export const GET = route(async (req: NextRequest) => {
     await Promise.all(users.map(async (u) => [u.id, await streakFor(u.id)])),
   );
 
-  // Whether THIS athlete has a block of their own.
+  // THIS athlete's block, not the app's.
   //
-  // The block — its race date, its 15 weeks, its 55:00–56:30 goal — is declared in
-  // lib/coach.ts as module constants, so every screen that read them showed the
-  // same block to whoever was signed in. The second athlete, who has no plan and
-  // no Strava connection, was shown his Rotterdam race and his target as hers,
-  // reading "0/15 weeks done" against a block she is not doing. The same mistake
-  // as the HR zones, which were one athlete's maximum applied to both.
-  const [plan] = await sql<{ has_plan: boolean }[]>`
-    select exists (
-      select 1 from plan_templates where athlete_id = ${me.id} and active
-    ) as has_plan
-  `;
+  // Its start, race, goal, volume table and phase narrative used to be module
+  // constants in lib/coach.ts, so every screen that read them showed the same
+  // block to whoever was signed in — the second athlete saw the first's race and
+  // target as hers. Same mistake as the HR zones, which were one athlete's
+  // measured maximum applied to both. Null when she has no plan, and the screens
+  // have to say so rather than fall back to someone else's.
+  const block = await blockFor(me.id);
 
   return NextResponse.json({
     week_start: ws,
-    has_plan: plan?.has_plan ?? false,
+    block,
     users,
     sessions,
     unplanned,

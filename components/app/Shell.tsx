@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { mondayOf, today } from "@/lib/dates";
-import { RACE_DATE, daysToRace, weekOf } from "@/lib/coach";
+import { type Block, daysToRace, weekOf } from "@/lib/block";
 import Week from "./Week";
 import Activity from "./Activity";
 import Past from "./Past";
@@ -32,8 +32,8 @@ export type Session = {
 };
 export type WeekData = {
   week_start: string;
-  /** Does the signed-in athlete have a block of their own? */
-  has_plan?: boolean;
+  /** The signed-in athlete's own block, or null if they have none. */
+  block: Block | null;
   users: User[]; sessions: Session[]; unplanned: Session[];
   streaks: Record<string, number>;
   reps_off?: number;
@@ -112,9 +112,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const back = BACK[view];
   // The block belongs to whoever's plan it is. Without one, the header must not
   // count down to someone else's race.
-  const mine = data?.has_plan !== false;
-  const week = mine ? weekOf(monday) : null;
-  const left = mine ? daysToRace(today()) : -1;
+  const block = data?.block ?? null;
+  const week = weekOf(block, monday);
+  const left = daysToRace(block, today());
 
   const sub =
     view === "past" ? "Everything logged"
@@ -129,7 +129,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "program" ? "Edit the week"
     : view === "picker" ? "Add a session"
     : week ? `Week ${week.n} · ${week.km} km target`
-    : !mine ? "No block yet"
+    : !block ? "No block yet"
+    : left == null ? block.name
     : left > 0 ? `${left} days to race` : "Off block";
 
   const title =
@@ -227,4 +228,3 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   );
 }
 
-export const RACE = RACE_DATE;

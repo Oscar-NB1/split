@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BAND, MAX_SHIFT, MIN_STREAK, prescribedPace, read, secs, type Signal } from "../lib/signals";
-import { daysToRace } from "../lib/coach";
+import { type Block, daysToRace } from "../lib/block";
 
 const sig = (on: string, prescribed: number, achieved: number, weight = 1, type = "Interval"): Signal =>
   ({ on, label: `${on} session`, type, weight, prescribed, achieved });
@@ -143,19 +143,28 @@ test("something that is not a pace is not read as one", () => {
   assert.equal(prescribedPace("Reps @ 1:30"), null, "1:30/km is nobody's pace");
 });
 
+const BLOCK = { race_date: "2026-11-28" } as Block;
+
 test("days-to-race counts down, not up", () => {
   // diffDays(a, b) is a - b. Getting the order wrong returned -105 for a race
   // three months out, which read as "block complete" on two screens and made the
   // 28/14/7/1-day countdown notifications look up MARKS[-105] and never fire.
-  assert.equal(daysToRace("2026-08-15"), 105, "race is 28 Nov 2026");
-  assert.equal(daysToRace("2026-11-27"), 1, "the night before");
-  assert.equal(daysToRace("2026-11-28"), 0, "race day");
-  assert.ok(daysToRace("2026-12-01") < 0, "after the race");
+  assert.equal(daysToRace(BLOCK, "2026-08-15"), 105, "race is 28 Nov 2026");
+  assert.equal(daysToRace(BLOCK, "2026-11-27"), 1, "the night before");
+  assert.equal(daysToRace(BLOCK, "2026-11-28"), 0, "race day");
+  assert.ok(daysToRace(BLOCK, "2026-12-01")! < 0, "after the race");
+});
+
+test("an athlete with no block, or no race on it, gets no countdown", () => {
+  // null rather than a number, so a screen cannot render "0 days to race" for
+  // someone who is not racing — which is what falling back to a shared constant did
+  assert.equal(daysToRace(null, "2026-08-15"), null);
+  assert.equal(daysToRace({ race_date: null } as Block, "2026-08-15"), null);
 });
 
 test("the countdown marks are days that can actually occur", () => {
   // every mark must be reachable by counting down from the block start
-  const fromStart = daysToRace("2026-08-17");
+  const fromStart = daysToRace(BLOCK, "2026-08-17")!;
   for (const mark of [28, 14, 7, 1]) {
     assert.ok(mark < fromStart, `${mark} days out falls inside the block`);
   }

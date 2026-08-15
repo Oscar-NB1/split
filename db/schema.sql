@@ -390,3 +390,48 @@ create table if not exists race_plans (
   updated_at    timestamptz not null default now(),
   primary key (user_id, race_date)
 );
+
+-- The block moves into the database (2026-08-15). Its start, race, goal, volume
+-- table and phase narrative were module constants in lib/coach.ts, so every screen
+-- that read them showed the same block to whoever was signed in — the second
+-- athlete saw the first athlete's race and target as hers. Same shape as the HR
+-- zones, which were one athlete's measured maximum applied to both.
+alter table plan_templates add column if not exists race_date    date;
+alter table plan_templates add column if not exists race_name    text;
+alter table plan_templates add column if not exists goal_label   text;
+alter table plan_templates add column if not exists goal_seconds int;
+-- per-week volume target and its one-line note, in week order: [{km, note}]
+alter table plan_templates add column if not exists volume  jsonb not null default '[]';
+-- what a phase is for, by week range:
+--   [{from, to, phase, purpose, protect[], sacrifice, watch}]
+alter table plan_templates add column if not exists intents jsonb not null default '[]';
+
+-- What an athlete tells us about themselves (2026-08-15), and the only honest
+-- source for a block when nobody here has written them a plan document. The
+-- alternative — the assistant inventing a starting volume, a goal and a race —
+-- produces a plan that looks authoritative and is made up.
+create table if not exists athlete_intake (
+  user_id          uuid primary key references users(id) on delete cascade,
+  -- where they are now
+  experience       text not null,          -- new | returning | consistent | competitive
+  current_km_week  numeric not null,
+  longest_run_km   numeric not null,
+  recent_5k_seconds int,                   -- null: no recent benchmark
+  -- what they are training for
+  goal_kind        text not null,          -- hyrox | hyrox_doubles | race_5k | race_10k | half | general
+  goal_race_name   text,
+  goal_date        date,
+  goal_time_seconds int,
+  -- what the week can hold
+  days_per_week    int not null,
+  preferred_days   int[] not null default '{}',   -- 0 = Monday
+  long_run_day     int,
+  -- what they can actually train with
+  gym_access       text not null,          -- none | home | basic_gym | full_gym | hyrox_gym
+  equipment        text[] not null default '{}',
+  -- what to work around
+  injuries         text,
+  constraints_note text,
+  completed_at     timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
