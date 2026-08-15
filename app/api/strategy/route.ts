@@ -74,8 +74,8 @@ export const POST = route(async () => {
 
   if (!(await intervalsConnected(me.id))) {
     throw badRequest(
-      "intervals.icu is not connected. Add its API key on the profile screen — " +
-      "it is the bridge that puts a workout on the Garmin.",
+      "intervals.icu is not connected. Add its athlete ID and API key under " +
+      "Profile → Manage connections — it is the bridge that puts a workout on the Garmin.",
     );
   }
 

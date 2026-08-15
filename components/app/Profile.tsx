@@ -21,7 +21,9 @@ const APPS: [string, string, string][] = [
   ["runna", "Runna", "The running spine, by iCal feed"],
 ];
 
-export default function Profile({ me, openEdit }: { me: User; openEdit: () => void }) {
+export default function Profile({
+  me, openEdit, openConnect,
+}: { me: User; openEdit: () => void; openConnect: () => void }) {
   const [p, setP] = useState<Prof | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
 
@@ -72,8 +74,13 @@ export default function Profile({ me, openEdit }: { me: User; openEdit: () => vo
           {APPS.map(([key, name, sub]) => {
             const on = p?.connected.includes(key) ?? false;
             return (
-              <div key={key} style={{ display: "flex", alignItems: "center", gap: 12,
-                padding: "13px 0", borderBottom: "1px solid var(--line-2)" }}>
+              // The switch is a state indicator, not a control — connecting Strava
+              // is an OAuth round trip and intervals.icu needs a pasted key, so a
+              // toggle cannot do either. It looked tappable, so now the row is:
+              // it goes to the screen where the connection is actually made.
+              <button key={key} onClick={openConnect} style={{ display: "flex", alignItems: "center", gap: 12,
+                padding: "13px 0", borderBottom: "1px solid var(--line-2)",
+                color: "var(--ink)", textDecoration: "none" }}>
                 <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
                   <span style={{ fontSize: 11, fontWeight: 700, color: on ? TEAL : INK40 }}>
@@ -90,11 +97,12 @@ export default function Profile({ me, openEdit }: { me: User; openEdit: () => vo
                     height: 18, borderRadius: "50%", background: "#fff",
                     boxShadow: "0 1px 2px rgba(18,49,77,.25)" }} />
                 </span>
-              </div>
+              </button>
             );
           })}
         </div>
-        <a href="/settings" style={{ fontSize: 12 }}>Manage connections ↗</a>
+        <button onClick={openConnect} style={{ fontSize: 12, color: TEAL, fontWeight: 600,
+          background: "none", padding: 0, textAlign: "left" }}>Manage connections ↗</button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

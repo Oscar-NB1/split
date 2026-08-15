@@ -201,7 +201,7 @@ export default function Strategy() {
       )}
       <div style={{ fontSize: 11, color: INK40, lineHeight: 1.5 }}>
         {connected === false
-          ? "Garmin's own Training API is business-only, so the plan reaches the watch through intervals.icu. Add its API key on the profile screen."
+          ? "Garmin's own Training API is business-only, so the plan reaches the watch through intervals.icu. Add its key under Profile → Manage connections."
           : "Goes to intervals.icu as one step per segment with its target time, and syncs from there into Garmin Connect."}
         {" "}
         {saving === "saving" ? "Saving…"

@@ -13,9 +13,12 @@ export const GET = route(async () => {
     select hr_max, notify, display_name, email, dob::text as dob, weight_kg, injury_notes
       from users where id = ${me.id}
   `;
-  const [conn] = await sql<{ providers: string[] }[]>`
-    select coalesce(array_agg(provider), '{}') as providers
-      from oauth_accounts where user_id = ${me.id}
+  // both shapes: `connected` is the list the Profile screen's toggles read, and
+  // `connections` carries the date, which the connections screen shows so a
+  // connection made two years ago is distinguishable from one made this morning
+  const conns = await sql<{ provider: string; updated_at: string }[]>`
+    select provider, updated_at::text as updated_at
+      from oauth_accounts where user_id = ${me.id} order by provider
   `;
   const [counts] = await sql<{ activities: number; since: string | null }[]>`
     select count(*)::int as activities, min(local_date)::text as since
@@ -24,7 +27,8 @@ export const GET = route(async () => {
   return NextResponse.json({
     ...(row ?? { hr_max: null, notify: {} }),
     weight_kg: row?.weight_kg == null ? null : Number(row.weight_kg),
-    connected: conn?.providers ?? [],
+    connected: conns.map((c) => c.provider),
+    connections: conns,
     activities: counts?.activities ?? 0,
     since: counts?.since ?? null,
   });

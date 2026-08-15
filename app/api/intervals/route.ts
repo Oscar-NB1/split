@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { pushUpcoming } from "@/lib/intervals";
+import { pushUpcoming, verifyIntervals } from "@/lib/intervals";
 import { badRequest, route } from "@/lib/http";
 
 /** Store an intervals.icu API key + athlete id, then push the next 10 days. */
@@ -9,6 +9,13 @@ export const POST = route(async (req: NextRequest) => {
   const me = await requireUser();
   const { athlete_id, api_key } = await req.json();
   if (!athlete_id || !api_key) throw badRequest("Athlete ID and API key are both needed.");
+
+  // Verified before anything is written. Storing first and pushing second meant a
+  // mistyped key was saved and reported as connected — the push that would have
+  // caught it is wrapped in a catch, because a working connection with nothing to
+  // send is also 0 pushed.
+  const check = await verifyIntervals(String(athlete_id).trim(), String(api_key).trim());
+  if (!check.ok) throw badRequest(check.why);
 
   // Event ids belong to one intervals.icu athlete. Pointing at a different one
   // makes every stored id meaningless, and pushUpcoming skips anything already

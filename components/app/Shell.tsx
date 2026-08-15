@@ -9,6 +9,7 @@ import Versus from "./Versus";
 import Awards from "./Awards";
 import Plan from "./Plan";
 import Strategy from "./Strategy";
+import Connect from "./Connect";
 import Profile from "./Profile";
 import Brief from "./Brief";
 import Strength from "./Strength";
@@ -42,14 +43,14 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile";
+  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
   week: "week", activity: "week",
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
-  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week",
+  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week", connect: "week",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -62,6 +63,7 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
   form: { to: "plan", label: "Plan" },
   record: { to: "awards", label: "Awards" },
   editProfile: { to: "profile", label: "Profile" },
+  connect: { to: "profile", label: "Profile" },
   strategy: { to: "plan", label: "Plan" },
   profile: { to: "week", label: "Week" },
 };
@@ -115,6 +117,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "profile" ? "Settings"
     : view === "strategy" ? "Race plan"
     : view === "editProfile" ? "Your details"
+    : view === "connect" ? "Strava, intervals.icu, Runna"
     : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
     : view === "program" ? "Edit the week"
@@ -127,7 +130,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "profile" ? "Profile" : view === "strategy" ? "Strategy"
     : view === "plan" ? "Plan" : view === "program" ? "Program"
     : view === "picker" ? "Add" : view === "form" ? "Form"
-    : view === "record" ? "Record" : "Split";
+    : view === "record" ? "Record" : view === "connect" ? "Connections" : "Split";
 
   return (
     <div className="app">
@@ -191,8 +194,12 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "strategy" && <Strategy />}
         {view === "form" && <Form />}
-        {view === "profile" && <Profile me={me} openEdit={() => setView("editProfile")} />}
+        {view === "profile" && (
+          <Profile me={me} openEdit={() => setView("editProfile")}
+            openConnect={() => setView("connect")} />
+        )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
+        {view === "connect" && <Connect />}
       </div>
 
       {rest && (

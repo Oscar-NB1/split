@@ -272,3 +272,31 @@ export async function pushRacePlan(
   if (!json.id) throw new Error("intervals.icu accepted the workout but returned no id");
   return String(json.id);
 }
+
+/**
+ * Does this athlete id and key actually work?
+ *
+ * Checked before storing them, because the alternative is what this replaces:
+ * the key was saved unverified, the push that followed was wrapped in
+ * `.catch(() => 0)`, and the screen reported "connected" for a mistyped key. The
+ * athlete then has a connection that shows green and will never deliver a
+ * workout, which is harder to diagnose than a refused paste.
+ */
+export async function verifyIntervals(
+  athleteId: string, apiKey: string,
+): Promise<{ ok: true } | { ok: false; why: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/athlete/${athleteId}`, { headers: { authorization: auth(apiKey) } });
+  } catch {
+    return { ok: false, why: "Could not reach intervals.icu. Worth trying again in a moment." };
+  }
+  if (res.ok) return { ok: true };
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, why: "intervals.icu rejected that API key. Copy it again from Settings → Developer." };
+  }
+  if (res.status === 404) {
+    return { ok: false, why: `intervals.icu has no athlete "${athleteId}". The id looks like i12345.` };
+  }
+  return { ok: false, why: `intervals.icu answered ${res.status}. Nothing was saved.` };
+}
