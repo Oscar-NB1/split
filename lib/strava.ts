@@ -5,7 +5,31 @@ const AUTH = "https://www.strava.com/oauth/authorize";
 const TOKEN = "https://www.strava.com/oauth/token";
 const API = "https://www.strava.com/api/v3";
 
-export const SCOPES = "read,activity:read_all";
+/**
+ * What we ask Strava for, and what each one is in plain words.
+ *
+ * `activity:read_all` is off by default. It is the difference between an
+ * athlete's public activities and everything they have ever recorded, and
+ * asking for it up front — as this used to — is asking for more than the app
+ * needs from someone who has not yet decided to trust it.
+ */
+export const SCOPE_ROWS = [
+  { key: "read", label: "Your profile", sub: "Name and photo, so the app is yours.", required: true },
+  {
+    key: "activity:read", label: "Your activities", required: true,
+    sub: "Every run, ride and session — matched to the day it was planned for.",
+  },
+  {
+    key: "activity:read_all", label: "Private activities", required: false,
+    sub: "Anything you have marked private. Off unless you turn it on.",
+  },
+] as const;
+
+/** The default ask: everything required, nothing more. */
+export const SCOPES = SCOPE_ROWS.filter((s) => s.required).map((s) => s.key).join(",");
+
+/** The ask when someone has opted into private activities too. */
+export const SCOPES_WITH_PRIVATE = SCOPE_ROWS.map((s) => s.key).join(",");
 
 const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET!);
 
@@ -41,13 +65,13 @@ export async function readOauthState(token: string | null): Promise<string | nul
   }
 }
 
-export function authorizeUrl(state: string) {
+export function authorizeUrl(state: string, includePrivate = false) {
   const p = new URLSearchParams({
     client_id: process.env.STRAVA_CLIENT_ID!,
     redirect_uri: `${process.env.APP_URL}/api/strava/callback`,
     response_type: "code",
     approval_prompt: "auto",
-    scope: SCOPES,
+    scope: includePrivate ? SCOPES_WITH_PRIVATE : SCOPES,
     state,
   });
   return `${AUTH}?${p}`;

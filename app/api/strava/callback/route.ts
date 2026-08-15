@@ -24,8 +24,10 @@ export async function GET(req: NextRequest) {
   if (!userId) return back("state");
   if (url.searchParams.get("error") || !code) return back("denied");
 
-  // Strava lets people uncheck permissions on the consent screen.
-  if (!scope.includes("activity:read_all")) return back("scope");
+  // Strava lets people uncheck permissions on the consent screen. Reading
+  // activities is the one the app cannot work without; private activities are
+  // optional and their absence is a choice, not a failure.
+  if (!scope.includes("activity:read")) return back("scope");
 
   try {
     await saveTokens(userId, await exchangeCode(code));

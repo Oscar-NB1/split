@@ -9,7 +9,7 @@ import Versus from "./Versus";
 import Awards from "./Awards";
 import Plan from "./Plan";
 import Strategy from "./Strategy";
-import Connect from "./Connect";
+import Strava from "./Strava";
 import Empty from "./Empty";
 import PlanBuilder from "./PlanBuilder";
 import Profile from "./Profile";
@@ -144,7 +144,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "profile" ? "Settings"
     : view === "strategy" ? "Race plan"
     : view === "editProfile" ? "Your details"
-    : view === "connect" ? "Strava and your watch"
+    : view === "connect" ? "One connection"
     : view === "build" ? "From your answers"
     : coachingName ? `Coaching ${coachingName}`
     : view === "record" ? "Every ranked effort"
@@ -161,7 +161,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "profile" ? "Profile" : view === "strategy" ? "Strategy"
     : view === "plan" ? "Plan" : view === "program" ? "Program"
     : view === "picker" ? "Add" : view === "form" ? "Form"
-    : view === "record" ? "Record" : view === "connect" ? "Connections"
+    : view === "record" ? "Record" : view === "connect" ? "Strava"
     : view === "build" ? "Build my plan" : "Split";
 
   return (
@@ -266,7 +266,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
             openCoachee={(id) => { setCoaching(id); setView("week"); }} />
         )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
-        {view === "connect" && <Connect />}
+        {view === "connect" && <Strava onDone={() => setView("profile")} />}
         {view === "build" && (
           <PlanBuilder onDone={() => { setView("week"); load(); }} />
         )}

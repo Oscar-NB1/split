@@ -200,10 +200,20 @@ export const ALLOC_SOLO: Record<string, [number, number, number]> = {
   "General fitness": [65, 10, 25],
 };
 
-export const allocationFor = (x: Intake): [number, number, number] =>
-  isDoubles(x.discipline)
+/**
+ * The week's split, as a copy.
+ *
+ * Returning the row itself hands out a live reference into ALLOC, so anything
+ * that adjusts the result — and adjusting it is the obvious next thing to do
+ * with it — permanently rewrites the table for every athlete after it. The
+ * symptom is a split that drifts a little on each render and never comes back.
+ */
+export const allocationFor = (x: Intake): [number, number, number] => {
+  const row = isDoubles(x.discipline)
     ? ALLOC[x.role ?? "Even split"] ?? [50, 30, 20]
     : ALLOC_SOLO[x.discipline] ?? [50, 30, 20];
+  return [...row] as [number, number, number];
+};
 
 // ------------------------------------------------------------- the benchmark
 

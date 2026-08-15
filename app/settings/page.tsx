@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/session";
-import Connect from "@/components/app/Connect";
+import Strava from "@/components/app/Strava";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export default async function Settings() {
         </span>
       </header>
       <div className="scroll">
-        <Connect />
+        <Strava />
       </div>
     </div>
   );

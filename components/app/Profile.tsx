@@ -18,11 +18,6 @@ export type Prof = {
   has_plan?: boolean;
 };
 
-const APPS: [string, string, string][] = [
-  ["strava", "Strava", "Activities, splits and streams"],
-  ["intervals", "intervals.icu", "Pushes your sessions to your watch"],
-];
-
 export default function Profile({
   me, openEdit, openConnect, openBuild, openCoachee,
 }: {
@@ -40,6 +35,8 @@ export default function Profile({
     document.documentElement.dataset.theme = t;
     fetch("/api/profile").then(async (r) => r.ok && setP(await r.json()));
   }, []);
+
+  const connected = (p?.connected ?? []).includes("strava");
 
   function flip(t: "light" | "dark") {
     setTheme(t);
@@ -73,42 +70,29 @@ export default function Profile({
           textTransform: "uppercase", color: TEAL }}>Edit ›</span>
       </button>
 
+      {/* One connection, and a row rather than a toggle: connecting a service is
+          an authorisation, and a switch implies the app can grant it. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <span style={caps}>Connected apps</span>
         <div style={{ background: PAPER, border: `1px solid ${LINE}`,
           borderRadius: "var(--r-card)", padding: "4px 16px" }}>
-          {APPS.map(([key, name, sub]) => {
-            const on = p?.connected.includes(key) ?? false;
-            return (
-              // The switch is a state indicator, not a control — connecting Strava
-              // is an OAuth round trip and intervals.icu needs a pasted key, so a
-              // toggle cannot do either. It looked tappable, so now the row is:
-              // it goes to the screen where the connection is actually made.
-              <button key={key} onClick={openConnect} style={{ display: "flex", alignItems: "center", gap: 12,
-                padding: "13px 0", borderBottom: "1px solid var(--line-2)",
-                color: "var(--ink)", textDecoration: "none" }}>
-                <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>{name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: on ? TEAL : INK40 }}>
-                    {p == null ? "…" : on ? "Connected" : "Not connected"}
-                  </span>
-                  <span style={{ fontSize: 11, color: INK40 }}>{sub}</span>
-                </span>
-                <span style={{
-                  width: 42, height: 24, borderRadius: 12, flex: "none",
-                  background: on ? TEAL : OFF, position: "relative",
-                  border: `1px solid ${on ? TEAL : LINE}`,
-                }}>
-                  <span style={{ position: "absolute", top: 2, left: on ? 20 : 2, width: 18,
-                    height: 18, borderRadius: "50%", background: "#fff",
-                    boxShadow: "0 1px 2px rgba(18,49,77,.25)" }} />
-                </span>
-              </button>
-            );
-          })}
+          <button onClick={openConnect} style={{ display: "flex", alignItems: "center",
+            gap: 12, width: "100%", padding: "13px 0", background: "none",
+            color: "var(--ink)", textAlign: "left" }}>
+            <span style={{ width: 34, height: 34, flex: "none", borderRadius: 9, background: OFF,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 8, fontWeight: 800, letterSpacing: ".04em", color: INK40 }}
+              aria-hidden>STRAVA</span>
+            <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Strava</span>
+              <span style={{ fontSize: 11, fontWeight: 700,
+                color: connected ? TEAL : INK40 }}>
+                {p == null ? "…" : connected ? "Connected" : "Not connected"}
+              </span>
+            </span>
+            <span style={{ fontSize: 18, color: INK40 }}>›</span>
+          </button>
         </div>
-        <button onClick={openConnect} style={{ fontSize: 12, color: TEAL, fontWeight: 600,
-          background: "none", padding: 0, textAlign: "left" }}>Manage connections ↗</button>
       </div>
 
       <Zones />

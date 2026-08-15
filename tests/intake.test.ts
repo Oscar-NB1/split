@@ -485,3 +485,13 @@ test("the shakeout survives a scheduled benchmark", () => {
     assert.ok(last.some((d) => d.significance === "race"), `${benchmark}: the race`);
   }
 });
+
+test("the allocation is a copy, so adjusting it cannot rewrite the table", () => {
+  // Handing out the row itself means anything that adjusts the result rewrites
+  // ALLOC for every athlete after it — a split that drifts on each render and
+  // never comes back.
+  const a = allocationFor(HER);
+  a[0] = 99;
+  assert.deepEqual(allocationFor(HER), [60, 25, 15], "the table is untouched");
+  assert.deepEqual(ALLOC.Protected, [60, 25, 15]);
+});
