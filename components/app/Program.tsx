@@ -1,18 +1,31 @@
 "use client";
 import { useState } from "react";
 import { addDays, fmt, today } from "@/lib/dates";
-import { kindColour, kindLabel, weekDates, weekOf, WEEKS } from "@/lib/coach";
+import { WEEKS, kindColour, kindLabel, weekDates, weekOf } from "@/lib/coach";
 import type { Session, User, WeekData } from "./Shell";
 
-const DOW = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const TEAL = "#0A8FB0", LIME = "#C6FF5B", NAVY = "#12314D";
+const TEAL_T = "var(--teal-tint)", TEAL_T2 = "var(--teal-tint2)";
+const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
+const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)", CREAM = "var(--cream)";
+
+const slotChip = (slot: string | null | undefined): React.CSSProperties => ({
+  fontSize: 9, fontWeight: 800, letterSpacing: ".08em", padding: "3px 7px",
+  borderRadius: "var(--r-pill)",
+  background: slot === "PM" ? NAVY : OFF, color: slot === "PM" ? LIME : INK55,
+});
 
 /**
  * The week editor.
  *
- * Moving a session is a tap-to-pick-up, tap-to-drop interaction rather than
- * drag-and-drop. This is a phone: dragging inside a vertically scrolling list
- * fights the scroll, and on iOS a long-press to start a drag collides with the
- * system text-selection gesture. Two taps always work.
+ * Two ways to move a session, as the design has it: drag it (which works with a
+ * mouse) or press ⇅ and then a day (which works with a thumb, where dragging
+ * inside a scrolling list fights the scroll). Both end at the same PATCH.
+ *
+ * Moving warns rather than refuses — a session in a bad slot produces a message,
+ * not a rejection, because the athlete keeps agency and the change log keeps the
+ * history.
  */
 export default function Program({
   data, me, other, monday, setMonday, reload, openSession, openPicker,
@@ -22,151 +35,186 @@ export default function Program({
   openSession: (s: Session) => void; openPicker: (date: string, slot: "AM" | "PM") => void;
 }) {
   const [who, setWho] = useState<"me" | "them">("me");
-  const [held, setHeld] = useState<Session | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [moving, setMoving] = useState<string | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  if (!data) return <div className="pad"><p className="empty">Loading…</p></div>;
+  if (!data) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
   const uid = who === "me" ? me.id : other?.id;
   const all = data.sessions.filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
   const week = weekOf(monday);
 
-  async function act(id: string, body: Record<string, unknown>) {
-    setBusy(true);
+  async function patch(id: string, body: Record<string, unknown>) {
     const r = await fetch(`/api/sessions/${id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
-    setBusy(false);
-    if (!r.ok) { setNote(j.error ?? "That didn't save."); return false; }
-    // the engine warns rather than refuses — a bad slot is a message, not a block
+    if (!r.ok) { setNote(j.error ?? "That didn't save."); return; }
     setNote((j.warning as string) ?? null);
     reload();
-    return true;
   }
 
-  async function dropOn(date: string) {
-    if (!held) return;
-    if (held.planned_date === date) { setHeld(null); return; }
-    if (await act(held.id, { action: "move", to_date: date })) setHeld(null);
-  }
+  const moveTo = (i: number) => {
+    const id = dragging || moving;
+    if (!id) return;
+    const s = all.find((x) => x.id === id);
+    setDragging(null); setDragOver(null); setMoving(null);
+    if (!s || s.planned_date === dates[i]) return;
+    patch(id, { action: "move", to_date: dates[i] });
+  };
 
-  const plannedKm = week?.km ?? null;
+  const active = !!(moving || dragging);
 
   return (
-    <div className="pad">
+    <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
-        <div className="eyebrow">
-          {week ? `Week ${week.n} · ${week.km} km` : "Outside the block"}
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+          textTransform: "uppercase", color: "var(--teal)" }}>
+          {who === "me" ? "Program · me" : `Coaching · ${other?.display_name}`}
         </div>
-        <h1 className="h2" style={{ marginTop: 5 }}>
-          {fmt(monday, { day: "numeric", month: "long" })} – {fmt(addDays(monday, 6), { day: "numeric", month: "long" })}
-        </h1>
-        {week?.note && <p className="muted" style={{ marginTop: 6 }}>{week.note}</p>}
+        <div style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
+          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 5 }}>
+          {week ? `Week ${week.n} · ${fmt(monday, { day: "numeric", month: "long" })}`
+            : fmt(monday, { day: "numeric", month: "long" })}
+        </div>
+        <div style={{ fontSize: 12, color: INK55, marginTop: 8, lineHeight: 1.5 }}>
+          Hyrox doubles · 15 weeks to 28 Nov. Target 55:00–56:30 from 1:00:45.
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <button className="btn-ghost" style={{ width: 46, padding: "10px 0" }}
-          onClick={() => setMonday(addDays(monday, -7))} aria-label="Previous week">←</button>
-        {other && (
-          <div className="pillrow" style={{ flex: 1 }}>
-            <button aria-pressed={who === "me"} onClick={() => setWho("me")}>Mine</button>
-            <button aria-pressed={who === "them"} onClick={() => setWho("them")}>{other.display_name}</button>
-          </div>
-        )}
-        <button className="btn-ghost" style={{ width: 46, padding: "10px 0" }}
-          onClick={() => setMonday(addDays(monday, 7))} aria-label="Next week">→</button>
-      </div>
+      {other && (
+        <div style={{ display: "flex", gap: 3, background: OFF, borderRadius: "var(--r-pill)", padding: 3 }}>
+          {(["me", "them"] as const).map((w) => (
+            <button key={w} onClick={() => setWho(w)} style={{
+              flex: 1, padding: "7px 16px", borderRadius: "var(--r-pill)", fontSize: 12,
+              fontWeight: 700, background: who === w ? NAVY : "transparent",
+              color: who === w ? "#fff" : INK55,
+            }}>{w === "me" ? "Mine" : other.display_name}</button>
+          ))}
+        </div>
+      )}
 
-      {/* the block's week strip, so a move is made with the volume in view */}
-      <div style={{ display: "flex", gap: 4, overflowX: "auto", paddingBottom: 4 }}>
+      <div style={{ display: "flex", gap: 5, overflowX: "auto", paddingBottom: 4 }}>
         {WEEKS.map((w) => (
-          <button key={w.n} onClick={() => setMonday(w.start)}
-            style={{
-              flex: "none", minWidth: 44, padding: "8px 6px", borderRadius: 10,
-              display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-              background: w.start === monday ? "var(--navy)" : "var(--paper)",
-              color: w.start === monday ? "#fff" : "var(--ink-55)",
-              border: "1px solid var(--line)",
-            }}>
-            <span style={{ fontSize: 11, fontWeight: 700 }}>{w.n}</span>
+          <button key={w.n} onClick={() => setMonday(w.start)} style={{
+            flex: "none", minWidth: 44, display: "flex", flexDirection: "column",
+            alignItems: "center", gap: 1, padding: "8px 6px", borderRadius: 10,
+            border: `1px solid ${LINE}`,
+            background: w.start === monday ? NAVY : PAPER,
+            color: w.start === monday ? "#fff" : INK55,
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 700 }}>W{w.n}</span>
             <span style={{ fontSize: 9, opacity: .8 }}>{w.km}k</span>
           </button>
         ))}
       </div>
 
-      {held && (
-        <div className="okbox">
-          Holding <b>{held.title}</b> — tap a day to move it, or{" "}
-          <button onClick={() => setHeld(null)} style={{ textDecoration: "underline", color: "inherit" }}>
-            put it back
-          </button>.
-        </div>
-      )}
+      <div style={{ fontSize: 11, lineHeight: 1.55, padding: "11px 13px",
+        borderRadius: "var(--r-card)", background: week?.note ? CREAM : PAPER,
+        border: `1px solid ${LINE}`, color: week?.note ? "var(--ink)" : INK55 }}>
+        {week?.note || `${week?.km ?? "—"} km · Mon strength + kickboxing, Tue key session, Sat Hyrox continuous, Sun long run.`}
+      </div>
+
+      <div style={{ fontSize: 11, lineHeight: 1.5, padding: "9px 4px",
+        color: active ? TEAL : INK40, fontWeight: active ? 700 : 500 }}>
+        {moving ? "Pick a day to move it to."
+          : dragging ? "Drop it on a day."
+          : "Drag a session to another day, or press ⇅ then a day."}
+      </div>
+
       {note && <div className="warnbox">{note}</div>}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {dates.map((date, i) => {
-          const items = all.filter((s) => s.planned_date === date);
-          const isTarget = held && held.planned_date !== date;
+          const items = all.filter((s) => s.planned_date === date)
+            .sort((a, b) => Number(a.slot === "PM") - Number(b.slot === "PM"));
           return (
-            <div key={date} style={{
-              display: "flex", gap: 8, alignItems: "stretch",
-              background: isTarget ? "var(--teal-tint)" : "transparent",
-              borderRadius: "var(--r-card)", padding: isTarget ? 4 : 0,
-              outline: isTarget ? "1px dashed var(--teal)" : "none",
-            }}>
-              <button onClick={() => dropOn(date)} disabled={!held || busy}
-                style={{
-                  width: 52, flex: "none", borderRadius: 12, display: "flex",
-                  flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
-                  background: date === today() ? "var(--navy)" : "var(--paper)",
-                  color: date === today() ? "#fff" : "var(--ink)",
-                  border: "1px solid var(--line)",
-                  cursor: held ? "pointer" : "default",
-                }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em",
-                  textTransform: "uppercase", opacity: .6 }}>{DOW[i]}</span>
-                <span style={{ fontSize: 15, fontWeight: 700 }}>{fmt(date, { day: "numeric" })}</span>
+            <div key={date}
+              onDragOver={(e) => { e.preventDefault(); if (dragOver !== i) setDragOver(i); }}
+              onDragLeave={() => { if (dragOver === i) setDragOver(null); }}
+              onDrop={(e) => { e.preventDefault(); moveTo(i); }}
+              style={{
+                display: "flex", gap: 8, alignItems: "flex-start", padding: 6,
+                borderRadius: "var(--r-card)",
+                background: dragOver === i ? TEAL_T2 : active ? TEAL_T : "transparent",
+                outline: dragOver === i ? `1px dashed ${TEAL}` : "none", outlineOffset: -2,
+              }}>
+              <button onClick={() => moveTo(i)} style={{
+                width: 42, flex: "none", display: "flex", flexDirection: "column",
+                alignItems: "center", gap: 2, padding: "9px 0", borderRadius: 12,
+                cursor: moving ? "pointer" : "default", color: "var(--ink)", background: PAPER,
+                border: `1px ${moving || dragOver === i ? `dashed ${TEAL}` : `solid ${LINE}`}`,
+              }}>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
+                  textTransform: "uppercase", color: date === today() ? TEAL : INK40 }}>{DAYS[i]}</span>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{fmt(date, { day: "numeric" })}</span>
               </button>
 
               <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 {items.map((s) => (
                   <div key={s.id} style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
-                    <button onClick={() => openSession(s)} className="sess" style={{ flex: 1 }}>
-                      <span className="edge" style={{ background: kindColour(s.kind) }} />
-                      <span className="body" style={{ padding: "9px 11px", gap: 3 }}>
+                    <button onClick={() => openSession(s)} draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", s.id);
+                        setDragging(s.id); setMoving(null);
+                      }}
+                      onDragEnd={() => { setDragging(null); setDragOver(null); }}
+                      style={{
+                        flex: 1, textAlign: "left", padding: 0, display: "flex",
+                        alignItems: "stretch", background: PAPER,
+                        border: `1px solid ${moving === s.id || dragging === s.id ? TEAL : LINE}`,
+                        borderRadius: "var(--r-card)", overflow: "hidden", color: "var(--ink)",
+                        cursor: "grab", opacity: dragging === s.id ? .45 : 1,
+                      }}>
+                      <span style={{ width: 4, flex: "none", alignSelf: "stretch",
+                        background: kindColour(s.kind) }} />
+                      <span style={{ display: "flex", flexDirection: "column", gap: 3,
+                        padding: "9px 11px" }}>
                         <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          {s.slot && <span className="slot">{s.slot}</span>}
-                          <span className="kindlab" style={{ fontSize: 9 }}>{kindLabel(s.kind)}</span>
-                          {s.status === "done" && <span className="tag done" style={{ fontSize: 9, padding: "2px 7px" }}>done</span>}
-                          {s.status === "skipped" && <span className="tag skip" style={{ fontSize: 9, padding: "2px 7px" }}>skipped</span>}
+                          {s.slot && <span style={slotChip(s.slot)}>{s.slot}</span>}
+                          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
+                            textTransform: "uppercase", color: INK40 }}>{kindLabel(s.kind)}</span>
+                          {s.status === "done" && (
+                            <span style={{ fontSize: 9, fontWeight: 700, color: TEAL }}>DONE</span>
+                          )}
+                          {s.status === "skipped" && (
+                            <span style={{ fontSize: 9, fontWeight: 700, color: "#C07A3E" }}>SKIPPED</span>
+                          )}
                         </span>
                         <span style={{ fontSize: 13, fontWeight: 600 }}>{s.title}</span>
-                        <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
+                        <span style={{ fontSize: 11, color: INK55 }}>
                           {s.planned_minutes ? `${s.planned_minutes} min` : "—"}
                         </span>
                       </span>
                     </button>
 
-                    <button onClick={() => act(s.id, { action: "slot", slot: s.slot === "AM" ? "PM" : "AM" })}
-                      aria-label="Swap AM/PM" style={sideBtn}>
-                      {s.slot === "PM" ? "PM" : "AM"}
-                    </button>
-                    <button onClick={() => setHeld(held?.id === s.id ? null : s)}
-                      aria-label="Pick up to move"
-                      style={{ ...sideBtn, background: held?.id === s.id ? "var(--navy)" : "var(--paper)",
-                        color: held?.id === s.id ? "#fff" : "var(--ink-40)" }}>⇅</button>
+                    <button onClick={() => patch(s.id, { action: "slot", slot: s.slot === "AM" ? "PM" : "AM" })}
+                      aria-label="Swap AM and PM" style={{
+                        width: 32, flex: "none", borderRadius: "var(--r-card)", fontSize: 9,
+                        fontWeight: 800, letterSpacing: ".04em", border: `1px solid ${LINE}`,
+                        background: PAPER, color: INK55,
+                      }}>{s.slot === "AM" ? "PM" : "AM"}</button>
+
+                    <button onClick={() => setMoving(moving === s.id ? null : s.id)}
+                      aria-label="Pick up to move" style={{
+                        width: 32, flex: "none", borderRadius: "var(--r-card)", fontSize: 14,
+                        border: `1px solid ${moving === s.id ? TEAL : LINE}`,
+                        background: moving === s.id ? TEAL_T : PAPER,
+                        color: moving === s.id ? TEAL : INK55,
+                      }}>⇅</button>
                   </div>
                 ))}
 
                 <button onClick={() => openPicker(date, items.some((x) => x.slot === "AM") ? "PM" : "AM")}
                   style={{
-                    padding: "9px 0", borderRadius: 10, border: "1px dashed var(--line)",
-                    fontSize: 11, fontWeight: 600, color: "var(--ink-40)",
+                    textAlign: "left", border: "1px dashed rgba(18,49,77,.18)",
+                    borderRadius: "var(--r-card)", padding: "9px 11px", color: INK55,
+                    fontSize: 11, fontWeight: 600, background: "none",
                   }}>+ Add session</button>
               </div>
             </div>
@@ -174,28 +222,27 @@ export default function Program({
         })}
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span className="caps">Guardrails</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+          textTransform: "uppercase", color: INK55 }}>Guardrails</span>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {[
-            plannedKm ? `${plannedKm} km target` : null,
+            `${week?.km ?? "—"} km target`,
             "Two hard days: Tue and Sat",
             "Easy runs under 152 bpm",
             "Doubles pair easy runs only",
-          ].filter(Boolean).map((t) => <span key={t as string} className="chip">{t}</span>)}
+          ].map((t) => (
+            <span key={t} style={{ fontSize: 11, fontWeight: 600, color: TEAL,
+              background: TEAL_T, border: `1px solid ${TEAL_T2}`,
+              borderRadius: "var(--r-pill)", padding: "6px 12px" }}>{t}</span>
+          ))}
         </div>
       </div>
 
       <p className="empty">
-        Moving a session warns rather than refuses — a bad slot is a message, not a
-        block. Nothing rolls forward: a skipped session leaves no debt, it feeds next
-        week&apos;s volume instead.
+        A move warns rather than refuses. Nothing rolls forward: a skipped session leaves no
+        debt, it feeds next week&apos;s volume instead.
       </p>
     </div>
   );
 }
-
-const sideBtn = {
-  width: 40, flex: "none" as const, borderRadius: 10, border: "1px solid var(--line)",
-  background: "var(--paper)", color: "var(--ink-40)", fontSize: 10, fontWeight: 700,
-};
