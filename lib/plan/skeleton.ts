@@ -124,7 +124,9 @@ export function skeleton(r: Resolved, length: number): { weeks: Week[]; flags: s
    */
   const peak = Math.max(...weeks.map((w) => w.km));
   const last = weeks[weeks.length - 1];
-  if (last && last.km > peak * 0.4) last.km = Math.max(3, Math.round(peak * 0.4 * 10) / 10);
+  // floored, not rounded: rounding 40% of 51.4 up to 20.6 puts race week at
+  // 40.1% and fails the very assertion this clamp exists to satisfy
+  if (last && last.km > peak * 0.4) last.km = Math.max(3, Math.floor(peak * 0.4 * 10) / 10);
 
   return { weeks, flags: ph.flags };
 }
