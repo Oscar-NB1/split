@@ -4,47 +4,98 @@ import { requireUser } from "@/lib/session";
 import { badRequest, route } from "@/lib/http";
 import { materialise } from "@/lib/templates";
 import {
-  COMMITMENT, COMMITMENT_KIND, DIVISION, EQUIPMENT, GOAL_KIND, GYM_ACCESS,
-  PARTNER_ROLE, RUNNING_SELF, SLED_EXPERIENCE, TRAINING_BASE,
-  type Commitment, type Equipment, type Intake, validate,
+  BASE, BENCH_VARIANTS, COMMITMENT, COMMITMENTS, DAYS, DIFFICULTY, DISCIPLINE,
+  DIVISION_DOUBLES, DIVISION_SOLO, EQUIPMENT, EQUIPMENT_RUNNING, HAS_RACE,
+  RACE_DISTANCE, ROLE, RUNNING_SELF, RUN_CEIL, SLED, VOLUME_PREF,
+  type Day, type Intake, liveQuestions, validate,
 } from "@/lib/intake";
-import { generate } from "@/lib/generate";
+import { generate, resolve } from "@/lib/generate";
 
 /**
  * The intake: what the athlete says about themselves, and the block it builds.
  *
- * Submitting it writes three things in one go — the answers, a plan row derived
- * from them, and the first weeks of sessions — because a form that stores answers
- * and produces nothing visible is indistinguishable from a form that did nothing.
+ * Three endpoints rather than one, because the design's flow has three moments:
+ * answering the questions, seeing the scaffold and the benchmark offer, and
+ * generating. Submitting writes the answers, the plan derived from them, and the
+ * first weeks of sessions in one go — a form that stores answers and produces
+ * nothing visible is indistinguishable from a form that did nothing.
  */
+
+type Row = Omit<Intake, "hasRace" | "raceDistance" | "raceDate" | "runningSelf"
+  | "paceMin" | "paceSec" | "paceUnknown" | "commitDay"> & {
+  has_race: string; race_distance: string | null; race_date: string | null;
+  running_self: string; pace_min: number | null; pace_sec: number | null;
+  pace_unknown: boolean; commit_day: Record<string, Day[]>;
+  completed_at: string;
+};
+
+const toIntake = (r: Row): Intake => ({
+  hasRace: r.has_race as Intake["hasRace"],
+  discipline: r.discipline,
+  raceDistance: r.race_distance as Intake["raceDistance"],
+  raceDate: r.race_date,
+  role: r.role,
+  division: r.division,
+  base: r.base,
+  runningSelf: r.running_self as Intake["runningSelf"],
+  paceMin: r.pace_min, paceSec: r.pace_sec, paceUnknown: r.pace_unknown,
+  days: r.days, commitments: r.commitments, freq: r.freq, commitDay: r.commit_day,
+  equipment: r.equipment, sled: r.sled,
+  injuries: r.injuries, volume: r.volume, difficulty: r.difficulty,
+  benchmark: r.benchmark,
+});
+
+const load = async (userId: string) => {
+  const [row] = await sql<Row[]>`
+    select has_race, discipline, race_distance, race_date::text as race_date, role,
+           division, base, running_self, pace_min, pace_sec, pace_unknown,
+           days, commitments, freq, commit_day, equipment, sled, injuries,
+           volume, difficulty, benchmark, completed_at::text as completed_at
+      from athlete_intake where user_id = ${userId}
+  `;
+  return row ?? null;
+};
+
+/**
+ * The option lists, served rather than hard-coded in the screens.
+ *
+ * Adding an option here is the only change needed to offer it, and the branching
+ * rules come from the same place the validator reads — so the form can never ask
+ * a question the validator does not expect, or skip one it demands.
+ */
+const OPTIONS = {
+  hasRace: HAS_RACE,
+  discipline: DISCIPLINE,
+  raceDistance: RACE_DISTANCE,
+  role: ROLE,
+  division: { solo: DIVISION_SOLO, doubles: DIVISION_DOUBLES },
+  base: BASE,
+  runningSelf: RUNNING_SELF,
+  runningCeilings: RUN_CEIL,
+  days: DAYS,
+  commitments: COMMITMENTS,
+  commitmentEffects: COMMITMENT,
+  equipment: { default: EQUIPMENT, running: EQUIPMENT_RUNNING },
+  sled: SLED,
+  volume: VOLUME_PREF,
+  difficulty: DIFFICULTY,
+  benchVariants: BENCH_VARIANTS,
+};
 
 export const GET = route(async () => {
   const me = await requireUser();
-  const [row] = await sql<(Intake & { completed_at: string })[]>`
-    select training_base, running_self,
-           current_km_week::float8 as current_km_week,
-           longest_run_km::float8 as longest_run_km, recent_5k_seconds,
-           goal_kind, goal_race_name, goal_date::text as goal_date, goal_time_seconds,
-           division, partner_role, days_per_week, preferred_days, long_run_day,
-           commitments, gym_access, equipment, sled_experience,
-           injuries, constraints_note, completed_at::text as completed_at
-      from athlete_intake where user_id = ${me.id}
-  `;
-  const [plan] = await sql<{ id: string; name: string }[]>`
-    select id, name from plan_templates where athlete_id = ${me.id} and active limit 1
+  const row = await load(me.id);
+  const [plan] = await sql<{ id: string; name: string; plan_state: string | null }[]>`
+    select id, name, plan_state from plan_templates
+     where athlete_id = ${me.id} and active limit 1
   `;
   return NextResponse.json({
-    intake: row ?? null,
+    intake: row,
     plan: plan ?? null,
-    // the screens read these rather than hard-coding the values, so adding an
-    // option here is the only change needed to offer it
-    options: {
-      training_base: TRAINING_BASE, running_self: RUNNING_SELF,
-      goal_kind: GOAL_KIND, division: DIVISION, partner_role: PARTNER_ROLE,
-      gym_access: GYM_ACCESS, equipment: EQUIPMENT,
-      sled_experience: SLED_EXPERIENCE, commitment_kind: COMMITMENT_KIND,
-      commitment_effects: COMMITMENT,
-    },
+    options: OPTIONS,
+    questions: row
+      ? liveQuestions({ discipline: row.discipline, hasRace: row.has_race as Intake["hasRace"] })
+      : null,
   });
 });
 
@@ -54,59 +105,90 @@ function parse(body: Record<string, unknown>): Intake {
     const n = Number(v);
     return Number.isFinite(n) ? Math.round(n) : null;
   };
-  const num = (v: unknown) => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : NaN;
-  };
   const str = (v: unknown) => {
     const s = typeof v === "string" ? v.trim() : "";
     return s === "" ? null : s;
   };
-  const days = Array.isArray(body.preferred_days)
-    ? body.preferred_days.map(int).filter((d): d is number => d != null && d >= 0 && d <= 6)
-    : [];
-  const kit = Array.isArray(body.equipment)
-    ? body.equipment.filter((e): e is Equipment => EQUIPMENT.includes(e as Equipment))
-    : [];
+  const list = <T,>(v: unknown, allowed: readonly T[]): T[] =>
+    Array.isArray(v) ? [...new Set(v.filter((x): x is T => allowed.includes(x as T)))] : [];
 
-  const commitments: Commitment[] = Array.isArray(body.commitments)
-    ? (body.commitments as Record<string, unknown>[])
-        .filter((c) => COMMITMENT_KIND.includes(c.kind as never))
-        .map((c) => ({
-          kind: c.kind as Commitment["kind"],
-          name: str(c.name) ?? "",
-          day: int(c.day),
-          per_week: int(c.per_week) ?? 1,
-        }))
-    : [];
+  const commitments = list(body.commitments, COMMITMENTS);
+  const freq: Record<string, number> = {};
+  const commitDay: Record<string, Day[]> = {};
+  for (const c of commitments) {
+    const n = int((body.freq as Record<string, unknown>)?.[c]) ?? 1;
+    freq[c] = Math.max(1, Math.min(7, n));
+    // a commitment cannot be fixed to more days than it happens
+    commitDay[c] = list((body.commitDay as Record<string, unknown>)?.[c], DAYS).slice(0, freq[c]);
+  }
+
+  const discipline = body.discipline as Intake["discipline"];
+  const equipmentAllowed = discipline === "Running race" ? EQUIPMENT_RUNNING : EQUIPMENT;
 
   return {
-    training_base: body.training_base as Intake["training_base"],
-    running_self: body.running_self as Intake["running_self"],
-    // optional: the tables infer a starting volume when it is not given, and a
-    // stated number only ever lowers it
-    current_km_week: body.current_km_week == null || body.current_km_week === ""
-      ? null : num(body.current_km_week),
-    longest_run_km: body.longest_run_km == null || body.longest_run_km === ""
-      ? null : num(body.longest_run_km),
-    recent_5k_seconds: int(body.recent_5k_seconds),
-    goal_kind: body.goal_kind as Intake["goal_kind"],
-    goal_race_name: str(body.goal_race_name),
-    goal_date: str(body.goal_date),
-    goal_time_seconds: int(body.goal_time_seconds),
-    division: (body.division ?? "unknown") as Intake["division"],
-    partner_role: (str(body.partner_role) as Intake["partner_role"]) ?? null,
-    days_per_week: int(body.days_per_week) ?? 0,
-    preferred_days: [...new Set(days)],
-    long_run_day: int(body.long_run_day),
+    hasRace: body.hasRace as Intake["hasRace"],
+    discipline,
+    raceDistance: (str(body.raceDistance) as Intake["raceDistance"]) ?? null,
+    raceDate: str(body.raceDate),
+    role: (str(body.role) as Intake["role"]) ?? null,
+    division: (str(body.division) as Intake["division"]) ?? null,
+    base: body.base as Intake["base"],
+    runningSelf: body.runningSelf as Intake["runningSelf"],
+    paceMin: int(body.paceMin),
+    paceSec: int(body.paceSec) ?? 0,
+    paceUnknown: body.paceUnknown === true,
+    days: list(body.days, DAYS),
     commitments,
-    gym_access: body.gym_access as Intake["gym_access"],
-    equipment: [...new Set(kit)],
-    sled_experience: (body.sled_experience ?? "never") as Intake["sled_experience"],
+    freq,
+    commitDay,
+    equipment: list(body.equipment, equipmentAllowed as readonly Intake["equipment"][number][]),
+    sled: (str(body.sled) as Intake["sled"]) ?? null,
     injuries: str(body.injuries),
-    constraints_note: str(body.constraints_note),
+    volume: body.volume as Intake["volume"],
+    difficulty: body.difficulty as Intake["difficulty"],
+    benchmark: (str(body.benchmark) as Intake["benchmark"]) ?? "offered",
   };
 }
+
+/**
+ * The scaffold and the offer, without committing to anything.
+ *
+ * The design shows the resolved variables and the benchmark offer before a plan
+ * exists, so this resolves without writing — an athlete can see what their
+ * answers produce, and what the test would buy them, before deciding.
+ */
+export const PUT = route(async (req: NextRequest) => {
+  await requireUser();
+  const intake = parse(await req.json());
+  const problems = validate(intake);
+  if (problems.length > 0) return NextResponse.json({ problems }, { status: 400 });
+
+  const r = resolve(intake);
+  const plan = generate(intake);
+  return NextResponse.json({
+    resolved: {
+      weeks: r.weeks, start: r.start, race_date: r.raceDate,
+      base_km: r.baseKm, ceiling: r.ceil, raw_start: r.rawStart, start_km: r.startKm,
+      base_ramp: r.baseRamp, run_ramp: r.runRamp, ramp: r.ramp,
+      allocation: { run: r.alloc[0], station: r.alloc[1], strength: r.alloc[2] },
+      pace_known: r.paceKnown, goal_seconds: r.goalSeconds,
+      plan_state: r.planState, phase_split: r.phaseSplit,
+    },
+    corrections: r.corrections,
+    offer: {
+      // the offer is suppressed rather than hidden: the screen says why
+      suppressed: r.offerSuppressed,
+      weeks_to_race: r.weeksToRace,
+      gated: !!r.gate,
+      gate: r.gate,
+      variant: r.variant,
+      ...BENCH_VARIANTS[r.variant],
+      rounds: r.variant === "submax" ? 3 : 4,
+    },
+    preview: { volume: plan.volume, intents: plan.intents, guardrails: plan.guardrails },
+    flags: plan.flags,
+  });
+});
 
 export const POST = route(async (req: NextRequest) => {
   const me = await requireUser();
@@ -124,39 +206,34 @@ export const POST = route(async (req: NextRequest) => {
 
   await sql`
     insert into athlete_intake (
-      user_id, training_base, running_self, current_km_week, longest_run_km,
-      recent_5k_seconds, goal_kind, goal_race_name, goal_date, goal_time_seconds,
-      division, partner_role, days_per_week, preferred_days, long_run_day,
-      commitments, gym_access, equipment, sled_experience,
-      injuries, constraints_note, updated_at
+      user_id, has_race, discipline, race_distance, race_date, role, division,
+      base, running_self, pace_min, pace_sec, pace_unknown,
+      days, commitments, freq, commit_day, equipment, sled,
+      injuries, volume, difficulty, benchmark, updated_at
     ) values (
-      ${me.id}, ${intake.training_base}, ${intake.running_self},
-      ${intake.current_km_week}, ${intake.longest_run_km},
-      ${intake.recent_5k_seconds}, ${intake.goal_kind}, ${intake.goal_race_name},
-      ${intake.goal_date}, ${intake.goal_time_seconds}, ${intake.division},
-      ${intake.partner_role}, ${intake.days_per_week},
-      ${intake.preferred_days}, ${intake.long_run_day},
-      ${sql.json(intake.commitments as never)}, ${intake.gym_access},
-      ${intake.equipment}, ${intake.sled_experience},
-      ${intake.injuries}, ${intake.constraints_note}, now()
+      ${me.id}, ${intake.hasRace}, ${intake.discipline}, ${intake.raceDistance},
+      ${intake.raceDate}, ${intake.role}, ${intake.division},
+      ${intake.base}, ${intake.runningSelf}, ${intake.paceMin}, ${intake.paceSec},
+      ${intake.paceUnknown}, ${intake.days}, ${intake.commitments},
+      ${sql.json(intake.freq as never)}, ${sql.json(intake.commitDay as never)},
+      ${intake.equipment}, ${intake.sled}, ${intake.injuries},
+      ${intake.volume}, ${intake.difficulty}, ${intake.benchmark}, now()
     )
     on conflict (user_id) do update set
-      training_base = excluded.training_base, running_self = excluded.running_self,
-      division = excluded.division, partner_role = excluded.partner_role,
-      commitments = excluded.commitments, sled_experience = excluded.sled_experience,
-      current_km_week = excluded.current_km_week,
-      longest_run_km = excluded.longest_run_km, recent_5k_seconds = excluded.recent_5k_seconds,
-      goal_kind = excluded.goal_kind, goal_race_name = excluded.goal_race_name,
-      goal_date = excluded.goal_date, goal_time_seconds = excluded.goal_time_seconds,
-      days_per_week = excluded.days_per_week, preferred_days = excluded.preferred_days,
-      long_run_day = excluded.long_run_day, gym_access = excluded.gym_access,
-      equipment = excluded.equipment, injuries = excluded.injuries,
-      constraints_note = excluded.constraints_note, updated_at = now()
+      has_race = excluded.has_race, discipline = excluded.discipline,
+      race_distance = excluded.race_distance, race_date = excluded.race_date,
+      role = excluded.role, division = excluded.division, base = excluded.base,
+      running_self = excluded.running_self, pace_min = excluded.pace_min,
+      pace_sec = excluded.pace_sec, pace_unknown = excluded.pace_unknown,
+      days = excluded.days, commitments = excluded.commitments, freq = excluded.freq,
+      commit_day = excluded.commit_day, equipment = excluded.equipment,
+      sled = excluded.sled, injuries = excluded.injuries, volume = excluded.volume,
+      difficulty = excluded.difficulty, benchmark = excluded.benchmark, updated_at = now()
   `;
 
-  // Retaking the intake replaces the block rather than adding a second one. Only
-  // sessions still untouched go: anything logged, moved or commented on is a
-  // record of what happened and survives a change of plan.
+  // Rebuilding replaces the block rather than adding a second one. Only untouched
+  // future sessions go: anything logged, moved or commented on is a record of
+  // what happened and survives a change of plan.
   const old = await sql<{ id: string }[]>`
     select id from plan_templates where athlete_id = ${me.id} and active
   `;
@@ -176,18 +253,25 @@ export const POST = route(async (req: NextRequest) => {
   const [tpl] = await sql<{ id: string }[]>`
     insert into plan_templates (
       athlete_id, author_id, name, start_date, weeks, rules, horizon, active,
-      race_date, race_name, goal_label, goal_seconds, volume, intents
+      race_date, race_name, goal_label, goal_seconds, volume, intents,
+      plan_state, benchmark, guardrails, easy_pace, corrections
     ) values (
       ${me.id}, ${me.id}, ${plan.name}, ${plan.start},
       ${sql.json(plan.shapes as never)}, ${sql.json(plan.rules as never)}, 3, true,
       ${plan.race_date}, ${plan.race_name}, ${plan.goal_label}, ${plan.goal_seconds},
-      ${sql.json(plan.volume as never)}, ${sql.json(plan.intents as never)}
+      ${sql.json(plan.volume as never)}, ${sql.json(plan.intents as never)},
+      ${plan.plan_state}, ${sql.json(plan.benchmark as never)},
+      ${sql.json(plan.guardrails as never)}, ${plan.easy_pace},
+      ${sql.json(plan.corrections as never)}
     )
     on conflict (athlete_id, name) do update set
       start_date = excluded.start_date, weeks = excluded.weeks, rules = excluded.rules,
       active = true, race_date = excluded.race_date, race_name = excluded.race_name,
       goal_label = excluded.goal_label, goal_seconds = excluded.goal_seconds,
-      volume = excluded.volume, intents = excluded.intents
+      volume = excluded.volume, intents = excluded.intents,
+      plan_state = excluded.plan_state, benchmark = excluded.benchmark,
+      guardrails = excluded.guardrails, easy_pace = excluded.easy_pace,
+      corrections = excluded.corrections
     returning id
   `;
   const { created } = await materialise(tpl.id);
@@ -196,10 +280,12 @@ export const POST = route(async (req: NextRequest) => {
     ok: true,
     plan: {
       id: tpl.id, name: plan.name, weeks: plan.weeks, start: plan.start,
-      race_date: plan.race_date, total_km: plan.volume.reduce((n, v) => n + v.km, 0),
+      race_date: plan.race_date, plan_state: plan.plan_state,
+      total_km: plan.volume.reduce((n, v) => n + v.km, 0),
       volume: plan.volume, intents: plan.intents,
+      guardrails: plan.guardrails, benchmark: plan.benchmark,
     },
-    // what the plan could not decide, for the screen to show rather than bury
+    corrections: plan.corrections,
     flags: plan.flags,
     sessions_created: created,
   });

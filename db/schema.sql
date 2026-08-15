@@ -407,46 +407,56 @@ alter table plan_templates add column if not exists volume  jsonb not null defau
 alter table plan_templates add column if not exists intents jsonb not null default '[]';
 
 -- What an athlete tells us about themselves (2026-08-15), and the only honest
--- source for a block when nobody here has written them a plan document. The
--- alternative — the assistant inventing a starting volume, a goal and a race —
--- produces a plan that looks authoritative and is made up.
+-- source for a block when nobody here has written them a plan document. Mirrors
+-- the intake in the design question for question: the values stored are the
+-- labels the screens send, so there is no translation layer to drift.
+--
+-- Rebuilt rather than patched when the design's intake landed. The previous
+-- columns encoded a different set of questions, and keeping both would have left
+-- two answers to "how much do you run".
 create table if not exists athlete_intake (
-  user_id          uuid primary key references users(id) on delete cascade,
-  -- where they are now. training_base and running_self are asked separately and
-  -- the lower of the two governs: someone a year into consistent training who
-  -- still runs with walk breaks reads as experienced and would be prescribed
-  -- 30 km in week 1, when they cannot yet run 5 km without stopping.
-  training_base    text,                   -- under_6mo | 6_12mo | over_1yr | competitive
-  running_self     text,                   -- doesnt_run | walk_breaks | 5k_nonstop | runs_regularly
-  experience       text,                   -- superseded by the pair above
-  current_km_week  numeric,
-  longest_run_km   numeric,
-  recent_5k_seconds int,                   -- null: no recent benchmark
-  -- what they are training for
-  goal_kind        text not null,          -- hyrox | hyrox_doubles | race_5k | race_10k | half | general
-  goal_race_name   text,
-  goal_date        date,
-  goal_time_seconds int,
-  -- the division they are entered in, which is what sets the station loads.
-  -- Asked, never derived: there is no sex field here, because what an athlete
-  -- trains toward is the weight on the floor of the field they entered.
-  division         text,
-  partner_role     text,                   -- protected | even | lead, for doubles
-  -- what the week can hold
-  days_per_week    int not null,
-  preferred_days   int[] not null default '{}',   -- 0 = Monday
-  long_run_day     int,
-  -- standing commitments that are not this plan: [{kind, name, day, per_week}].
-  -- Classified in code rather than here, so the table can be corrected without
-  -- making anyone retake the intake.
-  commitments      jsonb not null default '[]',
-  -- what they can actually train with
-  gym_access       text not null,          -- none | home | basic_gym | full_gym | hyrox_gym
-  equipment        text[] not null default '{}',
-  sled_experience  text,                   -- never | lighter | race_weight
-  -- what to work around
-  injuries         text,
-  constraints_note text,
-  completed_at     timestamptz not null default now(),
-  updated_at       timestamptz not null default now()
+  user_id        uuid primary key references users(id) on delete cascade,
+  -- the goal
+  has_race       text not null,          -- Yes | No
+  discipline     text not null,          -- Hyrox doubles | Hyrox singles | Running race | General fitness
+  race_distance  text,                   -- running races only
+  race_date      date,
+  role           text,                   -- Protected | Engine | Even split (doubles only)
+  division       text,                   -- sets the station loads (Hyrox only). Asked, never derived from sex.
+  -- where they are now. base and running_self are asked separately and the lower
+  -- of the two governs: a year of consistent training with walk breaks reads as
+  -- experienced and would be handed 30 km in week 1, when 5 km continuous is not
+  -- yet there. Aerobic fitness runs ahead of connective tissue.
+  base           text not null,
+  running_self   text not null,
+  pace_min       int,
+  pace_sec       int,
+  pace_unknown   boolean not null default false,
+  -- the week
+  days           text[] not null default '{}',
+  commitments    text[] not null default '{}',
+  freq           jsonb  not null default '{}',   -- {commitment: sessions per week}
+  commit_day     jsonb  not null default '{}',   -- {commitment: [days it is fixed to]}
+  -- what they can train with
+  equipment      text[] not null default '{}',
+  sled           text,
+  -- what to work around, and how hard to push
+  injuries       text,
+  volume         text not null,          -- Conservative | Progressive | Aggressive
+  difficulty     text not null,          -- Steady | Challenging | Hard
+  -- where the benchmark got to. Only 'logged' lifts the conservatism: week 1
+  -- comes off 85% of the ceiling and the ramp cap goes from 8% to 12%.
+  benchmark      text not null default 'offered',
+  completed_at   timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
 );
+
+-- The plan document gained a state model (2026-08-15). The chip on the plan
+-- header reads Estimated, Awaiting baseline or Measured, and the benchmark's
+-- variant and protocol version live here because a result is only comparable
+-- within its own variant and protocol.
+alter table plan_templates add column if not exists plan_state  text;
+alter table plan_templates add column if not exists benchmark   jsonb not null default '{}';
+alter table plan_templates add column if not exists guardrails  jsonb not null default '[]';
+alter table plan_templates add column if not exists easy_pace   int;
+alter table plan_templates add column if not exists corrections jsonb not null default '[]';

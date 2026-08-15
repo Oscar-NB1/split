@@ -1,380 +1,408 @@
 import type { IntentRange } from "./block";
 import { addDays, diffDays, dow, mondayOf } from "./dates";
 import {
-  type Commitment, COMMITMENT, GOAL_LABEL, type Intake, type RunningSelf,
-  RACE_SHAPE, allocationFor, heavyDays, isHyrox, needsStandards, rampRate,
-  standardsFor, startVolume, todayish,
+  ALLOC, BASE_KM, BENCH_VARIANTS, type BenchVariant, DAYS, type Day, type Intake,
+  RUN_CEIL, RUN_RAMP, allocationFor, classify, isHyrox, lockedCommitments,
+  heavyDays, needsStandards, standardsFor, todayish,
 } from "./intake";
 import type { Rules, TemplateDay } from "./templates";
 
 /**
- * The block, built from the intake.
+ * The block, resolved and built from the intake.
  *
  * Deterministic and pure: the same answers always give the same block, which is
- * what makes it reviewable. Nothing here reaches for a number that is not either
- * stated by the athlete or defined in a table in lib/intake.ts.
+ * what makes it reviewable. Every number traces to a stated answer or to a table
+ * in lib/intake.ts, and the decisions the generator makes *against* the answers
+ * are returned as corrections rather than applied silently.
  */
 
-const DAY_NAME = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-// ---------------------------------------------------------------- the phases
+const DAY_IDX: Record<Day, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 
 export type PhaseName = "base" | "build" | "specific" | "taper";
+const PHASE_KEYS: PhaseName[] = ["base", "build", "specific", "taper"];
+const PHASE_LABEL: Record<PhaseName, string> = {
+  base: "Base", build: "Build", specific: "Race specific", taper: "Taper",
+};
 
-/** Share of the block each phase takes. */
-const PHASE_SPLIT: [PhaseName, number][] = [
-  ["base", 0.30], ["build", 0.30], ["specific", 0.25], ["taper", 0.15],
-];
+/** Weeks each phase takes, at 30 / 30 / 25 / 15. */
+export const phaseSplit = (weeks: number) =>
+  [0.3, 0.3, 0.25, 0.15].map((p) => Math.max(1, Math.round(weeks * p)));
+
+// ------------------------------------------------------------- the preferences
 
 /**
- * Which phase each week belongs to.
+ * What the volume preference actually does.
  *
- * Taper is at least one week and race week is always taper, however short the
- * block is — a two-week block is one week of work and one of not undoing it.
+ * The screens explain these to the athlete in so many words — "about 5% a week
+ * with a down week every third", "about 12% and this is where injuries come
+ * from" — so the generator has to honour them or the explanation is a lie.
+ *
+ * A preference can lower the resolved ramp freely. It can only raise it up to
+ * the safety cap, because the cap exists for the connective tissue and a
+ * checkbox does not change that.
  */
-export function phases(weeks: number): PhaseName[] {
-  const out: PhaseName[] = [];
-  let assigned = 0;
-  PHASE_SPLIT.forEach(([name, share], i) => {
-    const last = i === PHASE_SPLIT.length - 1;
-    const n = last ? weeks - assigned : Math.max(name === "taper" ? 1 : 0, Math.round(weeks * share));
-    for (let k = 0; k < n; k++) out.push(name);
-    assigned += n;
-  });
-  // rounding can overshoot on short blocks; the taper is what survives
-  while (out.length > weeks) out.splice(out.findIndex((p) => p === "base"), 1);
-  while (out.length < weeks) out.splice(0, 0, "base");
-  if (out[out.length - 1] !== "taper") out[out.length - 1] = "taper";
-  return out;
+export const VOLUME_PREF_RAMP: Record<string, number | null> = {
+  Conservative: 5,
+  Progressive: null, // whatever the answers resolved to
+  Aggressive: 12,
+};
+export const DELOAD_EVERY: Record<string, number> = {
+  Conservative: 3, Progressive: 4, Aggressive: 5,
+};
+
+/** Quality sessions a week, and whether the long run carries a pace target. */
+export const DIFFICULTY_SHAPE: Record<string, { quality: number; longRunPace: boolean }> = {
+  Steady: { quality: 1, longRunPace: false },
+  Challenging: { quality: 1, longRunPace: true },
+  Hard: { quality: 2, longRunPace: true },
+};
+
+// ------------------------------------------------------------------ resolving
+
+export type Correction = { title: string; body: string };
+
+export type Resolved = {
+  weeks: number;
+  weeksToRace: number;
+  start: string;
+  raceDate: string | null;
+  baseKm: number;
+  ceil: number;
+  rawStart: number;
+  startKm: number;
+  baseRamp: number;
+  runRamp: number;
+  ramp: number;
+  deloadEvery: number;
+  alloc: [number, number, number];
+  paceKnown: boolean;
+  fiveK: number;
+  goalSeconds: number | null;
+  /** why the offer was downgraded, or null */
+  gate: string | null;
+  variant: BenchVariant;
+  offerSuppressed: boolean;
+  measured: boolean;
+  estimated: boolean;
+  planState: "estimated" | "awaiting" | "measured";
+  corrections: Correction[];
+  phaseSplit: number[];
+};
+
+const RACE_M: Record<string, number> = {
+  "5 km": 5000, "10 km": 10000, "Half marathon": 21097, Marathon: 42195,
+};
+
+/** How long a block runs when no race pins the end of it. */
+const DEFAULT_WEEKS = 12;
+
+export function resolve(x: Intake, from: string = todayish()): Resolved {
+  const start = mondayOf(addDays(from, 7));
+  // Rounded up, not to nearest: a 72-day block rounds to 10 weeks and leaves the
+  // race two days outside its own plan. The last week is race week, so the block
+  // has to contain race day.
+  const weeksToRace = x.raceDate
+    ? Math.max(1, Math.ceil((diffDays(x.raceDate, start) + 1) / 7))
+    : DEFAULT_WEEKS;
+  const weeks = x.raceDate ? Math.max(4, Math.min(24, weeksToRace)) : DEFAULT_WEEKS;
+
+  // The safety gate runs on the answers, before the benchmark is ever offered.
+  const gate = (x.injuries ?? "").trim().length ? "Injury noted in your intake"
+    : x.base === "Under 3 months" ? "Training base under three months"
+    : x.runningSelf === "I do not run" ? "Not yet running continuously"
+    : null;
+
+  // The test is never blocked by a missing sled: there is a variant for every
+  // level of equipment, and one for when the gate fires.
+  const equipment = x.equipment ?? [];
+  const variant: BenchVariant = gate ? "submax"
+    : equipment.includes("Full Hyrox gym") ? "full"
+    : equipment.includes("Sled") || equipment.includes("Barbell") || equipment.includes("Gym") ? "gym"
+    : "field";
+  const offerSuppressed = weeksToRace < 3;
+
+  const measured = x.benchmark === "logged";
+  const estimated = !measured;
+
+  const baseKm = BASE_KM[x.base] ?? 20;
+  const ceil = RUN_CEIL[x.runningSelf] ?? 999;
+  const rawStart = Math.min(baseKm, ceil);
+  // The conservatism differential: not knowing has a cost, and it is stated.
+  const startKm = estimated ? Math.round(rawStart * 0.85) : rawStart;
+
+  const baseRamp = x.base === "Over a year" || x.base === "Several years" ? 10 : 8;
+  const runRamp = RUN_RAMP[x.runningSelf] ?? 10;
+  const cap = estimated ? 8 : 12;
+  const resolvedRamp = Math.min(cap, baseRamp, runRamp);
+  // a preference may lower the ramp freely, and raise it only to the cap
+  const want = VOLUME_PREF_RAMP[x.volume];
+  const ramp = want == null ? resolvedRamp : Math.min(cap, baseRamp, runRamp, want) === want
+    ? want
+    : Math.min(want, resolvedRamp) || resolvedRamp;
+  const deloadEvery = DELOAD_EVERY[x.volume] ?? 4;
+
+  const alloc = allocationFor(x);
+  const paceKnown = !x.paceUnknown;
+  const fiveK = (x.paceMin ?? 32) * 60 + (x.paceSec ?? 0);
+
+  // A goal only exists where the numbers support one. Hyrox comes from station
+  // capability, not a 5 km time — so it has none until the baseline lands.
+  const riegel = (m: number) => Math.round(fiveK * Math.pow(m / 5000, 1.06));
+  const goalSeconds = !paceKnown ? null
+    : isHyrox(x.discipline) ? null
+    : riegel(RACE_M[x.raceDistance ?? "Half marathon"] ?? 21097);
+
+  const corrections: Correction[] = [];
+  if (estimated) {
+    corrections.push({
+      title: `Week 1 held 15% below your ceiling`,
+      body: `Without a benchmark I am working from what you told me, so the first week starts at ${startKm} km rather than ${rawStart} km and the ramp is capped at 8%. I also assume you are a positive splitter until measured — it costs a disciplined athlete almost nothing and saves an undisciplined one from blowing up. Run the benchmark and this comes back up.`,
+    });
+  }
+  if (baseKm > ceil) {
+    corrections.push({
+      title: `Week 1 volume capped at ${startKm} km`,
+      body: `Your training base points at ${baseKm} km, but "${x.runningSelf.toLowerCase()}" caps the first week at ${ceil} km. Aerobic fitness runs ahead of connective tissue, which is exactly how people get hurt in week 3. The cap wins.`,
+    });
+  }
+  if (runRamp < baseRamp) {
+    corrections.push({
+      title: `Ramp reduced to ${ramp}% a week`,
+      body: `Same reason: the engine is trained, the running tissue is not. ${baseRamp}% would be right for your training history and wrong for your legs.`,
+    });
+  }
+  const locked = lockedCommitments(x);
+  if (locked.length) {
+    const total = locked.reduce((n, c) => n + (x.freq?.[c] ?? 1), 0);
+    const days = (x.days ?? []).length || 5;
+    const anyFixed = locked.some((c) => (x.commitDay?.[c] ?? []).length > 0);
+    corrections.push({
+      title: `${locked.map((c) => `${x.freq?.[c] ?? 1}× ${c.toLowerCase()}`).join(", ")} kept in`,
+      body: `${total} of the ${days + total} sessions in your week ${total === 1 ? "is" : "are"} not race-specific. Counted at 0.3× aerobic volume, placed away from key sessions${anyFixed ? " on the days you fixed." : "."} Acceptable for a first race aimed at finishing well — worth naming rather than hiding.`,
+    });
+  }
+  if (want != null && want !== resolvedRamp) {
+    corrections.push({
+      title: `${x.volume} volume: ${ramp}% a week`,
+      body: want > resolvedRamp
+        ? `You asked for a faster climb than your answers resolve to. ${ramp}% is as far as it goes — the cap is there for the connective tissue, and a preference does not change what that tolerates.`
+        : `You asked for a gentler climb than your answers allow, and that is always available. Down weeks come every ${deloadEvery} rather than every 4.`,
+    });
+  }
+
+  return {
+    weeks, weeksToRace, start, raceDate: x.raceDate,
+    baseKm, ceil, rawStart, startKm,
+    baseRamp, runRamp, ramp, deloadEvery, alloc,
+    paceKnown, fiveK, goalSeconds,
+    gate, variant, offerSuppressed, measured, estimated,
+    planState: measured ? "measured" : x.benchmark === "scheduled" ? "awaiting" : "estimated",
+    corrections, phaseSplit: phaseSplit(weeks),
+  };
 }
-
-/** Deload every fourth week, but never the last week of the block. */
-export const isDeload = (n: number, weeks: number) => n % 4 === 0 && n < weeks;
-
-/**
- * Baseline test weeks: the first week, then the week after each deload.
- *
- * Testing after a down week is the point — a benchmark run on tired legs tells you
- * nothing, and re-testing on the same protocol is the only way the comparison
- * means anything.
- */
-export const isBaseline = (n: number, weeks: number) =>
-  n === 1 || (isDeload(n - 1, weeks) && n < weeks);
-
-/**
- * The baseline protocol. Identical every time it is run, deliberately.
- *
- * It produces the four things an intake cannot: a pace anchor, station capability,
- * whether the limiter is aerobic or strength, and how they pace themselves.
- */
-export const BASELINE_TEST =
-  "4 x 500m run, alternating with:\n" +
-  "- Ski 250m\n- Sled push 12.5m\n- Burpee broad jump 20m\n- Wall balls 15";
-
-export const BASELINE_NOTE =
-  "Record every split, heart rate throughout, where you stopped, and how fast HR " +
-  "recovers between efforts. Everything after this is re-prescribed from it.";
 
 // ---------------------------------------------------------------- the volume
 
 export type Week = { n: number; km: number; note: string; phase: PhaseName };
 
-/**
- * The weekly volume table.
- *
- * Climbs by the ramp rate from the previous *working* week, so a deload does not
- * reset the progression — a week-9 peak lower than week 7 is what happens when it
- * does. Deloads take 70%, taper 60%, race week 35%.
- */
-export function volumeFor(x: Intake, weeks: number, raceDays: number | null): Week[] {
-  const start = startVolume(x);
-  const ramp = rampRate(x);
-  const ph = phases(weeks);
+export function volumeFor(x: Intake, r: Resolved): Week[] {
   const out: Week[] = [];
-  let working = start;
-
-  for (let n = 1; n <= weeks; n++) {
-    const phase = ph[n - 1];
-    const raceWeek = n === weeks && raceDays != null;
-    let km: number;
-    let note = "";
-
-    if (raceWeek) {
-      km = Math.round(start * 0.4);
-      note = "Race week — nothing you do now makes you fitter.";
-    } else if (phase === "taper") {
-      km = Math.round(working * 0.75);
-      note = "Taper. The volume drop is the training now.";
-    } else if (isDeload(n, weeks)) {
-      km = Math.round(working * 0.7);
-      note = "Deload — the drop is the point of the week.";
-    } else {
-      if (n > 1) working = working * (1 + ramp);
-      km = Math.round(working);
+  let km = r.startKm;
+  let n = 1;
+  r.phaseSplit.forEach((len, pi) => {
+    for (let i = 0; i < len && n <= r.weeks; i++) {
+      const deload = n % r.deloadEvery === 0 && pi < 3;
+      const taper = pi === 3;
+      // Race week is not just another taper week. Holding it at 70% left the last
+      // week of the block carrying the same volume as the one before it, on the
+      // week the only session that matters is the race.
+      const raceWeek = n === r.weeks && r.raceDate != null;
+      const target = raceWeek ? Math.round(r.startKm * 0.4)
+        : taper || deload ? Math.round(km * 0.7)
+        : Math.round(km);
+      out.push({
+        n, km: Math.max(3, target), phase: PHASE_KEYS[pi],
+        note: n === 1
+          ? (x.benchmark === "scheduled"
+              ? "Benchmark test — every pace target is written from it"
+              : "Conservative start — run the benchmark to lift it")
+          : n === 5 || n === 9 ? "Benchmark retest · identical protocol"
+          : raceWeek ? "Race week — nothing you do now makes you fitter"
+          : deload ? "Down week"
+          : taper ? "Taper"
+          : "",
+      });
+      // a deload does not reset the climb: the working volume carries through
+      if (!deload && !taper) km = km * (1 + r.ramp / 100);
+      n++;
     }
-    if (isBaseline(n, weeks)) {
-      note = n === 1 ? "Baseline test — everything downstream re-prescribes from it."
-        : "Baseline retest, same protocol.";
-    }
-    out.push({ n, km: Math.max(3, km), note, phase });
+  });
+  // rounding in phaseSplit can leave the table a week short of the block
+  while (out.length < r.weeks) {
+    out.push({ n: out.length + 1, km: Math.max(3, Math.round(r.startKm * 0.7)), phase: "taper", note: "Taper" });
   }
-  return out;
+  return out.slice(0, r.weeks);
 }
 
-// ------------------------------------------------------- the running ladder
+// ------------------------------------------------------------ the week's shape
 
-/**
- * Run/walk to continuous, in four rungs.
- *
- * Where someone starts is what they say they can run, not how long they have
- * trained. Climbing a rung per phase is what turns "runs with walk breaks" into
- * continuous running by the specific phase — which is the actual goal of a first
- * block. Not stopping matters more than being fast.
- */
-const RUNGS = [
-  { key: 0, quality: "6 x (3 min run / 1 min walk)", easy: "25–30 min run/walk, easy",
-    hyrox: "4 x (500 m run/walk + 1 station)" },
-  { key: 1, quality: "4 x (6–8 min run / 1 min walk)", easy: "30–35 min, longer run blocks",
-    hyrox: "5 x (600 m + 1 station)" },
-  { key: 2, quality: "5 x 800 m continuous, walk recovery", easy: "35 min continuous",
-    hyrox: "6 x 800 m + stations, race order" },
-  { key: 3, quality: "6 x 1000 m continuous", easy: "40–45 min continuous",
-    hyrox: "Full station circuit, race order, continuous" },
-] as const;
+export type SlotKey =
+  | "keySession" | "easyRun" | "easyRun2" | "stations" | "strength" | "longRun" | "benchmark";
 
-const START_RUNG: Record<RunningSelf, number> = {
-  doesnt_run: 0, walk_breaks: 0, "5k_nonstop": 2, runs_regularly: 3,
+export const SLOT_TITLE: Record<SlotKey, string> = {
+  keySession: "Run session", easyRun: "Easy run", easyRun2: "Second easy run",
+  stations: "Station session", strength: "Strength + sled", longRun: "Long run",
+  benchmark: "Benchmark test",
 };
 
-const PHASE_STEP: Record<PhaseName, number> = { base: 0, build: 1, specific: 2, taper: 2 };
+const KIND_OF: Record<SlotKey, string> = {
+  keySession: "run_intervals", easyRun: "run_easy", easyRun2: "run_easy",
+  stations: "hyrox", strength: "strength", longRun: "run_long", benchmark: "hyrox",
+};
 
-export const rungFor = (x: Intake, phase: PhaseName) =>
-  RUNGS[Math.min(RUNGS.length - 1, START_RUNG[x.running_self] + PHASE_STEP[phase])];
-
-// ------------------------------------------------------------ sled + strength
-
-/**
- * Sled loading as a share of race weight, by phase.
- *
- * A percentage rather than a number of kilos, because the kilos come from the
- * division's official standards and those are not in this codebase — see
- * STANDARDS in lib/intake.ts. Printing a weight nobody verified is how an athlete
- * arrives at a station heavier than anything they have trained on.
- */
-const SLED_PCT: Record<PhaseName, number> = { base: 0.6, build: 0.8, specific: 1.0, taper: 0.5 };
-
-/** Someone who has never pushed a sled starts a rung lower, whatever the phase. */
-const sledPct = (x: Intake, phase: PhaseName) =>
-  x.sled_experience === "never" ? Math.max(0.5, SLED_PCT[phase] - 0.2) : SLED_PCT[phase];
-
-export function strengthFor(x: Intake, phase: PhaseName): string | null {
-  if (x.gym_access === "none") return null;
-  const has = (e: string) => x.equipment.includes(e as never);
-  const lines: string[] = [];
-
-  if (has("barbell")) lines.push("Back squat 3x5", "Romanian deadlift 3x8", "Overhead press 3x8");
-  else if (has("dumbbells") || has("kettlebell")) lines.push("Goblet squat 3x8", "Single-leg RDL 3x8 each", "Push press 3x8");
-  else lines.push("Split squat 3x10 each", "Hip hinge 3x12", "Press-up 3x12");
-  if (has("pull_up_bar")) lines.push("Pull-up 3x6");
-
-  // Real kilos when the division's standards are loaded, a share of race weight
-  // when they are not. Never a number nobody verified: arriving at a station
-  // heavier than anything you have trained on is the failure this avoids.
-  const std = standardsFor(x);
-  const share = sledPct(x, phase);
-  const kg = (full: number) => `${Math.round(full * share)} kg`;
-
-  if (has("sled")) {
-    if (phase === "specific") {
-      lines.push(std
-        ? `Sled push ${std.sled_push_total_kg} kg loaded, ${RACE_SHAPE.sled_push_m} m`
-        : `Sled push at race weight, race distance`);
-      lines.push(std
-        ? `Sled pull ${std.sled_pull_total_kg} kg loaded, ${RACE_SHAPE.sled_pull_m} m`
-        : `Sled pull at race weight, race distance`);
-    } else {
-      lines.push(std
-        ? `Sled push ${kg(std.sled_push_total_kg)} loaded, 12.5 m x 4`
-        : `Sled push ${Math.round(share * 100)}% of race weight, 12.5 m x 4`);
-    }
-  }
-  // Base is technique and base strength only — squat, hinge, press, row, sled.
-  // Farmers and wall ball come in from the build phase, and sandbag last of all.
-  // Front-loading every station is how week 1 leaves someone too sore to run.
-  if (has("wall_ball") && phase !== "base") {
-    const w = std ? `${std.wall_ball_kg} kg ` : "";
-    lines.push(phase === "build" ? `Wall ball technique ${w}3x10` : `Wall balls ${w}4x15`);
-  }
-  // last, on purpose: the highest soreness cost of any station
-  if (has("sandbag") && phase === "specific") {
-    lines.push(std ? `Sandbag lunges ${std.lunge_kg} kg, 3x20 m` : "Sandbag lunges 3x20 m");
-  }
-  if (has("kettlebell") && phase !== "base") {
-    lines.push(std ? `Farmers carry 2 x ${std.farmers_kg} kg, 2x50 m` : "Farmers carry 2x50 m");
-  }
-  return lines.join("\n");
-}
-
-/** The stations they can actually do, in race order. */
-export function stationsFor(x: Intake): string | null {
-  if (!isHyrox(x.goal_kind)) return null;
-  const has = (e: string) => x.equipment.includes(e as never);
-  const can: string[] = [];
-  if (has("skierg")) can.push("SkiErg 500 m");
-  if (has("sled")) can.push("Sled push 25 m", "Sled pull 25 m");
-  can.push("Burpee broad jump 30 m"); // needs nothing
-  if (has("rower")) can.push("Row 500 m");
-  if (has("kettlebell")) can.push("Farmers carry 100 m");
-  if (has("sandbag")) can.push("Sandbag lunge 50 m");
-  if (has("wall_ball")) can.push("Wall balls 40");
-  return can.join("\n");
-}
-
-// ------------------------------------------------------------------ the week
+export type Placed = { day: number; slot: "AM" | "PM"; template: SlotKey | string };
 
 /**
  * Which day carries what.
  *
- * Their stated days win, always: the plan someone actually does beats the plan
- * that is better on paper. A day already spent by a high-leg-cost commitment is
- * never given a key session, and never sits the day before one.
+ * The sessions the block cannot do without come first when days are scarce, the
+ * long run lands on the last available day, and locked commitments go on the day
+ * they are fixed to — or, if they float, the least loaded day that is not a key
+ * day. Their stated days always win: the plan someone actually does beats the
+ * plan that is better on paper.
  */
-export function daysFor(x: Intake): {
-  quality: number | null; easy: number | null; hyrox: number | null;
-  strength: number | null; heavy: number[];
-} {
-  const want = Math.min(7, Math.max(2, x.days_per_week));
-  const heavy = heavyDays(x);
-  const stated = [...new Set(x.preferred_days)].filter((d) => d >= 0 && d <= 6).sort((a, b) => a - b);
-  const pool = (stated.length >= want ? stated : [...new Set([...stated, 1, 3, 5, 6, 0, 2, 4])])
-    .filter((d) => !heavy.includes(d))
-    .slice(0, want);
+export function placeWeek(x: Intake, r: Resolved): Placed[] {
+  // A day a high-leg-cost commitment already owns is not a free training day.
+  // Leaving it in the pool put a station session on top of her spin class.
+  const spent = new Set(heavyDays(x));
+  const days = [...new Set(x.days ?? [])]
+    .filter((d) => DAYS.includes(d) && !spent.has(DAY_IDX[d]))
+    .sort((a, b) => DAY_IDX[a] - DAY_IDX[b]);
+  const stations = isHyrox(x.discipline);
+  const hard = DIFFICULTY_SHAPE[x.difficulty]?.quality ?? 1;
 
-  // The day AFTER a high-cost commitment is the compromised one — the legs are
-  // already spent. The day before is fine, and penalising it too pushed the key
-  // run to the end of the week: with a Wednesday spin class, Tuesday is exactly
-  // where the quality session belongs, with the easy day absorbing Thursday.
-  const cost = (d: number) => (heavy.includes((d + 6) % 7) ? 2 : 0);
-  const ranked = [...pool].sort((a, b) => cost(a) - cost(b) || a - b);
+  const priority: SlotKey[] = [
+    "keySession", "longRun", stations ? "stations" : "easyRun", "strength", "easyRun", "easyRun2",
+  ];
+  const picked = priority.slice(0, Math.max(1, days.length));
+  // a second quality session, where the difficulty asks for one and there is room
+  if (hard > 1 && picked.length > 3 && !picked.includes("easyRun2")) {
+    const swap = picked.lastIndexOf("easyRun");
+    if (swap > -1) picked[swap] = "keySession";
+  }
 
-  const hyrox = isHyrox(x.goal_kind)
-    ? (pool.includes(6) ? 6 : pool.includes(5) ? 5 : ranked[ranked.length - 1] ?? null)
-    : null;
-  const free = () => ranked.filter((d) => ![hyrox, quality, easy, strength].includes(d));
+  const slots = days.slice(0, picked.length).map((d) => DAY_IDX[d]);
+  // the long run goes last, whatever order the priority list produced
+  const arranged = picked.slice();
+  const li = arranged.indexOf("longRun");
+  if (li > -1) { arranged.splice(li, 1); arranged.push("longRun"); }
 
-  // The quality run goes on the cleanest day, and the easy run deliberately takes
-  // the dirtiest — the day after a spin class is where an easy run belongs and a
-  // key session does not. Assigning strength first took that day instead, and left
-  // the easy run on the fresh Friday: the right sessions, the wrong way round.
-  let quality: number | null = null, easy: number | null = null, strength: number | null = null;
-  quality = free()[0] ?? null;
-  easy = [...free()].sort((a, b) => cost(b) - cost(a) || a - b)[0] ?? null;
-  strength = x.gym_access === "none" ? null : free()[0] ?? null;
+  const out: Placed[] = slots.map((day, i) => ({ day, slot: "AM", template: arranged[i] }));
 
-  return { quality, easy, hyrox, strength, heavy };
-}
+  // An accepted benchmark replaces the first session of week 1 rather than being
+  // a separate flow. It is written into the template so it lands as a real session.
+  if (x.benchmark === "scheduled" && out.length) out[0] = { ...out[0], template: "benchmark" };
 
-/** One week, as day shapes. */
-export function weekShape(
-  x: Intake, week: Week, weeks: number, raceDay: number | null,
-): TemplateDay[] {
-  const { quality, easy, hyrox, strength } = daysFor(x);
-  const rung = rungFor(x, week.phase);
-  const days: TemplateDay[] = [];
-  const raceWeek = week.n === weeks && raceDay != null;
-  const anchored = x.recent_5k_seconds != null;
+  const keyDays = out
+    .filter((w) => w.template === "keySession" || w.template === "longRun" || w.template === "stations")
+    .map((w) => w.day);
 
-  if (raceWeek) {
-    // a short, quiet week: one shakeout, then the race
-    if (quality != null && quality < raceDay) {
-      days.push({ day: quality, kind: "run_easy", title: "Shakeout", minutes: 25, slot: "AM",
-        coach_note: "Legs awake, nothing more." });
+  for (const c of lockedCommitments(x)) {
+    const key = `commit:${c}`;
+    const fixed = x.commitDay?.[c] ?? [];
+    const n = x.freq?.[c] ?? 1;
+    for (let i = 0; i < n; i++) {
+      let day: number;
+      if (fixed[i] != null) {
+        day = DAY_IDX[fixed[i]];
+      } else {
+        const taken = out.map((w) => w.day);
+        const free = [0, 1, 2, 3, 4, 5, 6].filter((d) => !keyDays.includes(d) && !taken.includes(d));
+        day = free.length ? free[0] : [0, 1, 2, 3, 4, 5, 6].filter((d) => !keyDays.includes(d))[i % 4] ?? 6;
+      }
+      out.push({ day, slot: out.some((w) => w.day === day) ? "PM" : "AM", template: key });
     }
-    days.push({
-      day: raceDay, kind: "hyrox",
-      title: x.goal_race_name ?? GOAL_LABEL[x.goal_kind],
-      minutes: 75, slot: "AM", significance: "race",
-      coach_note: "Race day. Hold back on the first run — everyone goes out hot.",
-    });
-    return days;
   }
-
-  // --- the quality run, or the baseline test ---------------------------------
-  if (quality != null) {
-    days.push(isBaseline(week.n, weeks)
-      ? {
-          day: quality, kind: "hyrox",
-          title: week.n === 1 ? "BASELINE TEST" : "BASELINE RETEST",
-          minutes: 45, slot: "AM", target: BASELINE_TEST,
-          significance: "benchmark", coach_note: BASELINE_NOTE,
-        }
-      : {
-          day: quality, kind: "run_intervals",
-          title: rung.quality, minutes: 45, slot: "AM",
-          target: rung.quality, significance: "key",
-          coach_note: anchored
-            ? "Even splits. Rep 1 fastest means the session failed, whatever the average says."
-            : "By effort and heart rate — there is no pace target until the baseline gives one.",
-        });
-  }
-
-  // --- the easy run ----------------------------------------------------------
-  if (easy != null) {
-    days.push({
-      day: easy, kind: "run_easy", title: rung.easy, minutes: 35, slot: "AM",
-      coach_note: "Conversational the whole way. If you cannot talk, it is too fast.",
-    });
-  }
-
-  // --- the Hyrox session -----------------------------------------------------
-  if (hyrox != null) {
-    const stations = stationsFor(x);
-    const sim = week.phase === "specific" && week.n === weeks - 2;
-    days.push(stations
-      ? {
-          day: hyrox, kind: "hyrox",
-          title: sim ? "HALF SIMULATION" : rung.hyrox,
-          minutes: sim ? 70 : 55, slot: "AM", target: stations,
-          significance: sim ? "key" : undefined,
-          coach_note: sim
-            ? "Half the race distance, full race order. Pacing and transitions, not a time."
-            : "Stations straight into runs. This is the thing the race actually asks for.",
-        }
-      : {
-          day: hyrox, kind: "run_long", title: rung.easy, minutes: 50, slot: "AM",
-          coach_note: "No stations available, so this is the week's second run instead.",
-        });
-  }
-
-  // --- strength + sled -------------------------------------------------------
-  const work = strengthFor(x, week.phase);
-  if (strength != null && work) {
-    days.push({
-      day: strength, kind: "strength",
-      title: x.equipment.includes("sled") ? "Strength + sled" : "Strength",
-      minutes: 45, slot: "AM", target: work,
-      coach_note: needsStandards(x)
-        ? "Sled loads are a share of race weight — your division's standards are not loaded, so confirm them before loading a sled."
-        : "Loads are your division's race weights. Two reps in reserve on the lifts: this supports the running, it does not compete with it.",
-    });
-  }
-
-  // --- the commitments they already have -------------------------------------
-  for (const c of x.commitments) {
-    if (c.day == null) continue;
-    const cls = COMMITMENT[c.kind];
-    days.push({
-      day: c.day, kind: "other", title: c.name || c.kind, minutes: 45, slot: "PM",
-      coach_note: `${cls.why} Counted at ${cls.volume_multiplier}x aerobic volume.`
-        + (week.phase === "specific" && cls.leg_cost === "high"
-          ? " Alternate weeks from here — the leg-cost budget goes to running."
-          : ""),
-    });
-  }
-  return days;
+  return out;
 }
 
-// ----------------------------------------------------------------- the block
+// ------------------------------------------------------------ what to prescribe
+
+/** Easy and key pace per kilometre, from the 5 km time or by effort. */
+export const paces = (r: Resolved) => ({
+  easy: r.paceKnown ? Math.round(r.fiveK / 5) + 75 : null,
+  key: r.paceKnown ? Math.round(r.fiveK / 5) + 10 : null,
+});
+
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+
+/** Sled loading as a share of race weight, by phase. */
+const SLED_PCT: Record<PhaseName, number> = { base: 0.6, build: 0.8, specific: 1.0, taper: 0.5 };
+const sledPct = (x: Intake, phase: PhaseName) =>
+  x.sled === "Never used one" ? Math.max(0.5, SLED_PCT[phase] - 0.2) : SLED_PCT[phase];
+
+/**
+ * The strength session, with real kilos where the division is known and a share
+ * of race weight where it is not.
+ *
+ * Never a number nobody verified: arriving at a station heavier than anything you
+ * have trained on is the failure this avoids.
+ */
+export function strengthFor(x: Intake, phase: PhaseName): string | null {
+  const has = (e: string) => (x.equipment ?? []).includes(e as never);
+  const gym = has("Full Hyrox gym") || has("Barbell") || has("Gym") || has("Sled");
+  if (!gym) return null;
+
+  const std = standardsFor(x);
+  const share = sledPct(x, phase);
+  const lines: string[] = [];
+
+  if (has("Barbell") || has("Full Hyrox gym")) {
+    lines.push("Back squat 4×5", "Romanian deadlift 3×8", "Overhead press 3×8");
+  } else {
+    lines.push("Goblet squat 3×8", "Single-leg RDL 3×8 each", "Press-up 3×12");
+  }
+
+  if (has("Sled") || has("Full Hyrox gym")) {
+    if (phase === "specific") {
+      lines.push(std ? `Sled push ${std.sled_push_total_kg} kg loaded, 50 m` : "Sled push at race weight, race distance");
+      lines.push(std ? `Sled pull ${std.sled_pull_total_kg} kg loaded, 50 m` : "Sled pull at race weight, race distance");
+    } else {
+      lines.push(std
+        ? `Sled push ${Math.round(std.sled_push_total_kg * share)} kg loaded, 12.5 m × 4`
+        : `Sled push ${Math.round(share * 100)}% of race weight, 12.5 m × 4`);
+    }
+  }
+  // Base is technique and base strength only. Front-loading every station is how
+  // week 1 leaves someone too sore to run the week it is meant to build.
+  if (has("Wall balls") || has("Full Hyrox gym")) {
+    if (phase !== "base") {
+      const w = std ? `${std.wall_ball_kg} kg ` : "";
+      lines.push(phase === "build" ? `Wall ball technique ${w}3×10` : `Wall balls ${w}4×15`);
+    }
+  }
+  if (phase === "specific" && has("Full Hyrox gym")) {
+    lines.push(std ? `Sandbag lunges ${std.lunge_kg} kg, 3×20 m` : "Sandbag lunges 3×20 m");
+  }
+  if (phase !== "base" && (has("Full Hyrox gym") || has("Barbell"))) {
+    lines.push(std ? `Farmers carry 2 × ${std.farmers_kg} kg, 2×50 m` : "Farmers carry 2×50 m");
+  }
+  return lines.join("\n");
+}
+
+/** The benchmark, as blocks. Identical every time it runs, deliberately. */
+export function benchmarkTarget(r: Resolved): string {
+  const bv = BENCH_VARIANTS[r.variant];
+  return bv.stations.map((s, i) => `Round ${i + 1}: 400 m run → ${s}`).join("\n");
+}
+
+export const benchmarkNote = (r: Resolved) =>
+  `${BENCH_VARIANTS[r.variant].label} variant · ${r.variant === "submax" ? "three" : "four"} rounds. ` +
+  (r.variant === "submax" ? "RPE 7, not all out." : "Hard but complete.") +
+  (r.gate ? ` ${r.gate}, so this is the submaximal version.` : "") +
+  " Record every split, heart rate throughout, and where you stopped — four run splits give a fade curve, and the curve is what separates an aerobic limiter from a strength one.";
+
+// ------------------------------------------------------------------ the block
 
 export type GeneratedPlan = {
   name: string;
@@ -388,127 +416,207 @@ export type GeneratedPlan = {
   intents: IntentRange[];
   shapes: TemplateDay[][];
   rules: Rules;
-  /** Things the plan cannot answer and somebody has to. */
+  plan_state: Resolved["planState"];
+  benchmark: { variant: BenchVariant; submaximal: boolean; protocol_version: number; scheduled: boolean; retests: number[] };
+  guardrails: string[];
+  easy_pace: number | null;
+  corrections: Correction[];
   flags: string[];
 };
 
-const DEFAULT_WEEKS = 12;
-
-export function intentsFor(x: Intake, weeks: number): IntentRange[] {
-  const ph = phases(weeks);
-  const alloc = allocationFor(x);
+export function intentsFor(x: Intake, r: Resolved): IntentRange[] {
+  const stations = isHyrox(x.discipline);
+  const purpose = [
+    "Get to a volume your body already knows, on effort rather than pace. Week 1 is a baseline test — everything after it re-prescribes from those numbers.",
+    `Volume climbs ${r.ramp}% a week toward the ceiling. The adaptation to look for is the same pace at a lower heart rate.`,
+    "The key session becomes the race. Station work moves from fitness to rehearsal: transitions, splits, order.",
+    "Volume drops, intensity holds. Nothing you do now makes you fitter — this phase only protects the work.",
+  ];
   const out: IntentRange[] = [];
-  const start = startVolume(x);
-  const heavy = x.commitments.filter((c) => COMMITMENT[c.kind].leg_cost === "high");
-
-  const purpose: Record<PhaseName, string> = {
-    base: `Make the week itself repeatable at ${start} km. ` +
-      (x.running_self === "walk_breaks" || x.running_self === "doesnt_run"
-        ? "Run/walk intervals, deliberately — the aim is that the running becomes continuous, not that it becomes fast."
-        : "Nothing here is meant to hurt; the block is bought by finishing every week."),
-    build: "Volume climbs toward this block's ceiling, and the run blocks get longer. " +
-      "The adaptation to want is the same pace at a lower heart rate.",
-    specific: isHyrox(x.goal_kind)
-      ? "Stations stop being fitness and become rehearsal: transitions, splits, roxzone. Running goes continuous."
-      : `Sessions take the shape of the ${GOAL_LABEL[x.goal_kind]}. Volume holds; the intensity gets specific.`,
-    taper: "Volume drops, intensity stays. The work is done; this only protects it.",
-  };
-  const watch: Record<PhaseName, string> = {
-    base: "Easy runs run too hard are the failure mode. They cost the one quality session.",
-    build: "Two hard days a week, no more. Everything else stays easy.",
-    specific: "Rep 1 fastest means the session failed, whatever the average says.",
-    taper: "Do not chase a session you missed. Missed work in taper is free.",
-  };
-
-  let i = 0;
-  while (i < weeks) {
-    const phase = ph[i];
-    let j = i;
-    while (j + 1 < weeks && ph[j + 1] === phase) j++;
-    const protect: string[] = [];
-    const d = daysFor(x);
-    if (d.quality != null) protect.push(`${DAY_NAME[d.quality]} · Quality run`);
-    if (d.hyrox != null) protect.push(`${DAY_NAME[d.hyrox]} · Hyrox session`);
-
+  let from = 1;
+  r.phaseSplit.forEach((len, i) => {
+    if (from > r.weeks) return;
+    const to = Math.min(r.weeks, from + len - 1);
     out.push({
-      from: i + 1, to: j + 1,
-      phase: `${phase[0].toUpperCase()}${phase.slice(1)} · week${j > i ? `s ${i + 1}–${j + 1}` : ` ${i + 1}`}`,
-      purpose: purpose[phase],
-      protect: phase === "taper" && x.goal_date
-        ? [x.goal_race_name ?? GOAL_LABEL[x.goal_kind]] : protect,
-      sacrifice: phase === "specific" && heavy.length > 0
-        ? `${heavy[0].name || heavy[0].kind} goes to alternate weeks. The leg-cost budget is spent on running.`
-        : "Strength goes before running. Never the long run.",
-      watch: watch[phase],
+      from, to,
+      phase: `${PHASE_LABEL[PHASE_KEYS[i]]} · ${from === to ? `week ${from}` : `weeks ${from}–${to}`}`,
+      purpose: purpose[i],
+      protect: i === 0 ? ["Baseline test", "Long run"]
+        : i === 3 ? ["Race day"]
+        : ["Key run session", stations ? "Station session" : "Long run"],
+      sacrifice: i === 3
+        ? "Any session you are unsure about. In doubt, rest."
+        : "Strength first, then the second easy run. Never the long run.",
+      watch: i === 0
+        ? "Easy runs run too quick. That is what costs you the key session."
+        : "Two hard days a week. Classes are not a third.",
     });
-    i = j + 1;
-  }
-  // running is `alloc.run` of the week by design — say so once, where it is set
-  if (out[0]) {
-    out[0].purpose += ` Roughly ${Math.round(alloc.run * 100)}% running, ` +
-      `${Math.round(alloc.station * 100)}% stations, ${Math.round(alloc.strength * 100)}% strength.`;
-  }
+    from = to + 1;
+  });
+  if (out.length && out[out.length - 1].to < r.weeks) out[out.length - 1].to = r.weeks;
   return out;
 }
 
 /** Everything the plan cannot decide, named rather than hidden. */
-export function flagsFor(x: Intake, weeks: number): string[] {
+export function flagsFor(x: Intake, r: Resolved): string[] {
   const out: string[] = [];
-  if (!x.recent_5k_seconds) {
-    out.push("No pace anchor. The first weeks run on effort and heart rate alone; the baseline test sets real numbers.");
+  if (!r.paceKnown) {
+    out.push("No pace anchor. Sessions run on effort and heart rate until the baseline gives real numbers.");
   }
   if (needsStandards(x)) {
-    out.push(x.division === "unknown"
-      ? "No division chosen, so sled and wall ball are prescribed as a share of race weight rather than in kilos. Pick the division you are entered in and the sessions carry real loads."
-      : "We do not have confirmed loads for your division, so sled and wall ball are prescribed as a share of race weight. The weights you train should be the ones you will actually meet — send them and the sessions carry real kilos.");
+    out.push("We have no confirmed loads for your division, so sled and wall ball are prescribed as a share of race weight. The weights you train should be the ones you will actually meet.");
   }
-  const locked = x.commitments.filter((c) => c.day != null).length;
-  if (locked > 0) {
-    const share = Math.round((locked / Math.max(1, x.days_per_week)) * 100);
-    out.push(`${locked} locked commitment${locked > 1 ? "s" : ""} out of ${x.days_per_week} training days — ${share}% of the week is not specific to the goal.`);
+  if (r.offerSuppressed && x.raceDate) {
+    out.push(`Your race is ${r.weeksToRace} weeks away. Too close to spend a session testing, so the plan is generated from your answers.`);
   }
-  if (x.partner_role === "protected") {
-    out.push("Built around you as the protected partner: your partner takes the sled, the lunges and most of the burpees. Change the split and the plan changes with it.");
-  }
-  // only meaningful when they actually stated a number for it to be below
-  if (x.current_km_week != null && startVolume(x) < 0.9 * x.current_km_week) {
-    out.push("Week 1 is below what you said you run, because your stated running limits it. If the baseline says otherwise, the ceiling lifts and the early weeks are rewritten upward.");
-  }
-  if (weeks < 8) out.push("A short block. It sharpens what is there rather than building anything new.");
+  if (r.gate) out.push(`${r.gate}, so the benchmark is the submaximal variant: RPE 7 rather than all out, and one round fewer.`);
+  if (x.hasRace === "No") out.push("No race date, so this is a twelve-week goal block rather than a countdown.");
   return out;
 }
 
 export function generate(x: Intake, from: string = todayish()): GeneratedPlan {
-  const start = mondayOf(addDays(from, 7));
-  const raceDay = x.goal_date ? dow(x.goal_date) : null;
-  const weeks = x.goal_date
-    ? Math.max(2, Math.ceil((diffDays(x.goal_date, start) + 1) / 7))
-    : DEFAULT_WEEKS;
+  const r = resolve(x, from);
+  const table = volumeFor(x, r);
+  const placed = placeWeek(x, r);
+  const { easy, key } = paces(r);
+  const stations = isHyrox(x.discipline);
+  const raceDay = x.raceDate ? dow(x.raceDate) : null;
+  const longPace = DIFFICULTY_SHAPE[x.difficulty]?.longRunPace ?? true;
 
-  const table = volumeFor(x, weeks, raceDay);
-  const shapes = table.map((w) => weekShape(x, w, weeks, raceDay));
+  const shapes: TemplateDay[][] = table.map((w) => {
+    const phase = w.phase;
+    const days: TemplateDay[] = [];
+    const raceWeek = w.n === r.weeks && raceDay != null;
+    const firstSlot = placed.find((p) => !String(p.template).startsWith("commit:"));
+
+    for (const p of placed) {
+      // race week keeps a shakeout and the race, nothing else
+      // In race week only the first slot survives, as a shakeout — and it survives
+      // whether that slot holds the key session or the benchmark, which is what
+      // silently removed it when the test was scheduled.
+      if (raceWeek && (p.day >= raceDay! || p !== firstSlot)) continue;
+
+      if (typeof p.template === "string" && p.template.startsWith("commit:")) {
+        const name = p.template.slice(7);
+        const cls = classify(name);
+        days.push({
+          day: p.day, kind: "other", title: name, minutes: 45, slot: p.slot,
+          coach_note: `${cls.why} Counted at ${cls.volume_multiplier}× aerobic volume, placed away from key days.`,
+        });
+        continue;
+      }
+
+      let t = p.template as SlotKey;
+      const retestWeek = w.n === 5 || w.n === 9;
+      const isBench = t === "benchmark" && (w.n === 1 || retestWeek);
+      // outside the test weeks the slot goes back to being the key session,
+      // rather than every week of the block carrying a benchmark
+      if (t === "benchmark" && !isBench) t = "keySession";
+      if (raceWeek) {
+        days.push({ day: p.day, kind: "run_easy", title: "Shakeout", minutes: 25, slot: p.slot,
+          coach_note: "Legs awake, nothing more." });
+        continue;
+      }
+      if (isBench) {
+        days.push({
+          day: p.day, kind: "hyrox",
+          title: w.n === 1 ? "BENCHMARK TEST" : "BENCHMARK RETEST",
+          minutes: 45, slot: p.slot,
+          target: benchmarkTarget(r), significance: "benchmark",
+          coach_note: w.n === 1
+            ? benchmarkNote(r)
+            : "Identical protocol. A retest on a different protocol compares nothing.",
+        });
+        continue;
+      }
+
+      const share = w.km * (t === "longRun" ? 0.42 : t === "easyRun" ? 0.33 : t === "easyRun2" ? 0.25 : 0.2);
+      const km = Math.max(3, Math.round(share));
+      switch (t) {
+        case "keySession":
+          days.push({
+            day: p.day, kind: KIND_OF[t], title: key ? `Run session @ ${mmss(key)}` : "Run session",
+            minutes: 45, slot: p.slot, significance: "key",
+            target: "5 × 800 m, 90 s jog",
+            coach_note: key
+              ? "Even splits. Rep 1 fastest means the session failed, whatever the average says."
+              : "By effort until the baseline gives numbers.",
+          });
+          break;
+        case "longRun":
+          days.push({
+            day: p.day, kind: KIND_OF[t], title: `Long run ${km} km`, minutes: km * 6, slot: p.slot,
+            coach_note: longPace && easy
+              ? `Time on feet, around ${mmss(easy - 10)} /km. Pace is not the point.`
+              : "Time on feet. Pace is not the point.",
+          });
+          break;
+        case "stations": {
+          const target = strengthFor(x, phase);
+          days.push({
+            day: p.day, kind: KIND_OF[t], title: "Station session", minutes: 55, slot: p.slot,
+            target: target ?? undefined,
+            coach_note: "Stations with compromised running between them — the thing the race actually asks for.",
+          });
+          break;
+        }
+        case "strength": {
+          const target = strengthFor(x, phase);
+          if (!target) break;
+          days.push({
+            day: p.day, kind: KIND_OF[t], title: stations ? "Strength + sled" : "Strength",
+            minutes: 45, slot: p.slot, target,
+            coach_note: needsStandards(x)
+              ? "Sled loads are a share of race weight — your division's standards are not loaded, so confirm them before loading a sled."
+              : "Loads are your division's race weights. Two reps in reserve on the lifts.",
+          });
+          break;
+        }
+        default:
+          days.push({
+            day: p.day, kind: KIND_OF[t], title: `${SLOT_TITLE[t]} ${km} km`, minutes: km * 6, slot: p.slot,
+            coach_note: "Conversational. Walk breaks are fine.",
+          });
+      }
+    }
+
+    if (raceWeek) {
+      days.push({
+        day: raceDay!, kind: "hyrox",
+        title: x.discipline + (x.hasRace === "Yes" ? "" : " · goal block"),
+        minutes: 75, slot: "AM", significance: "race",
+        coach_note: "Race day. Hold back on the first run — everyone goes out hot.",
+      });
+    }
+    return days;
+  });
 
   return {
-    name: `${GOAL_LABEL[x.goal_kind]} · ${weeks} weeks`,
-    start,
-    weeks,
-    race_date: x.goal_date,
-    race_name: x.goal_race_name ?? (x.goal_date ? GOAL_LABEL[x.goal_kind] : null),
-    goal_label: x.goal_time_seconds ? hms(x.goal_time_seconds) : null,
-    goal_seconds: x.goal_time_seconds,
+    name: `${x.discipline} · ${r.weeks} weeks`,
+    start: r.start,
+    weeks: r.weeks,
+    race_date: x.raceDate,
+    race_name: x.raceDate ? x.discipline : null,
+    goal_label: r.goalSeconds ? mmss(r.goalSeconds) : null,
+    goal_seconds: r.goalSeconds,
     volume: table.map((w) => ({ km: w.km, note: w.note })),
-    intents: intentsFor(x, weeks),
+    intents: intentsFor(x, r),
     shapes,
     // the table is written out week by week, so the engine must not progress it too
     rules: { long_run_delta_min: 0, deload_every: 0, fatigue_skips_to_deload: 2, fatigue_cut: 0.85 },
-    flags: flagsFor(x, weeks),
+    plan_state: r.planState,
+    benchmark: {
+      variant: r.variant, submaximal: r.variant === "submax",
+      protocol_version: 1, scheduled: x.benchmark === "scheduled", retests: [5, 9],
+    },
+    guardrails: [
+      x.role ? `${x.role} partner` : x.discipline,
+      "Easy runs by HR",
+      `${r.ramp}% ramp`,
+      `${DIFFICULTY_SHAPE[x.difficulty]?.quality ?? 1} hard ${(DIFFICULTY_SHAPE[x.difficulty]?.quality ?? 1) === 1 ? "day" : "days"} a week`,
+    ],
+    easy_pace: easy,
+    corrections: r.corrections,
+    flags: flagsFor(x, r),
   };
 }
-
-const hms = (s: number) => {
-  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
-    : `${m}:${String(s % 60).padStart(2, "0")}`;
-};
-
-export type { Commitment };
