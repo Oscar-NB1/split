@@ -160,13 +160,10 @@ export default function Profile({
         <button onClick={openBuild} style={planRow}>
           {p?.has_plan ? "Rebuild my plan" : "Build a new plan"}
         </button>
-        <button onClick={openBuild} style={{ ...planRow, display: "flex",
-          flexDirection: "column", gap: 3 }}>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>Run the benchmark test</span>
-          <span style={{ fontSize: 11, color: INK55 }}>
-            Rebuilds paces and volume from measured numbers
-          </span>
-        </button>
+        {/* "Run the benchmark test" belongs here and is deliberately absent:
+            nothing yet walks anyone through running it or reads a logged result
+            back into the plan, and a row that quietly opened the plan builder
+            instead would be a button claiming to do something it does not. */}
       </div>
 
       <a href="/api/auth/logout" style={{
