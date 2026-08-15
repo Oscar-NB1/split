@@ -10,6 +10,8 @@ import Awards from "./Awards";
 import Plan from "./Plan";
 import Strategy from "./Strategy";
 import Connect from "./Connect";
+import Empty from "./Empty";
+import PlanBuilder from "./PlanBuilder";
 import Profile from "./Profile";
 import Brief from "./Brief";
 import Strength from "./Strength";
@@ -46,14 +48,14 @@ const TABS = [
 ] as const;
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
-  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect";
+  | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect" | "build";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
   week: "week", activity: "week",
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
-  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week", connect: "week",
+  brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week", connect: "week", build: "week",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -124,12 +126,13 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "strategy" ? "Race plan"
     : view === "editProfile" ? "Your details"
     : view === "connect" ? "Strava, intervals.icu, Runna"
+    : view === "build" ? "From your answers"
     : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
     : view === "program" ? "Edit the week"
     : view === "picker" ? "Add a session"
     : week ? `Week ${week.n} · ${week.km} km target`
-    : !block ? "No block yet"
+    : !block ? "Nothing scheduled"
     : left == null ? block.name
     : left > 0 ? `${left} days to race` : "Off block";
 
@@ -138,7 +141,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "profile" ? "Profile" : view === "strategy" ? "Strategy"
     : view === "plan" ? "Plan" : view === "program" ? "Program"
     : view === "picker" ? "Add" : view === "form" ? "Form"
-    : view === "record" ? "Record" : view === "connect" ? "Connections" : "Split";
+    : view === "record" ? "Record" : view === "connect" ? "Connections"
+    : view === "build" ? "Build my plan" : "Split";
 
   return (
     <div className="app">
@@ -162,7 +166,10 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
       <div className="scroll">
         {error && <div className="pad"><div className="errbox" role="alert">{error}</div></div>}
 
-        {view === "week" && (
+        {view === "week" && !block && data && (
+          <Empty name={me.display_name} onBuild={() => setView("build")} />
+        )}
+        {view === "week" && (block || !data) && (
           <Week
             data={data} me={me} other={other} monday={monday} setMonday={setMonday}
             openActivity={openActivity} openSession={openSession} reload={load}
@@ -184,7 +191,10 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         {view === "record" && recordDist && (
           <Record dist={recordDist} openActivity={openActivity} />
         )}
-        {view === "plan" && (
+        {view === "plan" && !block && data && (
+          <Empty name={me.display_name} onBuild={() => setView("build")} />
+        )}
+        {view === "plan" && (block || !data) && (
           <Plan data={data} monday={monday} goStrategy={() => setView("strategy")}
             goProgram={() => setView("program")} openSession={openSession} />
         )}
@@ -208,6 +218,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
         {view === "connect" && <Connect />}
+        {view === "build" && (
+          <PlanBuilder onDone={() => { setView("week"); load(); }} />
+        )}
       </div>
 
       {rest && (

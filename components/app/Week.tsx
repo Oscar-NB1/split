@@ -103,7 +103,10 @@ export default function Week({
           {week?.note || (!block
             ? "Anything you log still appears here, and still counts in the head-to-head."
             : beforeBlock
-            ? `${block.weeks.length} weeks to ${block.goal_label ?? block.name}. Week 1 is ${block.weeks[0]?.km ?? 0} km — bought with consistency, not intensity.`
+            // the goal is a time when there is one, the race when there is not, and
+            // neither when the plan has only a length — repeating the block's own
+            // name back at it reads as "11 weeks to Hyrox doubles · 11 weeks"
+            ? `${block.weeks.length} weeks to ${block.goal_label ?? block.race_name ?? "race day"}. Week 1 is ${block.weeks[0]?.km ?? 0} km — bought with consistency, not intensity.`
             : "Tuesday and Saturday are the week. Everything else supports them.")}
         </div>
       </div>
