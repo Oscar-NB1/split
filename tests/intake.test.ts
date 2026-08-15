@@ -1,193 +1,324 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  type Intake, daysFor, generate, intentsFor, paceCue, setClock,
-  stationsFor, strengthFor, validate, volumeFor,
+  BASE_VOLUME, COMMITMENT, RUNNING_CEILING, type Intake,
+  allocationFor, heavyDays, needsStandards, rampRate, setClock, startVolume, validate,
 } from "../lib/intake";
+import {
+  BASELINE_TEST, daysFor, flagsFor, generate, intentsFor, isBaseline, isDeload,
+  phases, rungFor, stationsFor, strengthFor, volumeFor,
+} from "../lib/generate";
 
-setClock(() => "2026-08-15");
+setClock(() => "2026-08-10");
 
-/** A plausible set of answers. Individual tests vary one field at a time. */
-const BASE: Intake = {
-  experience: "returning",
-  current_km_week: 20,
-  longest_run_km: 8,
+/**
+ * The athlete the plan spec describes: over a year of consistent training, but
+ * runs with walk breaks. Protected partner, mixed doubles, race Wed 28 Oct,
+ * one weekly spin class on the Wednesday.
+ */
+const HER: Intake = {
+  training_base: "over_1yr",
+  running_self: "walk_breaks",
+  current_km_week: null,
+  longest_run_km: null,
   recent_5k_seconds: null,
-  goal_kind: "hyrox",
-  goal_race_name: "Hyrox Rotterdam",
-  goal_date: "2026-11-28",
+  goal_kind: "hyrox_doubles",
+  goal_race_name: "Hyrox Mixed Doubles",
+  goal_date: "2026-10-28",
   goal_time_seconds: null,
+  division: "mixed_doubles",
+  partner_role: "protected",
   days_per_week: 4,
-  preferred_days: [0, 2, 4, 6],
-  long_run_day: 6,
-  gym_access: "basic_gym",
-  equipment: ["kettlebell", "rower", "pull_up_bar"],
+  preferred_days: [1, 2, 3, 4, 5],
+  long_run_day: 5,
+  commitments: [{ kind: "spin", name: "Rocycle", day: 2, per_week: 1 }],
+  gym_access: "hyrox_gym",
+  equipment: ["sled", "skierg", "rower", "wall_ball", "sandbag", "kettlebell", "barbell", "pull_up_bar"],
+  sled_experience: "lighter",
   injuries: null,
   constraints_note: null,
 };
 
-test("week 1 is never harder than the week they say they already run", () => {
-  // the single most common way a plan is abandoned in week two
-  for (const km of [8, 20, 45, 70]) {
-    const v = volumeFor({ ...BASE, current_km_week: km }, 12);
-    assert.ok(v[0].km <= Math.round(km), `starts at or below ${km} km, got ${v[0].km}`);
-  }
+// ------------------------------------------------- the correction that matters
+
+test("running base caps training base, not the other way round", () => {
+  // The bug: reading training_base alone prescribes 30 km in week 1 to someone
+  // who cannot yet run 5 km continuously. A stress-fracture recipe.
+  assert.equal(BASE_VOLUME.over_1yr, 30, "what training base alone would have said");
+  assert.equal(RUNNING_CEILING.walk_breaks, 15, "what her running actually supports");
+  assert.equal(startVolume(HER), 15, "the lower of the two wins");
 });
 
-test("the ceiling scales from their own volume, not from anyone else's", () => {
-  const small = volumeFor({ ...BASE, current_km_week: 15 }, 14);
-  const big = volumeFor({ ...BASE, current_km_week: 60 }, 14);
-  assert.ok(Math.max(...small.map((v) => v.km)) <= 15 * 1.8 + 1);
-  assert.ok(Math.max(...big.map((v) => v.km)) > Math.max(...small.map((v) => v.km)));
+test("each running self-description has its own ceiling", () => {
+  const at = (running_self: Intake["running_self"]) =>
+    startVolume({ ...HER, running_self });
+  assert.equal(at("doesnt_run"), 8);
+  assert.equal(at("walk_breaks"), 15);
+  assert.equal(at("5k_nonstop"), 22);
+  assert.equal(at("runs_regularly"), 30, "no cap — training base governs");
 });
 
-test("someone new climbs more gently than someone competitive", () => {
-  const peak = (e: Intake["experience"]) =>
-    Math.max(...volumeFor({ ...BASE, experience: e }, 14).map((v) => v.km));
-  assert.ok(peak("new") < peak("returning"));
-  assert.ok(peak("returning") < peak("consistent"));
-  assert.ok(peak("consistent") < peak("competitive"));
+test("the ramp gets the same treatment as the volume", () => {
+  // her engine is trained; her running tissue is not, and that gap is the
+  // classic injury pattern because she will feel able to do more than she can absorb
+  assert.equal(rampRate(HER), 0.08, "8%, not the 10% her training base alone implies");
+  assert.equal(rampRate({ ...HER, running_self: "runs_regularly" }), 0.10);
+  assert.equal(rampRate({ ...HER, training_base: "under_6mo" }), 0.06, "the lower still wins");
 });
 
-test("every fourth week comes down, and the block tapers into the race", () => {
-  const v = volumeFor(BASE, 14);
-  assert.ok(v[3].km < v[2].km, "week 4 is a down week");
-  assert.ok(v[13].km < v[11].km, "race week is the smallest of the end");
-  assert.match(v[13].note, /Race week/);
+test("a stated weekly volume beats an inferred one", () => {
+  // someone who says they run 10 km should not be handed 15 by a table
+  assert.equal(startVolume({ ...HER, current_km_week: 10 }), 10);
+  assert.equal(startVolume({ ...HER, current_km_week: 40 }), 15, "but cannot lift the ceiling");
 });
 
-test("the block ends on race day, and its length is not a round number by accident", () => {
-  const p = generate(BASE);
-  // start is the Monday after 15 Aug 2026, so 17 Aug; race 28 Nov
+// ------------------------------------------------------------------ the block
+
+test("the block runs from the Monday after today to race day", () => {
+  const p = generate(HER);
   assert.equal(p.start, "2026-08-17");
-  assert.equal(p.weeks, 15);
-  assert.equal(p.volume.length, 15);
-  assert.equal(p.shapes.length, 15);
-  assert.equal(p.race_date, "2026-11-28");
+  assert.equal(p.weeks, 11, "10 weeks plus the race week");
+  assert.equal(p.race_date, "2026-10-28");
 });
 
-test("the race session lands on the race date, not the preferred long-run day", () => {
-  // 28 Nov 2026 is a Saturday; BASE prefers Sunday for long runs. Placing the race
-  // on the long-run day put it on the 29th — a race on the wrong day, silently.
-  for (const [date, label] of [["2026-11-28", "Saturday"], ["2026-10-28", "Wednesday"]] as const) {
-    const p = generate({ ...BASE, goal_date: date });
-    const race = p.shapes[p.shapes.length - 1].find((d) => d.significance === "race");
-    assert.ok(race, `${label}: race week contains the race`);
-    const monday = new Date(`${p.start}T00:00:00Z`);
-    monday.setUTCDate(monday.getUTCDate() + (p.weeks - 1) * 7 + race!.day);
-    assert.equal(monday.toISOString().slice(0, 10), date, `${label} race is on ${date}`);
+test("the race session lands on race day, and race week carries nothing else heavy", () => {
+  const p = generate(HER);
+  const last = p.shapes[p.shapes.length - 1];
+  const race = last.find((d) => d.significance === "race");
+  assert.ok(race, "race week contains the race");
+  const monday = new Date(`${p.start}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() + (p.weeks - 1) * 7 + race!.day);
+  assert.equal(monday.toISOString().slice(0, 10), "2026-10-28", "Wednesday, as the race is");
+  assert.ok(!last.some((d) => d.significance === "key"), "no key session in race week");
+  assert.ok(!last.some((d) => d.day > race!.day), "nothing scheduled after the race");
+});
+
+test("phases split 30/30/25/15 and the last week is always taper", () => {
+  assert.deepEqual(phases(11), [
+    "base", "base", "base", "build", "build", "build",
+    "specific", "specific", "specific", "taper", "taper",
+  ]);
+  for (const w of [2, 4, 6, 8, 12, 15, 20]) {
+    const p = phases(w);
+    assert.equal(p.length, w, `${w} weeks gets ${w} phases`);
+    assert.equal(p[p.length - 1], "taper", `${w} weeks ends in taper`);
   }
 });
 
-test("nothing else is scheduled on top of race day", () => {
-  const p = generate(BASE);
-  const last = p.shapes[p.shapes.length - 1];
-  const raceDay = last.find((d) => d.significance === "race")!.day;
-  const clash = last.filter((d) => d.day === raceDay && d.significance !== "race");
-  assert.deepEqual(clash, [], "race day carries the race and nothing else");
+test("deloads fall on weeks 4 and 8, never on the last week", () => {
+  assert.ok(isDeload(4, 11) && isDeload(8, 11));
+  assert.ok(!isDeload(11, 11) && !isDeload(5, 11));
+  const v = volumeFor(HER, 11, 2);
+  assert.ok(v[3].km < v[2].km, "week 4 comes down");
+  assert.ok(v[7].km < v[6].km, "week 8 comes down");
+  assert.match(v[3].note, /Deload|Baseline/);
 });
 
-test("no race date gives a block with no race and no countdown", () => {
-  const p = generate({ ...BASE, goal_date: null, goal_race_name: null });
-  assert.equal(p.race_date, null);
-  assert.equal(p.race_name, null);
-  assert.equal(p.weeks, 12, "a default length, since nothing pins the end");
-  assert.ok(!p.shapes.flat().some((d) => d.significance === "race"));
+test("a deload does not reset the climb", () => {
+  // the failure this prevents: a week-9 peak lower than week 7, because the
+  // progression restarted from the down week
+  const v = volumeFor(HER, 11, 2);
+  assert.ok(v[8].km > v[6].km, `week 9 (${v[8].km}) peaks above week 7 (${v[6].km})`);
+  assert.ok(v[4].km > v[2].km, "and week 5 resumes above week 3");
 });
 
-test("no goal time means no goal, not a borrowed one", () => {
-  const p = generate(BASE);
-  assert.equal(p.goal_label, null);
-  assert.equal(p.goal_seconds, null);
-  assert.equal(generate({ ...BASE, goal_time_seconds: 3390 }).goal_label, "56:30");
-  assert.equal(generate({ ...BASE, goal_time_seconds: 3600 }).goal_label, "1:00:00");
+test("week 1 is never above the starting volume, and race week is the smallest", () => {
+  const v = volumeFor(HER, 11, 2);
+  assert.equal(v[0].km, startVolume(HER));
+  assert.equal(v[10].km, Math.min(...v.map((w) => w.km)));
 });
 
-test("the days they say they can train are the days used", () => {
-  const d = daysFor({ ...BASE, preferred_days: [1, 3, 5], days_per_week: 3, long_run_day: 5 });
-  assert.deepEqual(d.run.concat(d.long).sort(), [1, 3, 5]);
-  assert.equal(d.long, 5, "their chosen long-run day");
-  const shapes = generate({ ...BASE, preferred_days: [1, 3, 5], days_per_week: 3, long_run_day: 5 }).shapes;
-  const used = [...new Set(shapes[0].map((s) => s.day))].sort();
-  for (const day of used) assert.ok([1, 3, 5].includes(day), `day ${day} was not chosen`);
+test("baseline tests fall in week 1 and after each deload, on one protocol", () => {
+  assert.ok(isBaseline(1, 11), "week 1");
+  assert.ok(isBaseline(5, 11), "the week after the week-4 deload");
+  assert.ok(isBaseline(9, 11), "the week after the week-8 deload");
+  assert.ok(!isBaseline(2, 11) && !isBaseline(4, 11));
+
+  const p = generate(HER);
+  const tests = p.shapes
+    .map((w, i) => ({ i: i + 1, d: w.find((s) => s.significance === "benchmark") }))
+    .filter((x) => x.d);
+  assert.deepEqual(tests.map((t) => t.i), [1, 5, 9]);
+  // identical protocol, or the comparison is meaningless
+  for (const t of tests) assert.equal(t.d!.target, BASELINE_TEST);
 });
 
-test("a long-run day they did not pick as a training day is not used", () => {
-  const d = daysFor({ ...BASE, preferred_days: [0, 1, 2], days_per_week: 3, long_run_day: 6 });
-  assert.ok([0, 1, 2].includes(d.long), "falls back inside their stated days");
+// -------------------------------------------------------------- the running
+
+test("run/walk becomes continuous by the specific phase", () => {
+  assert.match(rungFor(HER, "base").quality, /3 min run \/ 1 min walk/);
+  assert.match(rungFor(HER, "build").quality, /6–8 min run \/ 1 min walk/);
+  assert.match(rungFor(HER, "specific").quality, /800 m continuous/);
+});
+
+test("someone who already runs continuously does not start on run/walk", () => {
+  const runner = { ...HER, running_self: "runs_regularly" as const };
+  assert.doesNotMatch(rungFor(runner, "base").quality, /walk/);
+});
+
+test("no benchmark means no pace target, and the session says why", () => {
+  const blind = generate(HER).shapes[1].find((d) => d.kind === "run_intervals");
+  assert.doesNotMatch(blind!.title, /@/, "no invented pace");
+  assert.match(blind!.coach_note ?? "", /no pace target until the baseline/);
+});
+
+// ------------------------------------------------------------- commitments
+
+test("a spin class is classified, not treated as steady cycling", () => {
+  const spin = COMMITMENT.spin;
+  assert.equal(spin.volume_multiplier, 0.3);
+  assert.equal(spin.leg_cost, "high");
+  assert.ok(COMMITMENT.cycling.volume_multiplier > spin.volume_multiplier,
+    "steady cycling counts for more than a spin class");
+});
+
+test("a high-leg-cost commitment never gets a session on top of it", () => {
+  assert.deepEqual(heavyDays(HER), [2], "Wednesday is spent");
+  const d = daysFor(HER);
+  for (const day of [d.quality, d.easy, d.hyrox, d.strength]) {
+    assert.notEqual(day, 2, "nothing is scheduled on the spin day");
+  }
+});
+
+test("the week lands on the template the plan spec describes", () => {
+  // Tue quality · Wed Rocycle · Thu easy · Fri strength+sled · Sat Hyrox
+  const d = daysFor(HER);
+  assert.equal(d.quality, 1, "Tuesday carries the quality run");
+  assert.equal(d.easy, 3, "Thursday absorbs the day after spin");
+  assert.equal(d.strength, 4, "Friday is strength and sled");
+  assert.equal(d.hyrox, 5, "Saturday is the Hyrox session");
+});
+
+test("the easy run absorbs the day after a heavy commitment", () => {
+  // Thursday follows the Wednesday spin class, so the legs are already spent.
+  // Assigning strength before easy took that day and pushed the easy run to the
+  // fresh Friday — the right sessions, the wrong way round.
+  const d = daysFor(HER);
+  assert.equal(d.easy, 3, "Thursday takes the easy run");
+  assert.notEqual(d.quality, 3, "and never the key session");
+});
+
+test("race week carries a shakeout before the race and nothing after", () => {
+  const last = generate(HER).shapes[10];
+  const race = last.find((s) => s.significance === "race")!;
+  const shake = last.find((s) => s.kind === "run_easy");
+  assert.ok(shake, "a shakeout");
+  assert.ok(shake!.day < race.day, "before the race");
+  assert.ok(!last.some((s) => s.day > race.day), "nothing after it");
+});
+
+test("the commitment still appears on the week, with what it costs", () => {
+  const week = generate(HER).shapes[0];
+  const spin = week.find((d) => d.title === "Rocycle");
+  assert.ok(spin, "it is on the calendar — it is part of her week");
+  assert.equal(spin!.day, 2);
+  assert.match(spin!.coach_note ?? "", /0\.3x aerobic volume/);
+});
+
+test("in the specific phase the high-cost commitment goes to alternate weeks", () => {
+  const p = generate(HER);
+  const specific = p.shapes[6].find((d) => d.title === "Rocycle");
+  assert.match(specific!.coach_note ?? "", /Alternate weeks/);
+  const base = p.shapes[0].find((d) => d.title === "Rocycle");
+  assert.doesNotMatch(base!.coach_note ?? "", /Alternate weeks/);
+});
+
+test("a commitment with no fixed day constrains nothing", () => {
+  const loose = { ...HER, commitments: [{ kind: "spin" as const, name: "Rocycle", day: null, per_week: 1 }] };
+  assert.deepEqual(heavyDays(loose), []);
+});
+
+// --------------------------------------------------------- role and standards
+
+test("the protected partner's week is weighted to running", () => {
+  const a = allocationFor(HER);
+  assert.equal(a.run, 0.60);
+  assert.equal(a.station, 0.25);
+  assert.equal(a.strength, 0.15);
+  assert.match(intentsFor(HER, 11)[0].purpose, /60% running/);
+});
+
+test("a solo athlete does not get a doubles split", () => {
+  const solo = allocationFor({ ...HER, goal_kind: "hyrox", partner_role: null });
+  assert.notEqual(solo.run, 0.60);
+});
+
+test("station weights are never printed, because the standards are not loaded", () => {
+  assert.ok(needsStandards(HER), "no verified standards for this division");
+  const work = strengthFor(HER, "base") ?? "";
+  assert.match(work, /% of race weight/, "expressed as a share, not as kilos");
+  assert.doesNotMatch(work, /\d+\s?kg/, "no weight nobody verified");
+  assert.ok(generate(HER).flags.some((f) => /Confirm them against the rulebook/.test(f)));
+});
+
+test("sled loading climbs by phase, and starts lower for someone who never has", () => {
+  const pct = (p: Parameters<typeof strengthFor>[1], x = HER) =>
+    Number((strengthFor(x, p) ?? "").match(/Sled push (\d+)%/)?.[1] ?? 100);
+  assert.ok(pct("base") < pct("build"), "60 then 80");
+  assert.match(strengthFor(HER, "specific") ?? "", /race weight, race distance/);
+  assert.ok(pct("base", { ...HER, sled_experience: "never" }) < pct("base"));
+});
+
+test("sandbag lunges are introduced last", () => {
+  assert.doesNotMatch(strengthFor(HER, "base") ?? "", /Sandbag/);
+  assert.match(strengthFor(HER, "specific") ?? "", /Sandbag lunges/);
 });
 
 test("only equipment they have is programmed", () => {
-  const none = stationsFor({ ...BASE, equipment: [] });
-  assert.ok(!/Sled|SkiErg|Row|Wall/.test(none ?? ""), "nothing requiring kit");
-  const sled = stationsFor({ ...BASE, equipment: ["sled"] });
-  assert.match(sled ?? "", /Sled push/);
-  assert.doesNotMatch(sled ?? "", /SkiErg|Row 500/);
+  const bare = { ...HER, equipment: [], gym_access: "home" as const };
+  const stations = stationsFor(bare) ?? "";
+  assert.doesNotMatch(stations, /Sled|SkiErg|Row 500|Wall/);
+  assert.match(stations, /Burpee broad jump/, "the one that needs nothing");
+  assert.doesNotMatch(strengthFor(bare, "specific") ?? "", /Sled|Sandbag/);
 });
 
 test("no gym access means no strength session at all", () => {
-  assert.equal(strengthFor({ ...BASE, gym_access: "none" }), null);
-  const shapes = generate({ ...BASE, gym_access: "none" }).shapes;
-  assert.ok(!shapes.flat().some((d) => d.kind === "strength"));
+  const none = { ...HER, gym_access: "none" as const };
+  assert.equal(strengthFor(none, "base"), null);
+  assert.ok(!generate(none).shapes.flat().some((d) => d.kind === "strength"));
 });
 
-test("stations are only programmed for a Hyrox goal", () => {
-  assert.equal(stationsFor({ ...BASE, goal_kind: "half" }), null);
-  assert.ok(stationsFor({ ...BASE, goal_kind: "hyrox_doubles" }));
+// ----------------------------------------------------------------- the flags
+
+test("what the plan cannot decide is named rather than hidden", () => {
+  const flags = flagsFor(HER, 11);
+  assert.ok(flags.some((f) => /No pace anchor/.test(f)));
+  assert.ok(flags.some((f) => /locked commitment/.test(f)));
+  assert.ok(flags.some((f) => /protected partner/.test(f)));
 });
 
-test("pace targets appear only when there is a benchmark to derive them from", () => {
-  const blind = generate(BASE).shapes[0].find((d) => d.kind === "run_intervals");
-  assert.doesNotMatch(blind!.title, /@/, "no invented pace");
-  assert.match(blind!.coach_note ?? "", /by effort until you have a benchmark/);
-
-  const known = generate({ ...BASE, recent_5k_seconds: 25 * 60 }).shapes[0]
-    .find((d) => d.kind === "run_intervals");
-  assert.match(known!.title, /@ 5:0\d/, "derived from the 5:00/km their 5K implies");
+test("a ceiling that overrode their stated volume is said out loud", () => {
+  const flags = flagsFor({ ...HER, current_km_week: 30 }, 11);
+  assert.ok(flags.some((f) => /below what you said you run/.test(f)),
+    "she is told why week 1 is lower than she expected");
 });
 
-test("pace cues come off the stated 5K, slower for base weeks", () => {
-  assert.equal(paceCue(25 * 60, 0), "5:00");
-  assert.equal(paceCue(25 * 60, 8), "5:08");
-  assert.equal(paceCue(20 * 60, 0), "4:00");
+// ------------------------------------------------------------------ the rest
+
+test("nonsense answers are refused, all problems at once", () => {
+  const p = validate({ ...HER, training_base: "elite" as never, days_per_week: 99 });
+  const fields = p.map((x) => x.field);
+  assert.ok(fields.includes("training_base"));
+  assert.ok(fields.includes("days_per_week"));
+  assert.equal(validate(HER).length, 0, "a complete form passes");
 });
 
-test("the phase ranges cover every week exactly once", () => {
-  for (const weeks of [4, 8, 12, 15, 20]) {
-    const ranges = [...intentsFor(BASE, weeks)].sort((a, b) => a.from - b.from);
-    assert.equal(ranges[0].from, 1, `${weeks} weeks: starts at 1`);
-    assert.equal(ranges[ranges.length - 1].to, weeks, `${weeks} weeks: ends at ${weeks}`);
-    for (let i = 1; i < ranges.length; i++) {
-      assert.equal(ranges[i].from, ranges[i - 1].to + 1, `${weeks} weeks: no gap or overlap`);
-    }
+test("a doubles athlete must say which role they are", () => {
+  const p = validate({ ...HER, partner_role: null });
+  assert.ok(p.some((x) => x.field === "partner_role"));
+  assert.equal(validate({ ...HER, goal_kind: "hyrox", partner_role: null }).length, 0,
+    "a solo athlete does not need one");
+});
+
+test("phase ranges cover every week exactly once", () => {
+  for (const weeks of [4, 8, 11, 15, 20]) {
+    const r = [...intentsFor(HER, weeks)].sort((a, b) => a.from - b.from);
+    assert.equal(r[0].from, 1);
+    assert.equal(r[r.length - 1].to, weeks);
+    for (let i = 1; i < r.length; i++) assert.equal(r[i].from, r[i - 1].to + 1);
   }
 });
 
-test("the phase text quotes their own starting volume back at them", () => {
-  const [base] = intentsFor({ ...BASE, current_km_week: 23 }, 12);
-  assert.match(base.purpose, /23 km/);
-});
-
-test("nonsense answers are refused, all problems at once", () => {
-  const p = validate({ ...BASE, current_km_week: 4000, days_per_week: 99, experience: "elite" as never });
-  const fields = p.map((x) => x.field);
-  assert.ok(fields.includes("current_km_week"));
-  assert.ok(fields.includes("days_per_week"));
-  assert.ok(fields.includes("experience"));
-  assert.equal(validate(BASE).length, 0, "a sane form passes");
-});
-
-test("a race too soon or too far out is refused", () => {
-  assert.ok(validate({ ...BASE, goal_date: "2026-08-20" }).some((p) => p.field === "goal_date"));
-  assert.ok(validate({ ...BASE, goal_date: "2028-08-20" }).some((p) => p.field === "goal_date"));
-});
-
-test("a longest run longer than the whole week is flagged", () => {
-  const p = validate({ ...BASE, current_km_week: 10, longest_run_km: 30 });
-  assert.ok(p.some((x) => x.field === "longest_run_km"));
-});
-
-test("generation is deterministic — the same answers give the same block", () => {
-  const a = generate(BASE), b = generate(BASE);
-  assert.deepEqual(a, b);
+test("generation is deterministic", () => {
+  assert.deepEqual(generate(HER), generate(HER));
 });

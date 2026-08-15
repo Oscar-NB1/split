@@ -412,23 +412,35 @@ alter table plan_templates add column if not exists intents jsonb not null defau
 -- produces a plan that looks authoritative and is made up.
 create table if not exists athlete_intake (
   user_id          uuid primary key references users(id) on delete cascade,
-  -- where they are now
-  experience       text not null,          -- new | returning | consistent | competitive
-  current_km_week  numeric not null,
-  longest_run_km   numeric not null,
+  -- where they are now. training_base and running_self are asked separately and
+  -- the lower of the two governs: someone a year into consistent training who
+  -- still runs with walk breaks reads as experienced and would be prescribed
+  -- 30 km in week 1, when they cannot yet run 5 km without stopping.
+  training_base    text,                   -- under_6mo | 6_12mo | over_1yr | competitive
+  running_self     text,                   -- doesnt_run | walk_breaks | 5k_nonstop | runs_regularly
+  experience       text,                   -- superseded by the pair above
+  current_km_week  numeric,
+  longest_run_km   numeric,
   recent_5k_seconds int,                   -- null: no recent benchmark
   -- what they are training for
   goal_kind        text not null,          -- hyrox | hyrox_doubles | race_5k | race_10k | half | general
   goal_race_name   text,
   goal_date        date,
   goal_time_seconds int,
+  division         text,                   -- sets the station standards
+  partner_role     text,                   -- protected | even | lead, for doubles
   -- what the week can hold
   days_per_week    int not null,
   preferred_days   int[] not null default '{}',   -- 0 = Monday
   long_run_day     int,
+  -- standing commitments that are not this plan: [{kind, name, day, per_week}].
+  -- Classified in code rather than here, so the table can be corrected without
+  -- making anyone retake the intake.
+  commitments      jsonb not null default '[]',
   -- what they can actually train with
   gym_access       text not null,          -- none | home | basic_gym | full_gym | hyrox_gym
   equipment        text[] not null default '{}',
+  sled_experience  text,                   -- never | lighter | race_weight
   -- what to work around
   injuries         text,
   constraints_note text,
