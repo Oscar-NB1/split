@@ -51,6 +51,7 @@ export default function Connect() {
       : said === "scope" ? { ok: false, text: "Strava was connected without permission to read activities. Reconnect and leave every box ticked." }
       : { ok: false, text: "Strava did not complete the connection. Worth trying again." },
     );
+    // cleared once read, so a reload does not re-announce a week-old connection
     history.replaceState(null, "", location.pathname);
   }, []);
 

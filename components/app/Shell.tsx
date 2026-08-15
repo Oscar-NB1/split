@@ -83,6 +83,13 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
    * toggle implies two equal halves and coaching is a relationship you enter.
    */
   const [coaching, setCoaching] = useState<string | null>(null);
+
+  // Strava's callback returns into the app rather than a settings page, so the
+  // outcome arrives as a query parameter. Opening the connections view is what
+  // makes the round trip feel like it happened inside the app.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("strava")) setView("connect");
+  }, []);
   const [monday, setMonday] = useState(() => mondayOf());
   const [openId, setOpenId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);

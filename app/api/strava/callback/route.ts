@@ -1,27 +1,37 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { exchangeCode, saveTokens } from "@/lib/strava";
+import { exchangeCode, readOauthState, saveTokens } from "@/lib/strava";
+
+/**
+ * Coming back from Strava.
+ *
+ * Returns into the app itself rather than a settings page, so a home-screen PWA
+ * lands back where it started. It writes only to the database — never to the
+ * session cookie — which is what lets the round trip survive iOS sending the
+ * consent screen through Safari and back: the connection is saved against the
+ * athlete in the signed state, and the app sees it on its next fetch whichever
+ * browser context finishes the flow.
+ */
+const back = (outcome: string) =>
+  NextResponse.redirect(`${process.env.APP_URL}/?strava=${outcome}`);
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  const userId = url.searchParams.get("state");
-  const error = url.searchParams.get("error");
   const scope = url.searchParams.get("scope") ?? "";
 
-  if (error || !code || !userId) {
-    return NextResponse.redirect(`${process.env.APP_URL}/settings?strava=denied`);
-  }
+  // Signed, so a crafted callback cannot bind a Strava account to someone else.
+  const userId = await readOauthState(url.searchParams.get("state"));
+  if (!userId) return back("state");
+  if (url.searchParams.get("error") || !code) return back("denied");
+
   // Strava lets people uncheck permissions on the consent screen.
-  if (!scope.includes("activity:read_all")) {
-    return NextResponse.redirect(`${process.env.APP_URL}/settings?strava=scope`);
-  }
+  if (!scope.includes("activity:read_all")) return back("scope");
 
   try {
-    const tokens = await exchangeCode(code);
-    await saveTokens(userId, tokens);
-    return NextResponse.redirect(`${process.env.APP_URL}/settings?strava=connected`);
+    await saveTokens(userId, await exchangeCode(code));
+    return back("connected");
   } catch (e) {
     console.error("strava callback", e);
-    return NextResponse.redirect(`${process.env.APP_URL}/settings?strava=failed`);
+    return back("failed");
   }
 }

@@ -1,3 +1,4 @@
+import { SignJWT, jwtVerify } from "jose";
 import { sql } from "./db";
 
 const AUTH = "https://www.strava.com/oauth/authorize";
@@ -5,6 +6,40 @@ const TOKEN = "https://www.strava.com/oauth/token";
 const API = "https://www.strava.com/api/v3";
 
 export const SCOPES = "read,activity:read_all";
+
+const secret = () => new TextEncoder().encode(process.env.SESSION_SECRET!);
+
+/**
+ * The `state` Strava hands back to us, signed.
+ *
+ * It used to be the raw user id, which meant the callback trusted whatever came
+ * back in a query string: anyone who could get a signed-in athlete to load a
+ * crafted callback URL could bind their own Strava account to that athlete's —
+ * or bind the athlete's to someone else. The callback checks no session, so the
+ * id in the URL was the only thing deciding whose account got written.
+ *
+ * Signed and short-lived instead. Deliberately a token rather than a cookie: on
+ * iOS an OAuth round trip can leave a standalone PWA and come back through
+ * Safari, which has its own cookie jar, and a cookie-based nonce would break
+ * exactly the flow this exists to protect.
+ */
+export const oauthState = (userId: string) =>
+  new SignJWT({ sub: userId, use: "strava-oauth" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("15m")
+    .sign(secret());
+
+/** The athlete a callback belongs to, or null if it was not one of ours. */
+export async function readOauthState(token: string | null): Promise<string | null> {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, secret());
+    return payload.use === "strava-oauth" ? (payload.sub as string) : null;
+  } catch {
+    return null;
+  }
+}
 
 export function authorizeUrl(state: string) {
   const p = new URLSearchParams({
