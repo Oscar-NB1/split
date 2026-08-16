@@ -133,6 +133,21 @@ function parse(body: Record<string, unknown>): Intake {
     return s === "" ? null : s;
   };
   /**
+   * A calendar date, or nothing.
+   *
+   * Anything that carries a time is cut back to the day. A full ISO timestamp —
+   * which is what a date column becomes once it has been through JSON — went
+   * through untouched and every piece of date arithmetic downstream produced NaN,
+   * so the plan came back with NaN weeks and no sessions at all. A date is ten
+   * characters or it is not a date.
+   */
+  const date = (v: unknown) => {
+    const s = str(v);
+    if (!s) return null;
+    const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+    return m ? m[1] : null;
+  };
+  /**
    * A distance in kilometres, or nothing.
    *
    * Zero and blank both mean "I do not track this" rather than "I ran none",
@@ -177,7 +192,7 @@ function parse(body: Record<string, unknown>): Intake {
     hasRace: body.hasRace as Intake["hasRace"],
     discipline,
     raceDistance: (str(body.raceDistance) as Intake["raceDistance"]) ?? null,
-    raceDate: str(body.raceDate),
+    raceDate: date(body.raceDate),
     /*
      * The role, derived rather than asked.
      *
@@ -208,7 +223,7 @@ function parse(body: Record<string, unknown>): Intake {
       : body.volumeSource === "self" ? "self" : null,
     goal: str(body.goal),
     goalMin: int(body.goalMin),
-    startDate: str(body.startDate),
+    startDate: date(body.startDate),
     targetSessions: str(body.targetSessions),
     allowDoubles: str(body.allowDoubles),
     wantRestDay: str(body.wantRestDay),
@@ -252,7 +267,7 @@ function parse(body: Record<string, unknown>): Intake {
      */
     bRaces: (Array.isArray(body.bRaces) ? body.bRaces : [])
       .map((r: Record<string, unknown>) => ({
-        date: String(r.date ?? ""),
+        date: date(r.date) ?? "",
         kind: B_KINDS.includes(String(r.kind) as never) ? String(r.kind) : null,
         // Checked against the whole list rather than the kind's own, because the
         // kind is what says which list applies and it may be missing.
