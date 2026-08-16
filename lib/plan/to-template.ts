@@ -123,7 +123,13 @@ function target(s: Session): string | undefined {
  * that looks like a measured one is worse than no pace at all.
  */
 function note(s: Session, w: GeneratedWeek): string | undefined {
+  /*
+   * Why it matters comes first: the session screen shows the first line of the note
+   * under "why this session matters", and it was getting whichever flag the pace
+   * prescription happened to carry.
+   */
   const bits: string[] = [];
+  if (s.why_text) bits.push(s.why_text);
   if (s.note_text) bits.push(s.note_text);
   if (String(s.kind) === "benchmark") {
     bits.push("The baseline test. Every pace after this is written from it.");

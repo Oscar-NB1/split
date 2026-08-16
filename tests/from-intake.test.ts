@@ -188,9 +188,18 @@ test("a full intake generates a valid block", () => {
    * less. It used to display the curve's number over sessions that added up to
    * twelve kilometres less, which made every week read as unfinished.
    */
-  const written = out.weeks[0].sessions.reduce((n, s) => n + (s.km ?? 0), 0);
+  /*
+   * The running sessions, and only those. Compromised running inside a Hyrox
+   * session is load rather than volume — it is broken into four-hundred-metre
+   * pieces off a sled, and where the athlete attends a class it is not even
+   * knowable — so it states itself on the session and stays out of the ledger.
+   */
+  const RUNNING = ["quality_run", "easy_run", "long_run", "benchmark"];
+  const written = out.weeks[0].sessions
+    .filter((s) => RUNNING.includes(String(s.kind)))
+    .reduce((n, s) => n + (s.km ?? 0), 0);
   assert.equal(Math.round(out.weeks[0].km), Math.round(written),
-    "the week is the sum of its sessions");
+    "the week is the sum of its running");
   assert.ok(out.weeks[0].km <= 38, "and never more than the curve allowed");
   assert.ok(out.weeks.some((w) => w.benchmark), "and the benchmark is in it");
   assert.deepEqual(out.violations, [], "no assertion failures");

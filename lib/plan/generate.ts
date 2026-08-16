@@ -6,6 +6,7 @@ import {
   continuousRun, hyroxClass, hyroxSession, longRun, qualityRun, type LongShape,
 } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
+import { whyFor } from "./why";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
 import { type PhaseName, type Week, skeleton } from "./skeleton";
@@ -66,6 +67,8 @@ export type Session = {
   target_text?: string;
   /** one line about the session, where the kind has something worth saying */
   note_text?: string;
+  /** why this session, in this week — the first thing the session screen shows */
+  why_text?: string;
   /** how long it takes, from what is in it rather than from its distance */
   minutes?: number;
   /** true when this is the athlete's own session, scheduled around rather than prescribed */
@@ -342,7 +345,23 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
        * interval session became an easy run and then the easy runs were funded from
        * a total that already pretended they existed.
        */
-      if (kind !== "easy_run") spent += s.km ?? 0;
+      /*
+       * Compromised running is not running volume.
+       *
+       * The kilometres inside a Hyrox session are broken into four-hundred-metre
+       * pieces, run off a sled, and — where the athlete attends a class — not even
+       * knowable. Counting them in the week's running made the ledger fiction and
+       * made the easy runs short: the plan believed it had already written volume it
+       * had not. They are load, and they are stated on the session; they are not
+       * kilometres the aerobic ledger gets to spend.
+       *
+       * Easy runs are excluded here for a different reason: they are sized from what
+       * is left, so counting their placeholder share would fund them from a budget
+       * that already pretended they existed.
+       */
+      if (kind !== "easy_run" && kind !== "hyrox" && kind !== "easy_hyrox") {
+        spent += s.km ?? 0;
+      }
     }
     const easies = sessions.filter((s) => String(s.kind) === "easy_run");
     /*
@@ -400,8 +419,38 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * curve still governs the ramp and the ceiling; it is no longer also a promise
      * nobody kept.
      */
+    /*
+     * The week's number is its running, and only its running.
+     *
+     * A Hyrox session states the running inside it and does not count toward the
+     * week: "60 km" has to mean sixty kilometres of running the athlete can plan
+     * around, not fifty-two plus whatever a class turned out to contain.
+     */
+    const RUNNING = ["quality_run", "easy_run", "long_run", "benchmark"];
     const prescribed = Math.round(
-      sessions.reduce((n, s) => n + (s.km ?? 0), 0) * 10) / 10;
+      sessions
+        .filter((x) => RUNNING.includes(String(x.kind)))
+        .reduce((n, x) => n + (x.km ?? 0), 0) * 10) / 10;
+
+    /*
+     * Why each session matters, written for the session rather than inherited from
+     * whatever flag the pace prescription carried. Only the plan's own sessions: a
+     * class the athlete already attends is theirs, and the plan has nothing to teach
+     * them about it.
+     */
+    const DAY_NAME = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const hardDays = sessions
+      .filter((x) => !x.commitment && (x.hard || String(x.kind) === "quality_run"))
+      .map((x) => DAY_NAME[x.day] ?? "");
+    for (const s of sessions) {
+      if (s.commitment) continue;
+      const why = whyFor({
+        kind: String(s.kind), phase: w.phase, week: w.n, weeks: p.length,
+        hardDays, day: DAY_NAME[s.day] ?? "",
+        easyCeilingHr: p.max_hr ? Math.round(p.max_hr * 0.76) : null,
+      });
+      if (why) s.why_text = why;
+    }
 
     return {
       ...w, allocation, benchmark: benchmarks.has(w.n), sessions,
