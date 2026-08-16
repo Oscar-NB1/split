@@ -17,6 +17,7 @@ const base = (o: Partial<Intake> = {}): Intake => ({
   sessionPref: "Write me the session", hyroxExp: "Weekly",
   runDelta: "They are a bit faster", stationDelta: "I am a bit stronger",
   gymAccess: "Open floor, any time",
+  pastRaces: [],
   days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
   commitments: [], freq: {}, commitDay: {},
   equipment: ["Sled — race weight", "SkiErg", "Rower", "Wall balls", "Treadmill"],

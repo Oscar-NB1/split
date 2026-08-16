@@ -143,6 +143,17 @@ export type Intake = {
   stationDelta: string | null;
   /** how freely the kit can be used, which gates compromised running */
   gymAccess: string | null;
+  /**
+   * Races already run, typed in.
+   *
+   * Kept as answers rather than normalised: they are what the athlete told us,
+   * and the race planner reads the most recent one for its roxzone — the one
+   * number nothing in training measures.
+   */
+  pastRaces: {
+    event: string; division: string | null; finish: string;
+    run_avg: string; stations: string; rox: string;
+  }[];
   /** where those two came from — "strava" halves the unmeasured haircut */
   volumeSource: "strava" | "self" | null;
   days: Day[];

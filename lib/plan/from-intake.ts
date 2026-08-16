@@ -92,12 +92,12 @@ export type Extra = {
    *  turns confidence to measured */
   measured: boolean;
   /**
-   * Official Hyrox results on file.
+   * Races with a result behind them.
    *
-   * Read from the imported results rather than asked for. The intake used to
-   * have a past-race step and it was dropped, which left the advanced and elite
-   * Hyrox tiers unreachable — both need a race behind them, and nothing was
-   * collecting one. The app already holds real results, so it counts those.
+   * From the imported official results where they exist, and otherwise from the
+   * intake's own past-race step. Both are real races; one is scraped and one is
+   * typed, and the count is the same either way. Without it the advanced and
+   * elite Hyrox tiers are unreachable, because both require a race.
    */
   hyrox_races?: number;
 };

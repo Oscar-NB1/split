@@ -4,18 +4,19 @@ import IntakeConnect from "./IntakeConnect";
 import IntakeKm from "./IntakeKm";
 import IntakeGoal from "./IntakeGoal";
 import IntakeStart from "./IntakeStart";
+import IntakeRaces, { type PastRace } from "./IntakeRaces";
 import { filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
 /**
- * The past-race lookup is deliberately not here.
+ * Nothing is filtered out any more.
  *
- * It would read official Hyrox results — the most useful data in the form, and
- * the only source of a real roxzone — but there is no sanctioned way to query
- * them, and a screen that asks for an event name and then guesses at splits is
- * worse than not asking. Dropped on instruction rather than left pending.
+ * pastRaces was dropped when it looked like a lookup against official results,
+ * which there is no sanctioned way to query. Typed in by hand it is a different
+ * proposition entirely — and it is the only source of a roxzone anywhere in the
+ * app, so leaving it out cost the race planner its one real number.
  */
-const PENDING = new Set(["pastRaces"]);
+const PENDING = new Set<string>();
 
 const TEAL = "var(--teal)", LIME = "var(--lime)", NAVY = "var(--navy)";
 const INK = "var(--ink)", INK40 = "var(--ink-40)", INK55 = "var(--ink-55)", INK70 = "var(--ink-70)";
@@ -62,6 +63,7 @@ type Answers = {
   allowDoubles: string | null; wantRestDay: string | null; sessionPref: string | null;
   runDelta: string | null; stationDelta: string | null;
   goal: string | null; goalMin: number; startDate: string | null;
+  pastRaces: PastRace[];
 };
 
 const EMPTY: Answers = {
@@ -75,7 +77,7 @@ const EMPTY: Answers = {
   volumeSource: null,
   hyroxExp: null, targetSessions: "", allowDoubles: null, wantRestDay: null,
   sessionPref: null, runDelta: null, stationDelta: null,
-  goal: null, goalMin: 60, startDate: null,
+  goal: null, goalMin: 60, startDate: null, pastRaces: [],
 };
 
 /** The questions, in order, with the copy from the design. */
@@ -604,6 +606,11 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
       {q.kind === "goal" && (
         <IntakeGoal goal={a.goal} minutes={a.goalMin}
           onGoal={(g) => set("goal", g)} onMinutes={(m) => set("goalMin", m)} />
+      )}
+
+      {q.kind === "races" && (
+        <IntakeRaces races={a.pastRaces} onChange={(r) => set("pastRaces", r)}
+          skipLabel={s.skip ?? ""} onSkip={() => setStep(step + 1)} />
       )}
 
       {q.kind === "start" && (

@@ -31,6 +31,7 @@ const HER: Intake = {
   goal: null, goalMin: null, startDate: null, targetSessions: null,
   allowDoubles: null, wantRestDay: null, sessionPref: null, hyroxExp: null,
   runDelta: null, stationDelta: null, gymAccess: null,
+  pastRaces: [],
   days: ["Tue", "Wed", "Thu", "Fri", "Sat"],
   commitments: ["Spin class"],
   freq: { "Spin class": 1 },

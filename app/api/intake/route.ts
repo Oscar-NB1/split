@@ -176,6 +176,25 @@ function parse(body: Record<string, unknown>): Intake {
     runDelta: str(body.runDelta),
     stationDelta: str(body.stationDelta),
     gymAccess: str(body.gymAccess),
+    /*
+     * Times are validated, not trusted. A race result reaches the capability
+     * hierarchy, so a mistyped roxzone would move every pace in the plan — the
+     * row is dropped rather than half-read.
+     */
+    pastRaces: (Array.isArray(body.pastRaces) ? body.pastRaces : [])
+      .map((r: Record<string, unknown>) => ({
+        event: String(r.event ?? "").trim().slice(0, 120),
+        division: str(r.division),
+        finish: String(r.finish ?? "").trim(),
+        run_avg: String(r.run_avg ?? "").trim(),
+        stations: String(r.stations ?? "").trim(),
+        rox: String(r.rox ?? "").trim(),
+      }))
+      .filter((r: Intake["pastRaces"][number]) =>
+        r.event.length > 1
+        && [r.finish, r.run_avg, r.stations, r.rox]
+          .every((t) => /^\d{1,2}:[0-5]\d(:[0-5]\d)?$/.test(t)))
+      .slice(0, 10),
     days: list(body.days, DAYS),
     commitments,
     freq,
@@ -340,6 +359,9 @@ export const POST = route(async (req: NextRequest) => {
 const EXTRA_KEYS = [
   "goal", "goalMin", "startDate", "targetSessions", "allowDoubles",
   "wantRestDay", "sessionPref", "hyroxExp", "runDelta", "stationDelta", "gymAccess",
+  // Typed-in race results. The only source of a roxzone in the whole app, so
+  // they travel with the answers rather than being derived from anything.
+  "pastRaces",
 ] as const;
 
 const extraOf = (i: Intake) =>
