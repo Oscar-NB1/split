@@ -1,20 +1,26 @@
 import type { PhaseName } from "./skeleton";
 
 /**
- * What to lift, and how much of it.
+ * The strength session: what a Hyrox actually costs the body, lifted.
  *
- * Strength sessions were being written with a name, a duration and nothing else, so
- * the screen said "no lifts prescribed for this one" above a session the plan had
- * put in the week and told the athlete to protect. A strength day with no lifts is
- * not a strength day.
+ * It used to prescribe wall balls and sandbag lunges, which are not strength work —
+ * they are stations. Doing them here spends the one session a week that can make an
+ * athlete stronger on rehearsing movements the Hyrox session already rehearses, and
+ * leaves the thing that limits the sled, the lunge and the carry untrained.
  *
- * The lifts are chosen for what a Hyrox costs the body — hinge, squat, carry, push,
- * pull — and written in the format the app already parses ("Trap bar deadlift 3x5 @
- * 105"), so the set logger fills itself in.
+ * What a Hyrox demands of the gym, in order:
  *
- * Loads are relative and unstated where nothing has been measured. A prescribed
- * number nobody has earned is worse than an instruction to work to a hard set: the
- * athlete would either chase it or ignore it, and both are worse than the truth.
+ *   double-leg strength   the sled push and pull are a squat pattern under load
+ *   single-leg strength   200 m of lunges is the most common place a race falls
+ *                         apart, and it is trained one leg at a time
+ *   posterior chain       everything heavy is a hinge
+ *   grip                  the farmers carry, the sled pull and the sandbag all end
+ *                         when the hands do
+ *   push and pull         the ski and the row, and enough upper body to hold a
+ *                         position for sixty minutes
+ *
+ * Loads are relative and unstated. A prescribed number nobody has earned is worse
+ * than an instruction to work to a hard set.
  */
 
 export type Lift = { name: string; sets: number; reps: number; note?: string };
@@ -23,10 +29,8 @@ export type Lift = { name: string; sets: number; reps: number; note?: string };
 export type Kit = {
   barbell: boolean;
   kettlebells: boolean;
-  sled: boolean;
   rig: boolean;
-  sandbag: boolean;
-  wallBalls: boolean;
+  sled: boolean;
 };
 
 export function kitFrom(equipment: string[] = []): Kit {
@@ -34,58 +38,83 @@ export function kitFrom(equipment: string[] = []): Kit {
   return {
     barbell: has("barbell"),
     kettlebells: has("kettlebell"),
-    sled: has("sled"),
     rig: has("rig") || has("pull-up"),
-    sandbag: has("sandbag"),
-    wallBalls: has("wall ball"),
+    sled: has("sled"),
   };
 }
 
 /**
  * The scheme, by phase.
  *
- * Base builds the capacity to lift at all; build takes it heavy; specific stops
- * chasing load and starts rehearsing the positions the race asks for; the taper
- * keeps the pattern and drops the volume.
+ * Base builds the capacity to lift at all; build takes it heavy, because that is
+ * where strength is actually made; specific stops chasing load and holds it while
+ * the running turns race-shaped; the taper keeps the pattern and drops the work.
  */
 const SCHEME: Record<PhaseName, { sets: number; reps: number; note: string }> = {
-  base: { sets: 3, reps: 8, note: "Leave two in the tank on every set." },
-  build: { sets: 4, reps: 5, note: "Heaviest set of the week, and it should feel like it." },
-  specific: { sets: 3, reps: 6, note: "Race positions under load. Speed of the bar matters more than the number on it." },
+  base: { sets: 3, reps: 8, note: "Leave two in the tank on every set. The point of these weeks is to be able to lift, not to prove you can." },
+  build: { sets: 4, reps: 5, note: "Heaviest sets of the block. This is the phase that makes you stronger — everything after it maintains." },
+  specific: { sets: 3, reps: 6, note: "Hold the load, drop the volume. Nothing here should cost you Sunday." },
   taper: { sets: 2, reps: 5, note: "Keep the pattern, drop the work. Nothing to prove this week." },
 };
 
 /**
- * A session's lifts.
+ * One session's lifts.
  *
- * Two of them alternate week to week so the block is not the same three exercises
- * for fifteen weeks — the A day leads with the hinge, the B day with the squat.
+ * Two days alternate so the block is not the same four exercises for fifteen weeks:
+ * the A day leads with a hinge and pulls, the B day with a squat and presses. Both
+ * carry single-leg work and grip, because both are what the race takes.
  */
 export function liftsFor(phase: PhaseName, week: number, kit: Kit): Lift[] {
   const s = SCHEME[phase] ?? SCHEME.base;
   const a = week % 2 === 1;
 
-  const main: Lift = kit.barbell
-    ? a
-      ? { name: "Trap bar deadlift", sets: s.sets, reps: s.reps }
-      : { name: "Back squat", sets: s.sets, reps: s.reps }
+  const hinge: Lift = kit.barbell
+    ? { name: a ? "Trap bar deadlift" : "Romanian deadlift", sets: s.sets, reps: s.reps }
     : kit.kettlebells
-      ? a
-        ? { name: "Kettlebell deadlift", sets: s.sets, reps: s.reps + 2 }
-        : { name: "Goblet squat", sets: s.sets, reps: s.reps + 2 }
-      : a
-        ? { name: "Split squat", sets: s.sets, reps: s.reps + 4 }
-        : { name: "Step-up", sets: s.sets, reps: s.reps + 4 };
+      ? { name: a ? "Kettlebell deadlift" : "Single-leg RDL", sets: s.sets, reps: s.reps + 2 }
+      : { name: "Single-leg hip thrust", sets: 3, reps: 12 };
 
-  const carry: Lift = kit.sandbag
-    ? { name: "Sandbag lunge", sets: 3, reps: 20, note: "Metres, not reps — 20 m a set." }
+  const squat: Lift = kit.barbell
+    ? { name: a ? "Front squat" : "Back squat", sets: s.sets, reps: s.reps }
     : kit.kettlebells
-      ? { name: "Farmers carry", sets: 3, reps: 40, note: "Metres, not reps — 40 m a set." }
-      : { name: "Suitcase carry", sets: 3, reps: 40, note: "Metres, not reps — 40 m a set." };
+      ? { name: "Goblet squat", sets: s.sets, reps: s.reps + 2 }
+      : { name: "Tempo squat", sets: 3, reps: 15, note: "Three seconds down, no pause, stand up fast." };
 
-  const push: Lift = kit.barbell
+  /*
+   * The single-leg lift is not optional.
+   *
+   * Two hundred metres of lunges is where a Hyrox most often comes apart, and it is
+   * not trained by squatting: the demand is one leg at a time, under load, for
+   * longer than feels reasonable.
+   */
+  const singleLeg: Lift = kit.barbell || kit.kettlebells
+    ? {
+      name: a ? "Rear-foot elevated split squat" : "Weighted step-up",
+      sets: 3, reps: 8, note: "Each leg. Slow down, drive up.",
+    }
+    : { name: "Reverse lunge", sets: 3, reps: 12, note: "Each leg." };
+
+  /*
+   * Grip, deliberately last and deliberately heavy.
+   *
+   * The farmers carry, the sled pull and the sandbag all end when the hands do, and
+   * grip is the one quality nobody trains until it costs them a race.
+   */
+  const grip: Lift = kit.kettlebells
+    ? {
+      name: a ? "Farmers carry" : "Suitcase carry",
+      sets: 4, reps: 40,
+      note: "Metres, not reps — 40 m a set, as heavy as you can hold without setting it down.",
+    }
+    : kit.rig
+      ? { name: "Dead hang", sets: 4, reps: 30, note: "Seconds, not reps. Stop before the grip fails." }
+      : { name: "Towel hang or heavy hold", sets: 4, reps: 30, note: "Seconds, not reps." };
+
+  const press: Lift = kit.barbell
     ? { name: "Overhead press", sets: 3, reps: 8 }
-    : { name: "Press-up", sets: 3, reps: 12 };
+    : kit.kettlebells
+      ? { name: "Kettlebell push press", sets: 3, reps: 8, note: "Each arm." }
+      : { name: "Press-up", sets: 3, reps: 12 };
 
   const pull: Lift = kit.rig
     ? { name: "Pull-up", sets: 3, reps: 6 }
@@ -93,12 +122,11 @@ export function liftsFor(phase: PhaseName, week: number, kit: Kit): Lift[] {
       ? { name: "Bent-over row", sets: 3, reps: 10 }
       : { name: "Inverted row", sets: 3, reps: 10 };
 
-  // The wall ball is a station, not a lift, and it belongs where it is trained.
-  const accessory: Lift = kit.wallBalls
-    ? { name: "Wall balls", sets: 3, reps: 15 }
-    : { name: "Hip thrust", sets: 3, reps: 12 };
-
-  return a ? [main, carry, pull, accessory] : [main, push, carry, accessory];
+  // Four movements and grip: any more and it stops being a session anyone finishes
+  // on a day that also holds a run.
+  return a
+    ? [hinge, singleLeg, pull, grip]
+    : [squat, singleLeg, press, grip];
 }
 
 /** The lifts as the app's strength syntax, one per line. */

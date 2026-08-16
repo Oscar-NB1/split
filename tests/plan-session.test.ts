@@ -95,3 +95,33 @@ test("the phase decides the scheme, not the exercise list", () => {
   assert.ok(base.reps > build.reps, `${base.reps} vs ${build.reps}`);
   assert.ok(taper.sets < build.sets, `${taper.sets} vs ${build.sets}`);
 });
+
+test("the strength session lifts, and leaves the stations to the Hyrox session", () => {
+  /*
+   * It used to prescribe wall balls and sandbag lunges — stations, not strength.
+   * That spends the one session a week that can make an athlete stronger on
+   * movements the Hyrox session already rehearses, and leaves the thing that limits
+   * the sled, the lunge and the carry untrained.
+   */
+  const kit = kitFrom(["Barbell", "Kettlebells", "Rig or pull-up bar"]);
+  for (const phase of ["base", "build", "specific", "taper"] as const) {
+    for (const week of [1, 2]) {
+      const lifts = parseStrength(strengthTarget(phase, week, kit));
+      const names = lifts.map((l) => l.name.toLowerCase()).join(" | ");
+      assert.ok(!/wall ball|sandbag/.test(names), `${phase} w${week}: ${names}`);
+      // Every session: something heavy on two legs or a hinge, something on one
+      // leg, and grip. Those are what a Hyrox takes out of the gym.
+      assert.match(names, /squat|deadlift/, names);
+      assert.match(names, /split squat|step-up|lunge/, names);
+      assert.match(names, /carry|hang|hold/, names);
+    }
+  }
+});
+
+test("no kit still produces a session anyone can do", () => {
+  const lifts = parseStrength(strengthTarget("build", 1, kitFrom([])));
+  assert.ok(lifts.length >= 4);
+  const names = lifts.map((l) => l.name.toLowerCase()).join(" | ");
+  assert.ok(!/barbell|kettlebell|pull-up/.test(names), names);
+  assert.match(names, /lunge|squat/, names);
+});
