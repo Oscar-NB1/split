@@ -438,7 +438,37 @@ test("the plan carries its state and its benchmark configuration", () => {
   assert.equal(p.benchmark.variant, "full");
   assert.equal(p.benchmark.submaximal, false);
   assert.equal(p.benchmark.protocol_version, 1, "a result is only comparable within its protocol");
-  assert.deepEqual(p.benchmark.retests, [5, 9]);
+  // No retest schedule: removed on instruction, twice. A test costs a week of
+  // training and nobody asked for two more of them in the calendar.
+  assert.deepEqual(p.benchmark.retests, []);
+});
+
+test("the plan state says where the numbers came from, not what was declined", () => {
+  /*
+   * Everyone who had not been benchmarked was "estimated" — including an athlete
+   * who had given a real 5 km time — and the screen then told them their paces
+   * were guesses and offered them a test they had already refused.
+   */
+  const withTime = { ...HER, paceUnknown: false, paceMin: 21, paceSec: 30 };
+  assert.equal(generate({ ...withTime, benchmark: "skipped" }).plan_state, "from_time");
+  assert.equal(generate({ ...withTime, benchmark: "offered" }).plan_state, "from_time");
+  assert.equal(generate({ ...withTime, benchmark: "scheduled" }).plan_state, "awaiting");
+  assert.equal(generate({ ...withTime, benchmark: "logged" }).plan_state, "measured");
+
+  const noTime = { ...HER, paceUnknown: true };
+  assert.equal(generate({ ...noTime, benchmark: "skipped" }).plan_state, "described");
+});
+
+test("a target time the athlete typed in is the goal", () => {
+  // The projection is for running races — a Hyrox time cannot be read off a 5 km —
+  // but a number they typed is not a projection, and it was being discarded. The
+  // plan screen then said "no target time set yet" under a plan built to hit one.
+  const p = generate({ ...HER, goal: "Target a time", goalMin: 58 });
+  assert.equal(p.goal_seconds, 58 * 60);
+  assert.equal(p.goal_label, "58:00");
+
+  const vague = generate({ ...HER, goal: "Just finish it", goalMin: 58 });
+  assert.equal(vague.goal_seconds, null, "no number claimed where none was asked for");
 });
 
 test("the week template puts the long run last and the key session first", () => {

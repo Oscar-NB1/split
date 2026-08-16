@@ -10,7 +10,11 @@ import type { SlotKind } from "./slots";
  * correcting, because a plan quietly repaired is a plan nobody can explain.
  */
 
-export type PlanWeek = Week & { sessions: { kind: SlotKind | string; km?: number; hard: boolean }[] };
+export type PlanWeek = Week & {
+  sessions: { kind: SlotKind | string; km?: number; hard: boolean }[];
+  /** below 1 where time away cut the week; 1 or absent otherwise */
+  volumeFactor?: number;
+};
 
 export type Violation = { assertion: string; week?: number; detail: string };
 
@@ -23,7 +27,19 @@ export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
 
   const loading = weeks.filter((w) => !w.deload && !w.taper);
   for (let i = 1; i < loading.length; i++) {
-    const rise = loading[i].km / loading[i - 1].km - 1;
+    /*
+     * Against the plan's own trajectory, not against a week that was cut.
+     *
+     * A week reduced for time away is followed by a return to the planned curve,
+     * which is not a ramp — but it read as one, the plan failed its own assertion,
+     * and the whole block was softened by 10% because of a two-day trip in week 1.
+     * The comparison uses what the previous week would have been.
+     */
+    const prev = loading[i - 1];
+    const base = prev.volumeFactor && prev.volumeFactor < 1
+      ? prev.km / prev.volumeFactor
+      : prev.km;
+    const rise = loading[i].km / base - 1;
     if (rise > r.ramp_rate + 0.02) {
       out.push({
         assertion: "week-on-week increase", week: loading[i].n,

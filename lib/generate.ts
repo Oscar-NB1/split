@@ -96,7 +96,19 @@ export type Resolved = {
   offerSuppressed: boolean;
   measured: boolean;
   estimated: boolean;
-  planState: "estimated" | "awaiting" | "measured";
+  /**
+   * Where the paces in this plan come from.
+   *
+   * `measured` — a benchmark result is on file. `awaiting` — one is scheduled and
+   * the numbers will be rebuilt from it. `from_time` — no benchmark, but the
+   * athlete gave a 5 km time, and every pace is derived from that. `described` —
+   * no times at all, so the targets are efforts and heart-rate zones.
+   *
+   * A declined benchmark is not a state of the plan. It used to be: everyone who
+   * had not been measured was "estimated", including athletes who had given a real
+   * 5 km time, and the screen then told them their paces were guesses.
+   */
+  planState: "described" | "from_time" | "awaiting" | "measured";
   corrections: Correction[];
   phaseSplit: number[];
 };
@@ -177,9 +189,18 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
   // A goal only exists where the numbers support one. Hyrox comes from station
   // capability, not a 5 km time — so it has none until the baseline lands.
   const riegel = (m: number) => Math.round(fiveK * Math.pow(m / 5000, 1.06));
-  const goalSeconds = !paceKnown ? null
+  /*
+   * A time the athlete typed in is the goal.
+   *
+   * The projection below only applies to running races — a Hyrox time cannot be
+   * read off a 5 km — but "target a time" with a number beside it is not a
+   * projection, it is what they are training for. It was being discarded, and the
+   * plan screen then said "no target time set yet" under a plan built to hit one.
+   */
+  const asked = x.goal === "Target a time" && x.goalMin ? Math.round(x.goalMin * 60) : null;
+  const goalSeconds = asked ?? (!paceKnown ? null
     : isHyrox(x.discipline) ? null
-    : riegel(RACE_M[x.raceDistance ?? "Half marathon"] ?? 21097);
+    : riegel(RACE_M[x.raceDistance ?? "Half marathon"] ?? 21097));
 
   const corrections: Correction[] = [];
   /*
@@ -242,7 +263,10 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
     baseRamp, runRamp, ramp, deloadEvery, alloc,
     paceKnown, fiveK, goalSeconds,
     gate, variant, offerSuppressed, measured, estimated,
-    planState: measured ? "measured" : x.benchmark === "scheduled" ? "awaiting" : "estimated",
+    planState: measured ? "measured"
+      : x.benchmark === "scheduled" ? "awaiting"
+      : paceKnown ? "from_time"
+      : "described",
     corrections, phaseSplit: phaseSplit(weeks),
   };
 }
@@ -656,7 +680,14 @@ export function generate(x: Intake, from: string = todayish()): GeneratedPlan {
     plan_state: r.planState,
     benchmark: {
       variant: r.variant, submaximal: r.variant === "submax",
-      protocol_version: 1, scheduled: x.benchmark === "scheduled", retests: [5, 9],
+      protocol_version: 1, scheduled: x.benchmark === "scheduled",
+      /*
+       * No retest schedule. It was never asked for and it was never a decision:
+       * a test is a hard session that costs a week, and putting two more in the
+       * calendar spends that twice for a number nobody asked to know. An athlete
+       * who wants to retest logs one and the plan reads it the same way.
+       */
+      retests: [],
     },
     guardrails: [
       x.role ? `${x.role} partner` : x.discipline,

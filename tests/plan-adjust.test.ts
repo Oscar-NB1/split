@@ -7,6 +7,7 @@ import {
 import type { Absence } from "../lib/plan/intake-rules";
 import { resolve, type ResolveInput } from "../lib/plan/resolve";
 import { skeleton } from "../lib/plan/skeleton";
+import { validate } from "../lib/plan/validate";
 import { addDays } from "../lib/dates";
 
 // ------------------------------------------------------------- commitments
@@ -76,14 +77,43 @@ const weekStart = (n: number) => addDays(START, (n - 1) * 7);
 const away = (from: string, to: string, type: Absence["type"] = "no_training"): Absence =>
   ({ from_date: from, to_date: to, type });
 
-test("no training cuts the week to 35% and takes the down week with it", () => {
+test("a whole week away cuts it to 35% and takes the down week with it", () => {
   const r = resolve(base());
   const { weeks } = skeleton(r, 12);
-  const before = weeks[4].km;
+  const before = new Map(weeks.map((w) => [w.n, { km: w.km, deload: w.deload }]));
   const out = applyAbsences(weeks, [away("2026-09-14", "2026-09-20")], weekStart);
-  const hit = out.weeks.find((w) => w.reason?.startsWith("Away"))!;
-  assert.ok(hit.km < before * 0.5, `${hit.km} from ${before}`);
+  const hit = out.weeks.find((w) => /days? away/.test(w.reason ?? ""))!;
+  assert.ok(hit.km < before.get(hit.n)!.km * 0.5, `${hit.km} from ${before.get(hit.n)!.km}`);
   assert.equal(hit.deload, true, "the down week snaps onto the trip");
+  assert.match(hit.reason!, /7 days away/);
+});
+
+test("a long weekend is not a week away", () => {
+  /*
+   * The cut used to be a flat factor per overlapping week, so two days away took
+   * 40% off all seven — fifteen kilometres for a long weekend, with five normal
+   * days either side of it. It is proportional to the days actually away now, and
+   * it does not spend the down week on a trip that short.
+   */
+  const r = resolve(base());
+  const { weeks } = skeleton(r, 12);
+  const before = new Map(weeks.map((w) => [w.n, { km: w.km, deload: w.deload }]));
+  const out = applyAbsences(weeks, [away("2026-09-17", "2026-09-18", "some_access")], weekStart);
+  const hit = out.weeks.find((w) => /days? away/.test(w.reason ?? ""))!;
+  const was = before.get(hit.n)!;
+  assert.ok(hit.km > was.km * 0.85, `${hit.km} from ${was.km}`);
+  assert.ok(hit.km < was.km, "still lighter than a normal week");
+  assert.equal(hit.deload, was.deload, "and no down week moved onto it");
+  assert.match(hit.reason!, /2 days away/);
+});
+
+test("a trip in week 1 does not also spend the down week", () => {
+  // There is nothing to recover from in week 1, and the cut is already there.
+  const r = resolve(base());
+  const { weeks } = skeleton(r, 12);
+  const out = applyAbsences(weeks, [away(weekStart(1), addDays(weekStart(1), 6))], weekStart);
+  assert.equal(out.weeks[0].deload, false);
+  assert.ok(out.weeks[0].km < weeks[0].km);
 });
 
 test("training as normal changes nothing and does not spend a down week", () => {
@@ -174,4 +204,24 @@ test("role biases which stations get attention, not how many", () => {
   // the allocation decides how much station work there is; doing it here too
   // would compound
   assert.ok(ROLE_BIAS.balanced.length > ROLE_BIAS.protected.length);
+});
+
+test("a week cut for a trip is not a ramp violation the week after", () => {
+  /*
+   * The week after a trip returns to the planned curve, which is not a rise — but
+   * it read as one, the plan failed its own week-on-week assertion, and generate()
+   * softened the entire block by 10% because of two days away in week 1.
+   */
+  const r = resolve(base());
+  const { weeks } = skeleton(r, 12);
+  const withSessions = (ws: typeof weeks) =>
+    ws.map((w) => ({ ...w, sessions: [{ kind: "easy_run", km: w.km, hard: false }] }));
+
+  const clean = validate(withSessions(weeks) as never, r);
+  const trip = applyAbsences(weeks, [away("2026-08-20", "2026-08-21", "some_access")], weekStart);
+  const after = validate(withSessions(trip.weeks) as never, r);
+
+  assert.deepEqual(after.filter((v) => v.assertion === "week-on-week increase"),
+    clean.filter((v) => v.assertion === "week-on-week increase"),
+    "the trip introduces no new ramp violations");
 });

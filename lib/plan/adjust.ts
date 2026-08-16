@@ -1,4 +1,5 @@
 import { ABSENCE_EFFECT, needsReEntry, type Absence } from "./intake-rules";
+import { addDays } from "../dates";
 import type { Role } from "./allocate";
 import type { PhaseName, Week } from "./skeleton";
 
@@ -118,6 +119,16 @@ export type AdjustedWeek = Week & { volumeFactor: number; reason?: string };
 const overlaps = (a: Absence, from: string, to: string) =>
   a.from_date <= to && a.to_date >= from;
 
+/** How many days of this week the athlete is away for, 1 to 7. */
+function daysInWeek(a: Absence, weekFrom: string): number {
+  const day = 86_400_000;
+  const ws = Date.parse(`${weekFrom}T00:00:00Z`);
+  const we = ws + 6 * day;
+  const from = Math.max(ws, Date.parse(`${a.from_date}T00:00:00Z`));
+  const to = Math.min(we, Date.parse(`${a.to_date}T00:00:00Z`));
+  return Math.max(1, Math.min(7, Math.round((to - from) / day) + 1));
+}
+
 /**
  * Apply time away.
  *
@@ -139,16 +150,43 @@ export function applyAbsences(
 
     for (const w of out) {
       const from = weekStart(w.n);
-      const to = weekStart(w.n + 1);
+      /*
+       * The week's last day, not the next week's first.
+       *
+       * `weekStart(n + 1)` made every week eight days long for the purposes of
+       * this test, so a trip starting on a Monday also cut the week before it —
+       * invisible while the cut was a flat factor and obvious the moment it was
+       * counted in days ("1 day away" against a week the athlete was home for).
+       */
+      const to = addDays(from, 6);
       if (!overlaps(a, from, to)) continue;
       last = w.n;
 
       if (effect.volume < 1) {
-        w.km = Math.max(3, Math.round(w.km * effect.volume * 10) / 10);
-        w.volumeFactor = effect.volume;
-        w.reason = a.type === "no_training" ? "Away — nothing scheduled" : "Away — limited access";
-        // the down week moves onto the trip rather than being spent beside it
-        if (effect.consumesDeload) w.deload = true;
+        /*
+         * The cut is proportional to the days actually away.
+         *
+         * A flat factor per overlapping week meant two days away cut the whole
+         * week to 60% — fifteen kilometres for a long weekend, with five normal
+         * days either side of it. The days away are worth what the access allows
+         * and the rest of the week is worth what it was: a full week away still
+         * lands on the old factor, which is the case it was written for.
+         */
+        const away = daysInWeek(a, from);
+        const factor = Math.round(((7 - away) + away * effect.volume) / 7 * 100) / 100;
+        w.km = Math.max(3, Math.round(w.km * factor * 10) / 10);
+        w.volumeFactor = factor;
+        const days = `${away} day${away === 1 ? "" : "s"} away`;
+        w.reason = a.type === "no_training"
+          ? `${days} — nothing scheduled on them`
+          : `${days} — limited access`;
+        /*
+         * The down week moves onto the trip rather than being spent beside it —
+         * unless the trip is in week 1, where there is nothing to recover from
+         * yet and it would only compound the cut. A deload also has to be worth
+         * moving: half a week away is not a down week.
+         */
+        if (effect.consumesDeload && w.n > 1 && factor <= 0.8) w.deload = true;
       } else {
         // training as normal does not consume a down week: they have not had one
         w.reason = "Away, training as normal";

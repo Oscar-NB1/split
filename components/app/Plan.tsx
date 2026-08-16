@@ -55,15 +55,26 @@ export default function Plan({
   const done = WEEKS.filter((w) => w.start < thisMonday).length;
   const totalKm = WEEKS.reduce((n, w) => n + w.km, 0);
   const left = daysToRace(block, now);
-  /** What explains cautious numbers without a notification. */
-  const state = !block?.plan_state ? null : {
-    estimated: { label: "Estimated", bg: OFF, fg: INK55,
-      why: "Volume is real; the paces are estimated. A benchmark turns them into numbers." },
+  /**
+   * Where the numbers in this plan came from.
+   *
+   * Not what the athlete declined. A benchmark is only mentioned where one is
+   * scheduled or has been run — everyone else was being told their paces were
+   * estimates and offered a test they had already said no to.
+   */
+  const state = !block?.plan_state ? null : ({
+    described: { label: "From your answers", bg: OFF, fg: INK55,
+      why: "No times on file yet, so targets are efforts and heart-rate zones rather than paces." },
+    from_time: { label: "From your 5 km", bg: "var(--teal-tint2)", fg: TEAL,
+      why: "Every pace here is built from the 5 km time you gave, and the volume from the weeks you have actually run." },
     awaiting: { label: "Awaiting baseline", bg: "var(--teal-tint2)", fg: TEAL,
       why: "The benchmark is session 1; the numbers rebuild from it." },
     measured: { label: "Measured", bg: "var(--lime)", fg: "var(--on-lime)",
       why: "Paces, limiter and roxzone come from real numbers." },
-  }[block.plan_state];
+    // Plans written before the states meant this. Nothing new is stored as it.
+    estimated: { label: "From your answers", bg: OFF, fg: INK55,
+      why: "Built from the answers you gave: the volume from weeks you have run, the paces from the time you gave." },
+  } as Record<string, { label: string; bg: string; fg: string; why: string }>)[block.plan_state];
   const current = weekOf(block, thisMonday);
 
   return (
@@ -103,7 +114,10 @@ export default function Plan({
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
               <span style={{ fontFamily: "var(--display)", fontSize: 21, fontWeight: 700,
                 lineHeight: 1.15, letterSpacing: "-.02em" }}>
-                {block.name} · {WEEKS.length} weeks
+                {/* The name already ends in "· 15 weeks"; appending the count
+                    again produced "Hyrox doubles · 15 weeks · 15 weeks". */}
+                {/\d+\s*weeks/.test(block.name)
+                  ? block.name : `${block.name} · ${WEEKS.length} weeks`}
               </span>
               {block.race_name && (
                 <span style={{ fontSize: 12, fontWeight: 600, color: TEAL }}>{block.race_name}</span>
@@ -144,7 +158,7 @@ export default function Plan({
                 <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
                   textTransform: "uppercase", color: INK55 }}>Total distance</div>
                 <div style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700 }}>
-                  {totalKm} km
+                  {Math.round(totalKm)} km
                 </div>
               </div>
             </div>

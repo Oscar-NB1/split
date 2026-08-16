@@ -188,6 +188,14 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     return {
       ...w, allocation, benchmark: benchmarks.has(w.n), sessions,
       km: w.km,
+      /*
+       * Why this week is what it is, in one phrase.
+       *
+       * The reason from the absence stage was being dropped and the week carried
+       * "Down week" instead — true, and not the answer to "why is my first week
+       * 22.8 km". The trip is the reason; the down week is a consequence of it.
+       */
+      note: w.reason ?? w.note,
     };
   });
 

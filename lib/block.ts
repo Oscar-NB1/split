@@ -56,13 +56,12 @@ export type Block = {
   /**
    * How much of this plan is measured rather than assumed.
    *
-   * `estimated` — built from the athlete's answers: the volume is real, the paces
-   * are derived rather than measured. `awaiting` — a benchmark is scheduled and
+   * `measured` — a benchmark is on file. `awaiting` — one is scheduled and
    * the numbers rebuild from its result. `measured` — paces, limiter and roxzone
    * come from real numbers. Surfaced permanently rather than as a notification,
    * because it is what explains cautious numbers without anyone having to ask.
    */
-  plan_state: "estimated" | "awaiting" | "measured" | null;
+  plan_state: "described" | "from_time" | "awaiting" | "measured" | "estimated" | null;
   benchmark: {
     variant?: string; submaximal?: boolean; protocol_version?: number;
     scheduled?: boolean; retests?: number[];
