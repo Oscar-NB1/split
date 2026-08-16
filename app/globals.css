@@ -63,10 +63,19 @@ a:hover{color:var(--teal-l)}
 
 /* ------------------------------------------------------------------ shell */
 .app{
-  height:100dvh; display:flex; flex-direction:column;
+  height:100dvh; box-sizing:border-box; display:flex; flex-direction:column;
   background:var(--off); max-width:520px; margin:0 auto;
   position:relative; overflow:hidden;
-  /* the notch cuts into the sides in landscape and on some devices upright */
+  /*
+   * The inset belongs here, not on .appbar.
+   *
+   * .appbar is Shell's header, and the screens that most need this do not use
+   * it — sign-in, sign-up and the intake render their own top chrome, so the
+   * status bar sat straight on top of a progress bar and a back arrow. Putting
+   * the padding on the shell covers every screen inside it, whatever header it
+   * happens to draw.
+   */
+  padding-top:env(safe-area-inset-top);
   padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right);
 }
 /*
@@ -79,7 +88,7 @@ a:hover{color:var(--teal-l)}
  * than decorative. Without it the app bar renders underneath them.
  */
 .appbar{
-  padding:calc(15px + env(safe-area-inset-top)) 20px 12px;
+  padding:15px 20px 12px;
   display:flex; align-items:center; justify-content:space-between;
   gap:12px; background:var(--paper); border-bottom:1px solid var(--line);
   flex:none;
