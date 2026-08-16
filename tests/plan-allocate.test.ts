@@ -277,3 +277,56 @@ test("'no rest day, but keep one easy' is not seven hard days", () => {
     p.kind === "easy_run" && !p.hard && byDay.get(p.day) === 1);
   assert.ok(soloEasy.length > 0, "at least one day is only an easy run");
 });
+
+test("two key sessions never share a day", () => {
+  /*
+   * A double day is one real session plus, at most, an easy run. Strength was
+   * being dropped onto the first day with room — routinely the day already holding
+   * the interval session — so a key session was done on tired legs and both were
+   * read afterwards as though they had been done properly.
+   */
+  const KEY = ["quality_run", "hyrox", "long_run", "strength", "benchmark", "race"];
+  const cases: { days: number[]; slots: string[] }[] = [
+    { days: [0, 1, 2, 3, 4, 5, 6],
+      slots: ["quality_run", "quality_run", "hyrox", "hyrox", "strength", "long_run", "easy_run"] },
+    { days: [0, 2, 4, 6], slots: ["quality_run", "strength", "long_run", "easy_run"] },
+    { days: [1, 3, 5], slots: ["quality_run", "hyrox", "strength", "long_run"] },
+    { days: [0, 1], slots: ["quality_run", "strength", "long_run"] },
+  ];
+
+  for (const c of cases) {
+    const out = placeWeek({
+      slots: c.slots as never, available_days: c.days, commitments: [],
+      training_age: "intermediate", rest_day: "none", allow_doubles: true,
+      long_run_day: c.days[c.days.length - 1],
+    });
+    const byDay = new Map<number, string[]>();
+    for (const p of out.week) {
+      byDay.set(p.day, [...(byDay.get(p.day) ?? []), String(p.kind)]);
+    }
+    for (const [day, kinds] of byDay) {
+      const keys = kinds.filter((k) => KEY.includes(k));
+      // The only case where two are allowed to land together is a week with more
+      // key sessions than days, and it says so out loud.
+      if (keys.length > 1) {
+        assert.ok(c.slots.filter((k) => KEY.includes(k)).length > c.days.length,
+          `day ${day}: ${kinds.join(" + ")} with ${c.days.length} days`);
+        assert.ok(out.flags.some((f) => /key session/.test(f)), out.flags.join(" | "));
+      }
+    }
+  }
+});
+
+test("an easy run is the one thing that may share a day", () => {
+  const out = placeWeek({
+    slots: ["quality_run", "long_run", "strength", "easy_run"],
+    available_days: [0, 2, 4], commitments: [],
+    training_age: "intermediate", rest_day: "none", allow_doubles: true,
+    long_run_day: 4,
+  });
+  const doubled = [0, 2, 4].filter((d) => out.week.filter((p) => p.day === d).length > 1);
+  for (const d of doubled) {
+    const kinds = out.week.filter((p) => p.day === d).map((p) => String(p.kind));
+    assert.ok(kinds.includes("easy_run"), `day ${d}: ${kinds.join(" + ")}`);
+  }
+});

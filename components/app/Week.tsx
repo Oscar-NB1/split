@@ -7,6 +7,10 @@ import { prescribedPace } from "@/lib/signals";
 import type { Session, User, WeekData } from "./Shell";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** Small numbers read better as words in a headline. */
+const COUNT: Record<number, string> = {
+  0: "No", 1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven",
+};
 const TEAL = "#0A8FB0", LIME = "#C6FF5B", NAVY = "#12314D";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
 const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
@@ -102,6 +106,75 @@ export default function Week({
   const isThisWeek = monday === thisMonday;
   const canBack = !first || addDays(monday, -7) >= first || addDays(monday, -7) >= thisMonday;
   const canForward = !last || addDays(monday, 7) <= last || addDays(monday, 7) <= thisMonday;
+
+  /*
+   * The three lines above the week.
+   *
+   * What it used to say: the phase key ("BASE"), the volume, and the week's own
+   * note ("Down week"). What an athlete opening the app wants first is which block
+   * this is, how far into it they are, and what this particular week asks of them —
+   * the hard days by name, and what everything else is doing there.
+   *
+   * "Two hard days" was hardcoded, as were Tuesday and Saturday; they are counted
+   * off the sessions now, so they are right for whatever week is on screen.
+   */
+  const lead = (() => {
+    const disciplineOf = (n: string) => n.split(" · ")[0];
+    const hardDays = [...new Set(all
+      .filter((s) => s.significance === "key" || s.significance === "hard"
+        || s.significance === "benchmark" || s.significance === "race")
+      .map((s) => s.planned_date))].sort();
+    const names = hardDays.map((d) => fmt(d, { weekday: "long" }));
+    const nHard = COUNT[names.length] ?? String(names.length);
+    const list = names.length === 0 ? ""
+      : names.length === 1 ? names[0]
+      : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+    if (!block) {
+      return {
+        eyebrow: "No block",
+        headline: "No block on your account.",
+        sub: "Anything you log still appears here, and still counts in the head-to-head.",
+      };
+    }
+    if (beforeBlock) {
+      return {
+        eyebrow: `${disciplineOf(block.name)} · starts ${fmt(block.start, { day: "numeric", month: "short" })}`,
+        headline: "The block starts Monday.",
+        sub: `${block.weeks.length} weeks to ${block.goal_label ?? block.race_name ?? "race day"}. Week 1 is ${(block.weeks[0]?.km ?? 0).toFixed(1)} km — bought with consistency, not intensity.`,
+      };
+    }
+    if (!week) {
+      return {
+        eyebrow: `${disciplineOf(block.name)} · outside the block`,
+        headline: "Nothing planned this week.",
+        sub: "The block covers a different set of weeks. Anything you log still counts.",
+      };
+    }
+
+    const race = all.some((s) => s.significance === "race");
+    const km = `${week.km.toFixed(1)} km`;
+    const headline = race ? "Race week."
+      : names.length === 0 ? `${km}, all of it easy.`
+      : `${nHard} hard day${names.length === 1 ? "" : "s"}. ${km}.`;
+
+    /*
+     * Why this week is not a normal one, where it is not. The note carries the
+     * reason — a trip, a down week, the taper — and it belongs in the sentence
+     * rather than instead of it.
+     */
+    const why = week.note ? `${week.note}.` : "";
+    const sub = race
+      ? `Everything this week is about arriving fresh. ${km} in total.`
+      : names.length === 0
+        ? `Nothing hard in it. ${why}`.trim()
+        : `${list} ${names.length === 1 ? "is the hard day" : "are the hard days"}. Everything else protects them.${why ? ` ${why}` : ""}`;
+
+    return {
+      eyebrow: `${disciplineOf(block.name)} · week ${week.n} of ${block.weeks.length} · ${fmt(monday, { day: "numeric", month: "short" })}`,
+      headline, sub,
+    };
+  })();
 
   const kmDone = all.filter((s) => ["done", "adjusted", "unplanned"].includes(s.status))
     .reduce((n, s) => n + (Number(s.distance_m) || 0), 0) / 1000;
@@ -294,22 +367,10 @@ export default function Week({
       <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 16,
         display: "flex", flexDirection: "column", gap: 7 }}>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-          textTransform: "uppercase", color: "var(--teal)" }}>
-          {intent ? intent.phase : !block ? "No block" : beforeBlock ? "Before the block" : "Off block"}
-        </div>
+          textTransform: "uppercase", color: "var(--teal)" }}>{lead.eyebrow}</div>
         <div style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700,
-          lineHeight: 1.15, letterSpacing: "-.02em" }}>
-          {week ? `${week.km.toFixed(1)} km, and two hard days.`
-            : !block ? "No block on your account."
-            : beforeBlock ? "The block starts Monday." : "Off block."}
-        </div>
-        <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
-          {week?.note || (!block
-            ? "Anything you log still appears here, and still counts in the head-to-head."
-            : beforeBlock
-            ? `${block.weeks.length} weeks to ${block.goal_label ?? block.race_name ?? "race day"}. Week 1 is ${block.weeks[0]?.km ?? 0} km — bought with consistency, not intensity.`
-            : "Tuesday and Saturday are the week. Everything else supports them.")}
-        </div>
+          lineHeight: 1.15, letterSpacing: "-.02em" }}>{lead.headline}</div>
+        <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>{lead.sub}</div>
       </div>
 
       {/* ------------------------------------------- what the week is for */}
@@ -320,7 +381,10 @@ export default function Week({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--teal)" }} />
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-              textTransform: "uppercase", color: "var(--teal)" }}>{intent.phase}</span>
+              textTransform: "uppercase", color: "var(--teal)" }}>
+              {intent.phase}
+              {block && intent.from ? ` · weeks ${intent.from}–${intent.to}` : ""}
+            </span>
           </div>
           <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-70)" }}>{intent.purpose}</div>
 

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { fmt, mondayOf, today } from "@/lib/dates";
 import {
-  TEMPLATE_WEEK, kindColour,
+  kindColour,
 } from "@/lib/coach";
 import { daysToRace, weekOf } from "@/lib/block";
 import Form from "./Form";
@@ -187,7 +187,15 @@ export default function Plan({
           {WEEKS.map((w, i) => {
             const isNow = w.start === thisMonday;
             const ran = logged[w.start];
-            // the current week shows its real sessions; the others show the shape
+            /*
+             * The current week shows what happened; every other week shows what the
+             * plan holds for it.
+             *
+             * The fallback used to be a hardcoded example week — "Strength A",
+             * "Key session", "Hyrox intervals" — so fourteen of fifteen weeks
+             * displayed sessions no generator had ever written. The plan carries
+             * its own shape for every week; this reads that.
+             */
             const rows = isNow && data
               ? data.sessions
                   .filter((s) => s.planned_date >= w.start && s.planned_date < WEEKS[i + 1]?.start)
@@ -200,10 +208,14 @@ export default function Plan({
                     done: s.status === "done" || s.status === "adjusted",
                     session: s,
                   }))
-              : TEMPLATE_WEEK.map((t) => ({
-                  dow: DAYS[t.dow], label: t.label, kind: t.kind, done: false,
-                  session: null as Session | null,
-                }));
+              : w.shape
+                  .slice()
+                  .sort((a, b) => a.day - b.day
+                    || Number(a.slot === "PM") - Number(b.slot === "PM"))
+                  .map((d) => ({
+                    dow: DAYS[d.day] ?? "", label: d.title, kind: d.kind, done: false,
+                    session: null as Session | null,
+                  }));
 
             return (
               <div key={w.n} style={{ display: "flex", flexDirection: "column", gap: 12,

@@ -1140,8 +1140,9 @@ function Offer({
             fontSize: 12, fontWeight: 700 }}>Not now</button>
         )}
         <span style={{ fontSize: 11, lineHeight: 1.55, color: INK40, textAlign: "center" }}>
-          Skip it and I start you conservatively. The retest is already on week 5 — run it whenever
-          and I rebuild from there.
+          Skip it and the plan is built from what you have already told me — your
+          recent weeks and your 5 km time. Run a test whenever you like and I rebuild
+          the paces from it.
         </span>
       </div>
     </div>
@@ -1154,13 +1155,13 @@ const km1 = (n: number) => `${n.toFixed(1)} km`;
 const kmWhole = (n: number) => `${Math.round(n)} km`;
 
 const PHASE: Record<string, { label: string; purpose: string }> = {
-  base: { label: "Base",
+  base: { label: "Rebuilding the base",
     purpose: "Volume and easy running. The weeks that make the later ones possible." },
-  build: { label: "Build",
+  build: { label: "Building the engine",
     purpose: "The same volume with harder sessions inside it — intervals, tempo, stations at load." },
-  specific: { label: "Specific",
+  specific: { label: "Race-specific work",
     purpose: "Race-shaped work: compromised running, transitions, the stations in order." },
-  taper: { label: "Taper",
+  taper: { label: "Taper — arriving fresh",
     purpose: "Volume drops, intensity stays. You arrive fresh rather than fit and tired." },
 };
 

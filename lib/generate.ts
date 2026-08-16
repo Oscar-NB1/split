@@ -292,11 +292,22 @@ export function volumeFor(x: Intake, r: Resolved): Week[] {
         : Math.round(km);
       out.push({
         n, km: Math.max(3, target), phase: PHASE_KEYS[pi],
-        note: n === 1
-          ? (x.benchmark === "scheduled"
-              ? "Benchmark test — every pace target is written from it"
-              : "Conservative start — run the benchmark to lift it")
-          : n === 5 || n === 9 ? "Benchmark retest · identical protocol"
+        /*
+         * No retest weeks.
+         *
+         * Weeks 5 and 9 were annotated "Benchmark retest · identical protocol" —
+         * a schedule nobody asked for, still being written into the plan after the
+         * retest list itself was emptied. A test costs a week of training and an
+         * athlete who wants another one logs it whenever they like; the plan reads
+         * it the same way and rebuilds from it.
+         *
+         * Week 1 says what it is, and only where a test is going to happen. It used
+         * to say "conservative start — run the benchmark to lift it" to athletes
+         * who had declined one, which is both untrue (nothing is held back) and an
+         * advertisement for a screen they had said no to.
+         */
+        note: n === 1 && x.benchmark === "scheduled"
+          ? "Benchmark test — every pace target is written from it"
           : raceWeek ? "Race week — nothing you do now makes you fitter"
           : deload ? "Down week"
           : taper ? "Taper"

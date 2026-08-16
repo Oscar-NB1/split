@@ -20,6 +20,16 @@ import { addDays, diffDays, mondayOf } from "./dates";
  * rather than someone else's, and every screen has to say so.
  */
 
+/** One session as the plan wrote it, before anything happened to it. */
+export type PlanDay = {
+  /** 0 = Monday */
+  day: number;
+  kind: string;
+  title: string;
+  slot?: string | null;
+  significance?: string | null;
+};
+
 export type PlanWeek = {
   /** 1-based week of the block. */
   n: number;
@@ -27,6 +37,15 @@ export type PlanWeek = {
   start: string;
   km: number;
   note: string;
+  /**
+   * The sessions the plan holds for this week.
+   *
+   * Carried so a screen can show any week of the block, not only the one whose
+   * sessions happen to be loaded. The plan screen was falling back to a hardcoded
+   * example week — "Strength A", "Key session", "Hyrox intervals" — for every week
+   * but the current one, which is why it showed names no generator produces.
+   */
+  shape: PlanDay[];
 };
 
 export type Intent = {
@@ -99,11 +118,13 @@ function toWeeks(row: Row): PlanWeek[] {
   // fall back to the session shapes' length, so a plan with no volume table still
   // knows how many weeks it runs for
   const count = volume.length || (Array.isArray(row.weeks) ? row.weeks.length : 0);
+  const shapes = Array.isArray(row.weeks) ? row.weeks : [];
   return Array.from({ length: count }, (_, i) => ({
     n: i + 1,
     start: addDays(start, i * 7),
     km: Number(volume[i]?.km ?? 0),
     note: volume[i]?.note ?? "",
+    shape: (Array.isArray(shapes[i]) ? shapes[i] : []) as PlanDay[],
   }));
 }
 
@@ -141,7 +162,7 @@ export function weekOf(block: Block | null, date: string): PlanWeek | null {
 }
 
 /** What a week is for. Null if the plan carries no narrative for it. */
-export function intentFor(block: Block | null, n: number): Intent | null {
+export function intentFor(block: Block | null, n: number): IntentRange | null {
   if (!block) return null;
   return block.intents.find((i) => n >= i.from && n <= i.to) ?? null;
 }

@@ -435,131 +435,149 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
    */
   const startDate = params.week_start(1);
 
-  await sql`
-    insert into athlete_intake (
-      user_id, has_race, discipline, race_distance, race_date, role, division,
-      base, running_self, pace_min, pace_sec, pace_unknown,
-      peak_week_km, longest_run_km, volume_source, answers,
-      days, commitments, freq, commit_day, equipment, sled,
-      injuries, volume, difficulty, benchmark, updated_at
-    ) values (
-      ${me.id}, ${intake.hasRace}, ${intake.discipline}, ${intake.raceDistance},
-      ${intake.raceDate}, ${intake.role}, ${intake.division},
-      ${intake.base}, ${intake.runningSelf}, ${intake.paceMin}, ${intake.paceSec},
-      ${intake.paceUnknown}, ${intake.peakWeekKm}, ${intake.longestRunKm},
-      ${intake.volumeSource}, ${sql.json(extraOf(intake) as never)},
-      ${intake.days}, ${intake.commitments},
-      ${sql.json(intake.freq as never)}, ${sql.json(intake.commitDay as never)},
-      ${intake.equipment}, ${intake.sled}, ${intake.injuries},
-      ${intake.volume}, ${intake.difficulty}, ${intake.benchmark}, now()
-    )
-    on conflict (user_id) do update set
-      has_race = excluded.has_race, discipline = excluded.discipline,
-      race_distance = excluded.race_distance, race_date = excluded.race_date,
-      role = excluded.role, division = excluded.division, base = excluded.base,
-      running_self = excluded.running_self, pace_min = excluded.pace_min,
-      pace_sec = excluded.pace_sec, pace_unknown = excluded.pace_unknown,
-      peak_week_km = excluded.peak_week_km,
-      longest_run_km = excluded.longest_run_km,
-      volume_source = excluded.volume_source, answers = excluded.answers,
-      days = excluded.days, commitments = excluded.commitments, freq = excluded.freq,
-      commit_day = excluded.commit_day, equipment = excluded.equipment,
-      sled = excluded.sled, injuries = excluded.injuries, volume = excluded.volume,
-      difficulty = excluded.difficulty, benchmark = excluded.benchmark, updated_at = now()
-  `;
-
-  // Rebuilding replaces the block rather than adding a second one. Only untouched
-  // future sessions go: anything logged, moved or commented on is a record of
-  // what happened and survives a change of plan.
-  const old = await sql<{ id: string }[]>`
-    select id from plan_templates where athlete_id = ${me.id} and active
-  `;
-  for (const t of old) {
-    await sql`
-      delete from planned_sessions
-       where user_id = ${me.id} and source = 'template'
-         and source_ref like ${t.id + "%"}
-         and status = 'planned' and activity_id is null
-         and planned_date >= current_date
-         and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
-         and not exists (select 1 from session_sets s where s.session_id = planned_sessions.id)
-    `;
-    await sql`update plan_templates set active = false where id = ${t.id}`;
-  }
-
-  const [tpl] = await sql<{ id: string }[]>`
-    insert into plan_templates (
-      athlete_id, author_id, name, start_date, weeks, rules, horizon, active,
-      race_date, race_name, goal_label, goal_seconds, volume, intents,
-      plan_state, benchmark, guardrails, easy_pace, corrections
-    ) values (
-      ${me.id}, ${me.id}, ${plan.name}, ${startDate},
-      ${sql.json(tpl0.weeks as never)}, ${sql.json(tpl0.rules as never)}, 3, true,
-      ${plan.race_date}, ${plan.race_name}, ${plan.goal_label}, ${plan.goal_seconds},
-      ${sql.json(tpl0.volume as never)}, ${sql.json(tpl0.intents as never)},
-      ${plan.plan_state}, ${sql.json(plan.benchmark as never)},
-      ${sql.json(plan.guardrails as never)}, ${plan.easy_pace},
-      ${sql.json(plan.corrections as never)}
-    )
-    on conflict (athlete_id, name) do update set
-      start_date = excluded.start_date, weeks = excluded.weeks, rules = excluded.rules,
-      active = true, race_date = excluded.race_date, race_name = excluded.race_name,
-      goal_label = excluded.goal_label, goal_seconds = excluded.goal_seconds,
-      volume = excluded.volume, intents = excluded.intents,
-      plan_state = excluded.plan_state, benchmark = excluded.benchmark,
-      guardrails = excluded.guardrails, easy_pace = excluded.easy_pace,
-      corrections = excluded.corrections
-    returning id
-  `;
   /*
-   * The races themselves, which nothing was writing.
+   * All of it, or none of it.
    *
-   * The intake collected a race date and a list of secondary races and then
-   * dropped both on the floor — so the race planner, the race week and race day
-   * had nothing to plan against, and the B-race stage reshaped weeks around races
-   * that existed only in the answers blob. Written here because this is the point
-   * the athlete commits to the block.
+   * These writes replace the athlete's answers, their plan and their races. Run
+   * loose, a failure part-way through left someone with their previous plan
+   * deleted, their answers overwritten by the half-filled form that failed, and
+   * no block at all — which is exactly what happened when the race insert hit a
+   * not-null constraint. A rebuild that fails now changes nothing.
    *
-   * Replaced rather than merged: rebuilding a plan re-declares the races, and a
-   * leftover race from a previous build would quietly reshape the new one.
+   * materialise() runs after the commit: it is additive and idempotent, and a
+   * plan that exists with its sessions not yet written is recoverable — the cron
+   * writes them within the hour. A plan that does not exist is not.
    */
-  await sql`delete from race_targets where athlete_id = ${me.id}`;
-  if (intake.raceDate) {
+  const tpl = await sql.begin(async (sql) => {
     await sql`
-      insert into race_targets (
-        athlete_id, race_date, start_date, discipline, division, goal,
-        target_time_s, role
+      insert into athlete_intake (
+        user_id, has_race, discipline, race_distance, race_date, role, division,
+        base, running_self, pace_min, pace_sec, pace_unknown,
+        peak_week_km, longest_run_km, volume_source, answers,
+        days, commitments, freq, commit_day, equipment, sled,
+        injuries, volume, difficulty, benchmark, updated_at
       ) values (
-        ${me.id}, ${intake.raceDate}, ${startDate}, ${intake.discipline},
-        ${intake.division}, ${intake.goal},
-        ${intake.goalMin ? Math.round(intake.goalMin * 60) : null}, 'target'
+        ${me.id}, ${intake.hasRace}, ${intake.discipline}, ${intake.raceDistance},
+        ${intake.raceDate}, ${intake.role}, ${intake.division},
+        ${intake.base}, ${intake.runningSelf}, ${intake.paceMin}, ${intake.paceSec},
+        ${intake.paceUnknown}, ${intake.peakWeekKm}, ${intake.longestRunKm},
+        ${intake.volumeSource}, ${sql.json(extraOf(intake) as never)},
+        ${intake.days}, ${intake.commitments},
+        ${sql.json(intake.freq as never)}, ${sql.json(intake.commitDay as never)},
+        ${intake.equipment}, ${intake.sled}, ${intake.injuries},
+        ${intake.volume}, ${intake.difficulty}, ${intake.benchmark}, now()
       )
+      on conflict (user_id) do update set
+        has_race = excluded.has_race, discipline = excluded.discipline,
+        race_distance = excluded.race_distance, race_date = excluded.race_date,
+        role = excluded.role, division = excluded.division, base = excluded.base,
+        running_self = excluded.running_self, pace_min = excluded.pace_min,
+        pace_sec = excluded.pace_sec, pace_unknown = excluded.pace_unknown,
+        peak_week_km = excluded.peak_week_km,
+        longest_run_km = excluded.longest_run_km,
+        volume_source = excluded.volume_source, answers = excluded.answers,
+        days = excluded.days, commitments = excluded.commitments, freq = excluded.freq,
+        commit_day = excluded.commit_day, equipment = excluded.equipment,
+        sled = excluded.sled, injuries = excluded.injuries, volume = excluded.volume,
+        difficulty = excluded.difficulty, benchmark = excluded.benchmark, updated_at = now()
     `;
-    for (const b of intake.bRaces ?? []) {
-      // The intent the athlete chose is re-checked here against the real gap:
-      // the answer was given before the start date was necessarily settled.
-      const ok = checkIntent(b.intent as Intent, b.date, intake.raceDate);
+
+    // Rebuilding replaces the block rather than adding a second one. Only untouched
+    // future sessions go: anything logged, moved or commented on is a record of
+    // what happened and survives a change of plan.
+    const old = await sql<{ id: string }[]>`
+      select id from plan_templates where athlete_id = ${me.id} and active
+    `;
+    for (const t of old) {
+      await sql`
+        delete from planned_sessions
+         where user_id = ${me.id} and source = 'template'
+           and source_ref like ${t.id + "%"}
+           and status = 'planned' and activity_id is null
+           and planned_date >= current_date
+           and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
+           and not exists (select 1 from session_sets s where s.session_id = planned_sessions.id)
+      `;
+      await sql`update plan_templates set active = false where id = ${t.id}`;
+    }
+
+    const [tpl] = await sql<{ id: string }[]>`
+      insert into plan_templates (
+        athlete_id, author_id, name, start_date, weeks, rules, horizon, active,
+        race_date, race_name, goal_label, goal_seconds, volume, intents,
+        plan_state, benchmark, guardrails, easy_pace, corrections
+      ) values (
+        ${me.id}, ${me.id}, ${plan.name}, ${startDate},
+        ${sql.json(tpl0.weeks as never)}, ${sql.json(tpl0.rules as never)}, 3, true,
+        ${plan.race_date}, ${plan.race_name}, ${plan.goal_label}, ${plan.goal_seconds},
+        ${sql.json(tpl0.volume as never)}, ${sql.json(tpl0.intents as never)},
+        ${plan.plan_state}, ${sql.json(plan.benchmark as never)},
+        ${sql.json(plan.guardrails as never)}, ${plan.easy_pace},
+        ${sql.json(plan.corrections as never)}
+      )
+      on conflict (athlete_id, name) do update set
+        start_date = excluded.start_date, weeks = excluded.weeks, rules = excluded.rules,
+        active = true, race_date = excluded.race_date, race_name = excluded.race_name,
+        goal_label = excluded.goal_label, goal_seconds = excluded.goal_seconds,
+        volume = excluded.volume, intents = excluded.intents,
+        plan_state = excluded.plan_state, benchmark = excluded.benchmark,
+        guardrails = excluded.guardrails, easy_pace = excluded.easy_pace,
+        corrections = excluded.corrections
+      returning id
+    `;
+    /*
+     * The races themselves, which nothing was writing.
+     *
+     * The intake collected a race date and a list of secondary races and then
+     * dropped both on the floor — so the race planner, the race week and race day
+     * had nothing to plan against, and the B-race stage reshaped weeks around races
+     * that existed only in the answers blob. Written here because this is the point
+     * the athlete commits to the block.
+     *
+     * Replaced rather than merged: rebuilding a plan re-declares the races, and a
+     * leftover race from a previous build would quietly reshape the new one.
+     */
+    await sql`delete from race_targets where athlete_id = ${me.id}`;
+    if (intake.raceDate) {
       await sql`
         insert into race_targets (
-          athlete_id, race_date, start_date, venue, discipline, division, role,
-          goal, intent, intent_locked
+          athlete_id, race_date, start_date, discipline, division, goal,
+          target_time_s, role
         ) values (
-          -- The block's start, not a start of its own: a secondary race is run
-          -- inside the block aimed at the target. Omitting it violated a not-null
-          -- constraint, so every athlete who entered a second race got a 500 on
-          -- the last step of the form and no way to tell why.
-          ${me.id}, ${b.date}, ${startDate}, null, ${b.kind ?? intake.discipline},
-          ${b.division}, 'secondary',
-          -- What the athlete wants from the target race, carried over: this column
-          -- describes the block, and a secondary race is run inside the same block.
-          -- The race's own answer is the intent below it.
-          ${intake.goal},
-          ${ok.ok ? b.intent : "training"},
-          ${intentLocked(b.date, today())}
+          ${me.id}, ${intake.raceDate}, ${startDate}, ${intake.discipline},
+          ${intake.division}, ${goalKey(intake.goal)},
+          ${intake.goalMin ? Math.round(intake.goalMin * 60) : null}, 'target'
         )
       `;
+      for (const b of intake.bRaces ?? []) {
+        // The intent the athlete chose is re-checked here against the real gap:
+        // the answer was given before the start date was necessarily settled.
+        const ok = checkIntent(b.intent as Intent, b.date, intake.raceDate);
+        await sql`
+          insert into race_targets (
+            athlete_id, race_date, start_date, venue, discipline, division, role,
+            goal, intent, intent_locked
+          ) values (
+            -- The block's start, not a start of its own: a secondary race is run
+            -- inside the block aimed at the target. Omitting it violated a not-null
+            -- constraint, so every athlete who entered a second race got a 500 on
+            -- the last step of the form and no way to tell why.
+            ${me.id}, ${b.date}, ${startDate}, null, ${b.kind ?? intake.discipline},
+            ${b.division}, 'secondary',
+            -- What the athlete wants from the target race, carried over: this column
+            -- describes the block, and a secondary race is run inside the same block.
+            -- The race's own answer is the intent below it.
+            ${goalKey(intake.goal)},
+            ${ok.ok ? b.intent : "training"},
+            ${intentLocked(b.date, today())}
+          )
+        `;
+      }
     }
-  }
+
+
+    return tpl;
+  });
 
   const { created } = await materialise(tpl.id);
 
@@ -612,6 +630,25 @@ const DELTA_SIGN: Record<string, number> = {
   "They are much stronger": 2, "They are a bit stronger": 1,
   "I am a bit stronger": -1, "I am much stronger": -2,
 };
+
+/**
+ * The goal, in the vocabulary the race table stores.
+ *
+ * The column is `finish | strong | compete` and not-null; the form asks "just
+ * finish it", "finish strong, no blow-ups", "target a time". The athlete's own
+ * words were being written straight into it, so the row was wrong when the
+ * question had been answered and the insert threw when it had not — which is what
+ * "Something broke. Try again." was, on the last step, again.
+ *
+ * `strong` is the fallback, the same one the generator uses for an unanswered
+ * goal, so a missing answer produces a plan rather than a 500.
+ */
+function goalKey(goal: string | null | undefined): "finish" | "strong" | "compete" {
+  const g = String(goal ?? "").toLowerCase();
+  if (g.startsWith("just finish") || g === "finish") return "finish";
+  if (g.startsWith("target") || g === "compete") return "compete";
+  return "strong";
+}
 
 /** The reworked form's steps, stored together. */
 const EXTRA_KEYS = [

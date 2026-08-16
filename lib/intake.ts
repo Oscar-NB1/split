@@ -525,6 +525,25 @@ export function validate(x: Partial<Intake>): Problem[] {
     }
   }
 
+  /*
+   * The answers the plan cannot be built without.
+   *
+   * These were not checked, so a half-filled form reached the writes: goal null,
+   * start date null, sessions null. It got as far as replacing the athlete's saved
+   * answers and deleting their previous plan before a not-null column stopped it,
+   * and they were left with neither. A missing answer is a step to go back to, not
+   * a 500 on the last one.
+   */
+  if (asked("raceDate") && !x.goal) {
+    p.push({ field: "goal", why: "What do you want from race day?" });
+  }
+  if (!x.startDate) {
+    p.push({ field: "startDate", why: "When do you want to start?" });
+  }
+  if (!x.targetSessions || !Number(x.targetSessions)) {
+    p.push({ field: "targetSessions", why: "How many sessions do you want a week?" });
+  }
+
   const days = x.days ?? [];
   if (days.length < 2) p.push({ field: "days", why: "Pick at least two days you can train." });
   else if (days.some((d) => !DAYS.includes(d))) {

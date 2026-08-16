@@ -66,18 +66,46 @@ export function zoneSeconds(
 }
 
 /** Colour per session kind, matching the design's accent map. */
-export const KIND_COLOUR: Record<string, string> = {
-  run_easy: "#0A8FB0", run_intervals: "#13A6CC", run_long: "#0A8FB0",
-  easy_run: "#0A8FB0", quality_run: "#13A6CC", long_run: "#0A8FB0",
-  benchmark: "#E8C051", race: "#C6FF5B",
-  Run: "#0A8FB0", TrailRun: "#0A8FB0",
-  hyrox: "#AAEA42", Workout: "#AAEA42", HighIntensityIntervalTraining: "#AAEA42", Crossfit: "#AAEA42",
-  strength: "#13A6CC", WeightTraining: "#13A6CC",
-  Kickboxing: "#1B3E5C", Ride: "#1B3E5C", Swim: "#1B3E5C", Walk: "#1B3E5C",
-  Yoga: "#1B3E5C", Hike: "#1B3E5C", rest: "#12314D",
+export /**
+ * A colour per kind of session, chosen so a week reads at a glance.
+ *
+ * Every kind is distinct, and the distinctions carry meaning rather than being
+ * decoration: the hard running is the only red on the screen, Hyrox work is the
+ * navy the brand is built from, strength is a lighter blue beside it, and anything
+ * that is not the plan's own — a class, a match, a commitment the athlete keeps —
+ * is near-black so it reads as somebody else's session.
+ *
+ * Strava sport types map onto the same palette, so a logged activity and the
+ * session it satisfies are the same colour.
+ */
+const KIND_COLOUR: Record<string, string> = {
+  // running
+  quality_run: "#C4432F", run_intervals: "#C4432F",   // the hard running: red
+  long_run: "#0A8FB0", run_long: "#0A8FB0",           // the long run: teal
+  easy_run: "#8FD0E0", run_easy: "#8FD0E0",           // easy running: pale teal
+  Run: "#8FD0E0", TrailRun: "#8FD0E0",
+  // the rest of the plan
+  hyrox: "#12314D",                                    // Hyrox work: navy
+  strength: "#6FA8DC", WeightTraining: "#6FA8DC",      // strength: light blue
+  benchmark: "#E8C051",                                // the test: gold
+  race: "#C6FF5B",                                     // race day: lime
+  rest: "#C9D3DB",
+  // not the plan's: classes, matches, anything the athlete already keeps
+  commitment: "#232B31",
+  Workout: "#232B31", HighIntensityIntervalTraining: "#232B31", Crossfit: "#232B31",
+  Kickboxing: "#232B31", Ride: "#232B31", Swim: "#232B31", Walk: "#232B31",
+  Yoga: "#232B31", Hike: "#232B31",
 };
+
+/**
+ * A kind's colour, and near-black for anything unrecognised.
+ *
+ * An unknown kind is almost always a commitment the athlete named themselves —
+ * "jiu-jitsu", "netball" — so the default is the colour those already use rather
+ * than a fifth blue nobody can tell apart from the others.
+ */
 export const kindColour = (k: string | null | undefined) =>
-  (k && KIND_COLOUR[k]) || "#1B3E5C";
+  (k && KIND_COLOUR[k]) || "#232B31";
 
 /** Human labels for the plan kinds and the Strava sport types we see. */
 export const KIND_LABEL: Record<string, string> = {
@@ -95,18 +123,14 @@ export const KIND_LABEL: Record<string, string> = {
 export const kindLabel = (k: string) =>
   KIND_LABEL[k] ?? k.replace(/([a-z])([A-Z])/g, "$1 $2");
 
-/** The fixed weekly shape from the plan, used where no session exists yet. */
-export const TEMPLATE_WEEK: { dow: number; kind: string; label: string; slot: "AM" | "PM" }[] = [
-  { dow: 0, kind: "strength", label: "Strength A", slot: "AM" },
-  { dow: 0, kind: "hyrox", label: "Kickboxing", slot: "PM" },
-  { dow: 1, kind: "run_intervals", label: "Key session", slot: "AM" },
-  { dow: 2, kind: "hyrox", label: "Hyrox intervals", slot: "AM" },
-  { dow: 3, kind: "run_easy", label: "Easy run", slot: "AM" },
-  { dow: 3, kind: "hyrox", label: "Kickboxing", slot: "PM" },
-  { dow: 4, kind: "strength", label: "Strength B", slot: "AM" },
-  { dow: 5, kind: "hyrox", label: "Hyrox continuous", slot: "AM" },
-  { dow: 6, kind: "run_long", label: "Long run", slot: "AM" },
-];
+/*
+ * The hardcoded example week that used to live here is gone.
+ *
+ * It was the fallback for any week whose sessions were not loaded, so the plan
+ * screen showed "Strength A", "Key session", "Hyrox intervals" — names no
+ * generator has ever produced — for fourteen weeks out of fifteen. The plan
+ * carries its own shape for every week now, and the screens read that.
+ */
 
 export const weekDates = (monday: string) =>
   Array.from({ length: 7 }, (_, i) => addDays(monday, i));

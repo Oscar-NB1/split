@@ -31,7 +31,13 @@ const HER: Intake = {
   runningSelf: "Runs with walk breaks",
   paceMin: 32, paceSec: 0, paceUnknown: false,
   peakWeekKm: null, longestRunKm: null, volumeSource: null,
-  goal: null, goalMin: null, startDate: null, targetSessions: null,
+  /*
+   * The three the plan cannot be built without. They were null here, which is how
+   * a half-filled form passed validation in production: it replaced the athlete's
+   * answers and deleted their plan before a not-null column stopped it.
+   */
+  goal: "Finish strong, no blow-ups", goalMin: null,
+  startDate: "2026-08-17", targetSessions: "5",
   allowDoubles: null, wantRestDay: null, sessionPref: null, hyroxExp: null,
   runDelta: null, stationDelta: null, gymAccess: null,
   runStationLink: null,
@@ -202,13 +208,21 @@ test("a deload does not reset the climb", () => {
   assert.ok(v[4].km > v[2].km, `week 5 (${v[4].km}) resumes above week 3 (${v[2].km})`);
 });
 
-test("week 1 says whether the benchmark is in it, and 5 and 9 are retests", () => {
-  const scheduled = volumeFor({ ...HER, benchmark: "scheduled" }, resolve({ ...HER, benchmark: "scheduled" }));
-  assert.match(scheduled[0].note, /Benchmark test/);
-  assert.match(scheduled[4].note, /retest · identical protocol/);
-  assert.match(scheduled[8].note, /retest · identical protocol/);
-  const skipped = volumeFor(HER, resolve(HER));
-  assert.match(skipped[0].note, /Conservative start — run the benchmark to lift it/);
+test("week 1 says whether the benchmark is in it, and no week is a retest", () => {
+  /*
+   * Weeks 5 and 9 carried "Benchmark retest · identical protocol" — a schedule
+   * nobody asked for, and one that survived the retest list being emptied. And
+   * week 1 told an athlete who had declined the test that they were being started
+   * conservatively, which was both untrue and a pitch for a screen they had
+   * already refused.
+   */
+  const scheduled = generate({ ...HER, benchmark: "scheduled" }).volume;
+  assert.match(scheduled[0].note, /benchmark test/i);
+  assert.ok(!scheduled.some((w) => /retest/i.test(w.note)), "no retest weeks");
+
+  const skipped = generate({ ...HER, benchmark: "skipped" }).volume;
+  assert.equal(skipped[0].note, "", "nothing about a test that is not happening");
+  assert.ok(!skipped.some((w) => /benchmark|conservative/i.test(w.note)));
 });
 
 test("an accepted benchmark is session 1 of week 1, not a separate flow", () => {
@@ -582,4 +596,28 @@ test("the corrections quote the numbers the plan actually contains", () => {
   for (const c of others) {
     assert.ok(aligned.some((x) => x.title === c.title && x.body === c.body), c.title);
   }
+});
+
+test("a half-filled form is refused before it can replace anything", () => {
+  /*
+   * What actually happened: a submission with no goal, no start date and no
+   * session count passed validation, wrote over the athlete's saved answers,
+   * deleted their previous plan, and then hit a not-null column. They were left
+   * with neither plan nor answers. Each of these is a step to go back to.
+   */
+  const half = { ...HER, goal: null, startDate: null, targetSessions: null };
+  const fields = validate(half).map((p) => p.field);
+  assert.ok(fields.includes("goal"), fields.join(", "));
+  assert.ok(fields.includes("startDate"));
+  assert.ok(fields.includes("targetSessions"));
+
+  // And each names a step the form actually has, so the row can be tapped.
+  for (const p of validate(half)) {
+    assert.ok(p.why.length > 5, `${p.field}: ${p.why}`);
+  }
+});
+
+test("no goal is demanded of someone with no race", () => {
+  const noRace: Intake = { ...HER, hasRace: "No", raceDate: null, goal: null };
+  assert.ok(!validate(noRace).some((p) => p.field === "goal"));
 });

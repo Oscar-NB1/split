@@ -24,8 +24,19 @@ export type Intent = {
 };
 export type IntentRange = Intent & { from: number; to: number };
 
-const PHASE_LABEL: Record<string, string> = {
-  base: "Base", build: "Build", specific: "Specific", taper: "Taper",
+/**
+ * What each phase is called, in words rather than in jargon.
+ *
+ * "Base", "Build", "Specific", "Taper" are what a coach calls them to another
+ * coach. An athlete reading their own week wants to know what these weeks are
+ * doing to them, and the label is the first half of that answer — the purpose
+ * underneath is the second.
+ */
+export const PHASE_LABEL: Record<string, string> = {
+  base: "Rebuilding the base",
+  build: "Building the engine",
+  specific: "Race-specific work",
+  taper: "Taper — arriving fresh",
 };
 
 /** What the weeks of each phase are actually for, in the plan's own terms. */

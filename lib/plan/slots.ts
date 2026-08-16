@@ -193,6 +193,18 @@ export type Placed = {
 
 const HARD: SlotKind[] = ["quality_run", "hyrox"];
 
+/**
+ * The sessions that may never share a day with each other.
+ *
+ * A double day is one real session plus, at most, an easy run. Two key sessions on
+ * the same day is not a double — it is one of them done badly, and the plan reads
+ * both afterwards as though they were done properly. Strength is in this list
+ * precisely because it is the one that kept landing next to an interval session:
+ * it is not "hard" by the placer's definition, and it is unambiguously key.
+ */
+const KEY: string[] = ["quality_run", "hyrox", "long_run", "strength", "benchmark", "race"];
+const isKey = (kind: string) => KEY.includes(kind);
+
 /** Weighted preferences. Minimised, never enforced — a week that breaks one to
  *  fit a real life beats a plan that refuses to schedule. */
 export const PENALTY = {
@@ -209,6 +221,8 @@ export const PENALTY = {
    * loses, and the week says it broke a preference.
    */
   longRunOffPreferredDay: 3,
+  /** The heaviest of them: this one makes a session worthless, not just awkward. */
+  twoKeyOneDay: 14,
 };
 
 /** Penalties halve at advanced and quarter at elite: a stronger athlete
@@ -286,6 +300,15 @@ export function score(week: Placed[], x: PlaceInput): number {
   }
   if (long != null && (byDay.get(long - 1) ?? []).some((p) => p.kind === "strength")) {
     cost += PENALTY.strengthBeforeLongRun;
+  }
+  /*
+   * Two key sessions on one day. placeWeek refuses to do this; the penalty exists
+   * so that any other route into a week — an edit, a race, a future stage — is
+   * charged for it rather than passing silently.
+   */
+  for (const v of byDay.values()) {
+    const keys = v.filter((p) => isKey(String(p.kind))).length;
+    if (keys > 1) cost += PENALTY.twoKeyOneDay * (keys - 1);
   }
   if (x.rest_day === "full" && byDay.size >= 7) cost += PENALTY.noRestDay;
   /*
@@ -393,14 +416,49 @@ export function placeWeek(x: PlaceInput): { week: Placed[]; cost: number; flags:
   }
   for (const p of best) { week.push(p); taken.add(p.day); }
 
+  /*
+   * Everything else, with one rule that is never bent: one key session a day.
+   *
+   * Strength was being dropped onto the first day with room, which was routinely
+   * the day already holding the interval session — a key session done on tired
+   * legs, and two of them read afterwards as though both had been done properly.
+   * Only an easy run may share a day with a key session.
+   */
+  const keyDays = new Set(week.filter((p) => isKey(String(p.kind))).map((p) => p.day));
+  const count = (d: number) => week.filter((p) => p.day === d).length;
+
   for (const kind of easy) {
-    const free = days.find((d) => !taken.has(d));
-    const day = free ?? days[week.length % days.length];
-    if (free == null && !x.allow_doubles) {
-      flags.push("More sessions than days, so some share a day.");
+    const key = isKey(kind);
+    const free = days.filter((d) => !taken.has(d));
+    let day: number;
+
+    if (free.length > 0) {
+      day = free[0];
+    } else if (key) {
+      // No empty day left: the best remaining is the quietest day with no key
+      // session on it. Doubling two key sessions is refused even here.
+      const spare = days.filter((d) => !keyDays.has(d)).sort((a, b) => count(a) - count(b));
+      if (spare.length > 0) {
+        day = spare[0];
+        flags.push("More sessions than days, so one shares a day with an easy run.");
+      } else {
+        day = days.sort((a, b) => count(a) - count(b))[0];
+        flags.push(
+          "Every day already holds a key session, so two of them share one. Drop one if the week is heavy.");
+      }
+    } else {
+      // An easy run doubles up on the quietest day, and never onto the long run.
+      const longDay = week.find((p) => p.kind === "long_run")?.day;
+      const pool = days.filter((d) => d !== longDay);
+      day = (pool.length ? pool : days).sort((a, b) => count(a) - count(b))[0];
+      if (!x.allow_doubles) {
+        flags.push("More sessions than days, so some share a day.");
+      }
     }
+
     week.push({ day, kind, hard: false });
     taken.add(day);
+    if (key) keyDays.add(day);
   }
 
   const cost = score(week, x);
