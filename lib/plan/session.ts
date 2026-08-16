@@ -27,6 +27,8 @@ export type Work =
 export type Built = {
   /** intervals.icu lines, one per step */
   target: string;
+  /** what to say about it, where the session is attended rather than executed */
+  note?: string;
   km: number;
   minutes: number;
   /**
@@ -360,5 +362,42 @@ export function longRun(
     target: lines.join("\n"),
     km: total,
     minutes: Math.round((easyKm * easyS + fastKm * steadyS) / 60),
+  };
+}
+
+/**
+ * A Hyrox session the athlete attends rather than executes.
+ *
+ * "Station work: written sessions or classes?" was collected and then ignored —
+ * everyone got the same written session whatever they answered. That is worse than
+ * not asking: an athlete who told the plan they train in classes was handed a
+ * prescription they were never going to follow, and the week counted five or seven
+ * kilometres of running inside a class that contains maybe two.
+ *
+ * So a class is written as a class: what to look for, what to prioritise inside it,
+ * and what it is worth in running. The running the plan can rely on drops to what a
+ * class really delivers, and the difference goes back to the easy running — which is
+ * why the week's aerobic volume stops being fiction.
+ */
+export const CLASS_RUN_KM = 2;
+
+export function hyroxClass(rung: string): Built {
+  const kind = rung.toLowerCase();
+  const priority = /simulation/.test(kind)
+    ? "One continuous piece, stations in race order, no long rests. A circuit with a rest between rounds is conditioning, not this."
+    : /transition/.test(kind)
+      ? "Time your own transitions even if the class does not. That is the number this session exists to move."
+      : "It has to alternate a weighted station straight into a run or a machine. Stations in one block and cardio in another trains something else.";
+
+  return {
+    target: [
+      "- Hyrox class",
+      `- ${CLASS_RUN_KM}km Z3 running inside it`,
+      "- Stations at race weight",
+    ].join("\n"),
+    km: CLASS_RUN_KM,
+    minutes: 60,
+    title: "Hyrox class",
+    note: `${priority} Keep your run efforts at the pace on your card rather than all-out — the class is scored, your block is not.`,
   };
 }

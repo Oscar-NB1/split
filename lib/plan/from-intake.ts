@@ -191,6 +191,16 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     variant: deriveVariant({ kit, access, run_attachment }),
     /** the equipment answers as given, for the strength prescription */
     equipment: x.equipment ?? [],
+    /*
+     * Whether the station work is written out or attended.
+     *
+     * "Mix" means classes for the stations and written sessions for the intervals —
+     * which is what it says on the step. Running is always written: no class
+     * prescribes an athlete's paces.
+     */
+    session_style: (x.sessionPref ?? "").startsWith("Classes") ? "classes"
+      : (x.sessionPref ?? "") === "Mix" ? "mix"
+      : "written",
     max_hr: extra.max_hr,
     /*
      * The paces come from the best time on file.

@@ -2,7 +2,9 @@ import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, otherRung, rungFor } from "./ladders";
-import { continuousRun, hyroxSession, longRun, qualityRun, type LongShape } from "./session";
+import {
+  continuousRun, hyroxClass, hyroxSession, longRun, qualityRun, type LongShape,
+} from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
@@ -30,6 +32,8 @@ export type Params = ResolveInput & {
   quality_target?: number;
   /** what the athlete said they can reach, for the strength lifts */
   equipment?: string[];
+  /** whether the station work is written out, attended as classes, or mixed */
+  session_style?: "written" | "classes" | "mix";
   /** whether the long run carries a pace target */
   long_run_pace?: boolean;
   /** 0 = Monday, or null for no preference */
@@ -310,8 +314,15 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title && kind === "quality_run") s.label = built.title;
       } else if (kind === "hyrox") {
-        const built = hyroxSession(s.label, easyPace);
+        /*
+         * A class where the athlete said they train in classes. "Mix" is classes for
+         * the stations too — the intervals are the part it keeps written.
+         */
+        const asClass = p.session_style === "classes" || p.session_style === "mix";
+        const built = asClass ? hyroxClass(s.label) : hyroxSession(s.label, easyPace);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+        if (built.title) s.label = built.title;
+        if (built.note) s.note_text = built.note;
       } else if (kind === "easy_hyrox") {
         const built = hyroxSession(s.label, easyPace, 3);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
@@ -344,9 +355,39 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * same volume, not a shorter one.
      */
     const left = Math.max(easies.length * 4, runnable - spent);
+    /*
+     * An easy run has a ceiling, and it is the long run.
+     *
+     * Filling the week from one easy session produced a 19.9 km "easy run" beside a
+     * 19.5 km long run — two long runs, one of them mislabelled. An easy run is
+     * capped at two thirds of the long run; whatever will not fit goes onto the long
+     * run itself, up to its own cap, and anything still left over is said out loud
+     * rather than quietly added to a session that cannot hold it.
+     */
+    const longKm = long?.km ?? 0;
+    const easyCap = Math.max(6, longKm * 0.67);
+    let spill = 0;
     for (const s of easies) {
-      const built = continuousRun(Math.max(3, left / easies.length), easyPace);
+      const want = Math.max(3, left / easies.length);
+      const km = Math.min(want, easyCap);
+      spill += want - km;
+      const built = continuousRun(km, easyPace);
       s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+    }
+    /*
+     * What will not fit is said, not hidden.
+     *
+     * The obvious place to put it is the long run, and that is the wrong place: the
+     * long run's length is a training decision that progresses across the block, not
+     * a bucket for the arithmetic's leftovers. A week whose volume needs a day it
+     * does not have should say so.
+     */
+    if (spill > 1) {
+      flags.push({
+        code: "volume_spill",
+        message: `Week ${w.n} carries about ${Math.round(spill)} km more running than ${
+          easies.length + 1} running days can sensibly hold. Another day would take it; otherwise the week runs a little under.`,
+      });
     }
 
     /*
