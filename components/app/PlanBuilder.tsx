@@ -209,6 +209,14 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   const [opts, setOpts] = useState<Options | null>(null);
   const [a, setA] = useState<Answers>(EMPTY);
   const [step, setStep] = useState(0);
+  /*
+   * The form opens on its own contents page.
+   *
+   * Twenty-six questions arriving one at a time, with no idea how many are left, is
+   * the reason people abandon a form halfway. `started` is false until they tap
+   * Start or jump to a question from the list.
+   */
+  const [started, setStarted] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   /**
    * Whether Strava is connected, and what it says about their recent running.
@@ -474,14 +482,17 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
     return raw == null || raw === "" ? "" : String(raw);
   };
 
-  if (mapOpen) {
+  if (mapOpen || !started) {
     return (
       <IntakeMap
         blocks={mapOf(live, a as unknown as StepAnswers, describe)}
         stepLabel={`Step ${i + 1} of ${live.length}`}
-        onJump={(n) => { setStep(n - 1); setMapOpen(false); }}
+        started={started}
+        onJump={(n) => { setStep(n - 1); setMapOpen(false); setStarted(true); }}
         onClose={() => setMapOpen(false)}
-        ctaLabel={`Back to step ${i + 1}`} />
+        onStart={() => setStarted(true)}
+        onExit={onDone}
+        ctaLabel={started ? `Back to step ${i + 1}` : "Start"} />
     );
   }
 
@@ -489,7 +500,9 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
     <div style={{ padding: "16px 18px 26px", display: "flex", flexDirection: "column",
       gap: 16, minHeight: "100%" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button onClick={() => (i === 0 ? onDone() : setStep(i - 1))} style={{
+        <button onClick={() => (i === 0 ? setStarted(false) : setStep(i - 1))}
+          aria-label={i === 0 ? "Back to the question list" : "Previous question"}
+          style={{
           width: 28, height: 28, flex: "none", borderRadius: "50%", background: OFF,
           border: 0, fontSize: 13, color: INK,
         }}>←</button>
