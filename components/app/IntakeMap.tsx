@@ -32,6 +32,18 @@ export default function IntakeMap({
     blocks.find((b) => b.answered < b.total)?.name ?? null,
   );
 
+  /*
+   * Completion, not position.
+   *
+   * The step counter says where you are in the run of questions; this says how
+   * much of the form is actually answered, which is the thing an athlete halfway
+   * down wants to know. Optional steps count as answered — they are, and a bar
+   * that can never reach the end is worse than no bar.
+   */
+  const answered = blocks.reduce((n, b) => n + b.answered, 0);
+  const total = blocks.reduce((n, b) => n + b.total, 0);
+  const pct = total ? Math.round((answered / total) * 100) : 0;
+
   return (
     <div style={{ padding: "16px 18px 26px", display: "flex",
       flexDirection: "column", gap: 14 }}>
@@ -45,6 +57,17 @@ export default function IntakeMap({
         <span style={{ fontSize: 10, fontWeight: 700, color: INK40 }}>{stepLabel}</span>
       </div>
 
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontFamily: "var(--display)", fontSize: 26, fontWeight: 700,
+            letterSpacing: "-.02em", color: TEAL }}>{pct}%</span>
+          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: INK55 }}>
+            complete — {answered} of {total} answered
+          </span>
+        </div>
+        <Bar pct={pct} height={6} />
+      </div>
+
       <span style={{ fontSize: 12, lineHeight: 1.55, color: INK55 }}>
         Tap any question to go straight to it. Nothing is lost by jumping around —
         changing an answer only clears the ones that depended on it.
@@ -53,6 +76,7 @@ export default function IntakeMap({
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {blocks.map((b) => {
           const done = b.answered === b.total;
+          const bpct = b.total ? Math.round((b.answered / b.total) * 100) : 0;
           return (
             <div key={b.name} style={{ background: PAPER, border: `1px solid ${LINE}`,
               borderRadius: "var(--r-card)", overflow: "hidden" }}>
@@ -67,13 +91,20 @@ export default function IntakeMap({
                     <span style={{ fontSize: 10, color: INK40 }}>{b.range}</span>
                   </span>
                   <span style={{ fontSize: 11, color: INK55 }}>{b.topics}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7,
+                    paddingTop: 3 }}>
+                    <Bar pct={bpct} height={4} />
+                    <span style={{ flex: "none", fontSize: 10, color: INK40 }}>
+                      {b.answered}/{b.total}
+                    </span>
+                  </span>
                 </span>
                 <span style={{
                   fontSize: 10, fontWeight: 800, letterSpacing: ".04em",
                   padding: "4px 8px", borderRadius: "var(--r-pill)",
                   background: done ? TEAL_T : "var(--off)",
                   color: done ? TEAL : INK55,
-                }}>{b.answered}/{b.total}</span>
+                }}>{done ? "Done" : `${bpct}%`}</span>
                 <span style={{ fontSize: 13, color: INK40 }}>
                   {open === b.name ? "⌄" : "›"}
                 </span>
@@ -109,5 +140,16 @@ export default function IntakeMap({
         textTransform: "uppercase",
       }}>{ctaLabel}</button>
     </div>
+  );
+}
+
+/** How far along, as a length rather than a number. */
+function Bar({ pct, height }: { pct: number; height: number }) {
+  return (
+    <span style={{ flex: 1, height, background: "var(--off)",
+      borderRadius: height / 2, overflow: "hidden", display: "block" }}>
+      <span style={{ display: "block", height, width: `${pct}%`,
+        background: TEAL, borderRadius: height / 2 }} />
+    </span>
   );
 }

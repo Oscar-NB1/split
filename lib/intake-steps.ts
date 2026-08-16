@@ -39,7 +39,9 @@ export const STEPS: Step[] = [
     opts: c(["Yes", "I have picked my race"], ["No", "Help me find a goal to work towards"]) },
   { id: "discipline", kind: "choice", q: "What are you training for?",
     sub: "This sets how the week is split between running, stations and strength.",
-    opts: c(["Hyrox doubles", "Shared stations with a partner"], ["Hyrox singles", "Every station yourself"],
+    opts: c(
+      ["Hyrox doubles", "Shared stations with a partner — only this adds the two questions about how you and your partner compare"],
+      ["Hyrox singles", "Every station yourself"],
       ["Running race", "5K through marathon"], ["General fitness", "No race, just build"]) },
   { id: "raceDistance", kind: "choice", q: "Which distance?",
     sub: "The goal time and the long run are built from this.",
@@ -304,8 +306,13 @@ export const BLOCKS: { name: string; topics: string; ids: string[] }[] = [
   },
   {
     name: "You and your partner",
-    topics: "Standards, experience, races behind you",
-    ids: ["runDelta", "stationDelta", "division", "hyroxExp", "pastRaces"],
+    topics: "How the pair splits the work",
+    ids: ["runDelta", "stationDelta"],
+  },
+  {
+    name: "Your standards and history",
+    topics: "Weights, experience, races behind you",
+    ids: ["division", "hyroxExp", "pastRaces"],
   },
   {
     name: "Where you are starting",

@@ -432,6 +432,12 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
 
   // ------------------------------------------------------------- the questions
 
+  /** How much of the form is answered, which is not the same as how far in. */
+  const done = live.length
+    ? Math.round((live.filter((st) => filled(st, a as unknown as StepAnswers)).length
+        / live.length) * 100)
+    : 0;
+
   /**
    * One line describing what was answered, for the map.
    *
@@ -488,7 +494,10 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
             fontSize: 10, fontWeight: 700, color: INK40, whiteSpace: "nowrap",
             display: "flex", alignItems: "center", gap: 5, padding: "4px 0",
           }}>
+          {/* Position and completion are different facts and both are wanted:
+              the bar says where you are, the percentage says how much is done. */}
           Step {i + 1} of {live.length}
+          <span style={{ color: "#0A8FB0" }}>{done}%</span>
           <span style={{ fontSize: 11, color: "#0A8FB0" }}>☰</span>
         </button>
       </div>

@@ -210,3 +210,23 @@ test("a block with nothing to ask is left out rather than shown empty", () => {
   const names = mapOf(liveSteps(a, false), a, () => "").map((b) => b.name);
   assert.ok(!names.includes("You and your partner"), names.join(", "));
 });
+
+test("the partner block only exists for a doubles athlete", () => {
+  // It held the division, the Hyrox experience and the past races, which are
+  // every athlete's own answers — so a singles athlete was reading their own
+  // answers under a heading about a partner they do not have.
+  const partnerBlock = (discipline: string) => {
+    const a: Answers = { discipline, hasRace: "Yes" };
+    return mapOf(liveSteps(a, false), a, () => "")
+      .find((b) => b.name === "You and your partner");
+  };
+  assert.equal(partnerBlock("Hyrox singles"), undefined);
+  assert.equal(partnerBlock("Running race"), undefined);
+  assert.deepEqual(partnerBlock("Hyrox doubles")?.rows.map((r) => r.id),
+    ["runDelta", "stationDelta"]);
+});
+
+test("picking doubles is what the form says brings the partner questions", () => {
+  const [doubles] = STEPS.find((s) => s.id === "discipline")!.opts!;
+  assert.match(String(doubles[1]), /partner/i);
+});
