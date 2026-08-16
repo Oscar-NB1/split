@@ -17,7 +17,7 @@ type Row = {
 type Week = { week_start: string; winner: string; mine: Share; theirs: Share };
 type Rivalry = {
   id: string;
-  rival: { id: string; display_name: string };
+  rival: { id: string; display_name: string; avatar_url: string | null };
   one_sided: boolean;
   weeks_won: { mine: number; theirs: number };
   consistency: { mine: number; theirs: number };
@@ -45,7 +45,12 @@ const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%
  * and putting the absolute first would say the opposite.
  */
 export default function Versus({ onConnect }: { onConnect?: () => void }) {
-  const [d, setD] = useState<{ empty: boolean; rivalries: Rivalry[] } | null>(null);
+  const [d, setD] = useState<{
+    empty: boolean;
+    /** the signed-in athlete, so the scoreboard can show their own face */
+    me?: { id: string; display_name: string; avatar_url: string | null };
+    rivalries: Rivalry[];
+  } | null>(null);
   const [at, setAt] = useState(0);
   const [sent, setSent] = useState<string | null>(null);
 
@@ -107,7 +112,21 @@ export default function Versus({ onConnect }: { onConnect?: () => void }) {
               flex: 1, borderRadius: "var(--r-pill)", padding: "9px 12px", fontSize: 11,
               fontWeight: 700, background: i === at ? NAVY : "transparent",
               color: i === at ? "#fff" : INK55,
-            }}>{x.rival.display_name}</button>
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+            }}>
+              {/* Their face on the tab as well: with more than one rivalry the name
+                  is the smallest thing on the screen to aim a thumb at. */}
+              <span style={{ width: 18, height: 18, borderRadius: "50%", flex: "none",
+                overflow: "hidden", background: i === at ? "rgba(255,255,255,.2)" : OFF,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 9, fontWeight: 800 }}>
+                {x.rival.avatar_url
+                  ? <img src={x.rival.avatar_url} alt="" width={18} height={18}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : x.rival.display_name.slice(0, 1).toUpperCase()}
+              </span>
+              {x.rival.display_name}
+            </button>
           ))}
         </div>
         {onConnect && (
@@ -136,12 +155,14 @@ export default function Versus({ onConnect }: { onConnect?: () => void }) {
       <div style={{ background: NAVY, borderRadius: "var(--r-card)", padding: "18px 16px",
         display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Tally initial="Y" weeks={r.weeks_won.mine} label="You" />
+          <Tally initial={(d.me?.display_name ?? "You").slice(0, 1).toUpperCase()}
+            avatar={d.me?.avatar_url} weeks={r.weeks_won.mine} label="You" />
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em",
             color: "rgba(255,255,255,.5)", textAlign: "center", lineHeight: 1.5 }}>
             WEEKS<br />WON
           </span>
-          <Tally initial={name.slice(0, 1).toUpperCase()} weeks={r.weeks_won.theirs} label={name} />
+          <Tally initial={name.slice(0, 1).toUpperCase()} avatar={r.rival.avatar_url}
+            weeks={r.weeks_won.theirs} label={name} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{lead}</span>
@@ -225,12 +246,26 @@ export default function Versus({ onConnect }: { onConnect?: () => void }) {
   );
 }
 
-function Tally({ initial, weeks, label }: { initial: string; weeks: number; label: string }) {
+/**
+ * One side of the scoreboard.
+ *
+ * The picture where there is one, the initial where there is not — a face is how
+ * anyone tells two columns of numbers apart at a glance, and both athletes already
+ * have one on file from their profile or their sign-in.
+ */
+function Tally({ initial, avatar, weeks, label }: {
+  initial: string; avatar?: string | null; weeks: number; label: string;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-      <span style={{ width: 32, height: 32, borderRadius: "50%",
+      <span style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden",
         background: "rgba(255,255,255,.14)", color: "#fff", fontSize: 12, fontWeight: 800,
-        display: "flex", alignItems: "center", justifyContent: "center" }}>{initial}</span>
+        display: "flex", alignItems: "center", justifyContent: "center", flex: "none" }}>
+        {avatar
+          ? <img src={avatar} alt="" width={32} height={32}
+              style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          : initial}
+      </span>
       <span style={{ fontFamily: "var(--display)", fontSize: 30, fontWeight: 700,
         color: "#fff", lineHeight: 1 }}>{weeks}</span>
       <span style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>{label}</span>

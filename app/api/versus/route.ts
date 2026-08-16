@@ -34,8 +34,10 @@ export const GET = route(async () => {
    * Coaching used to stand in for this while the connection endpoints did not
    * exist; it no longer does, because a coach is not a rival.
    */
-  const others = await sql<{ id: string; display_name: string; started: string }[]>`
-    select u.id, u.display_name, r.started_at::text as started
+  const others = await sql<{
+    id: string; display_name: string; avatar_url: string | null; started: string;
+  }[]>`
+    select u.id, u.display_name, u.avatar_url, r.started_at::text as started
       from connections c
       join rivalries r on r.connection_id = c.id
       join users u on u.id = case when c.requester_id = ${me.id}
@@ -81,7 +83,10 @@ export const GET = route(async () => {
 
     return {
       id: `${me.id}:${other.id}`,
-      rival: { id: other.id, display_name: other.display_name },
+      rival: {
+        id: other.id, display_name: other.display_name,
+        avatar_url: other.avatar_url,
+      },
       since: other.started,
       /** null on either side means the rivalry has not started */
       one_sided: !current.requester.has_plan || !current.addressee.has_plan,
@@ -115,7 +120,15 @@ export const GET = route(async () => {
     };
   }));
 
-  return NextResponse.json({ empty: false, rivalries });
+  const [mine] = await sql<{ avatar_url: string | null }[]>`
+    select avatar_url from users where id = ${me.id}`;
+  // The athlete's own picture travels with the scoreboard: the screen shows both
+  // sides of it, and "Y" in a circle is a placeholder for a face we already have.
+  return NextResponse.json({
+    empty: false,
+    me: { id: me.id, display_name: me.display_name, avatar_url: mine?.avatar_url ?? null },
+    rivalries,
+  });
 });
 
 /** One comparison. The percentage decides it; the absolute is context. */
