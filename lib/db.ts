@@ -23,6 +23,17 @@ function needsTLS(url: string): boolean {
   }
 }
 
+/*
+ * Functions run in fra1, set in vercel.json, because this database is in
+ * eu-central-1.
+ *
+ * Vercel defaulted to iad1, so every query went Frankfurt -> Washington ->
+ * Frankfurt and back — about ninety milliseconds of Atlantic per round trip, and
+ * a route making six sequential queries spent half a second in transit before
+ * doing any work. Moving the region to match the database is the whole fix.
+ *
+ * If the database ever moves, move the region with it.
+ */
 export const sql =
   global.__sql ??
   postgres(process.env.DATABASE_URL!, {
