@@ -63,7 +63,18 @@ export default function Away({ onChange }: { onChange?: (n: number) => void }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <span style={caps}>Time away</span>
+      <span style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={caps}>Time away</span>
+        {/* Said out loud: three empty inputs and a button read as a form to
+            complete, and most people have no trip to declare. */}
+        <span style={{ fontSize: 10, fontWeight: 600, color: INK40 }}>Optional</span>
+      </span>
+      {(list ?? []).length === 0 && (
+        <span style={{ fontSize: 11, lineHeight: 1.5, color: INK55 }}>
+          Nothing booked? Skip this. Add a trip only if you already know you will
+          be away — the plan cuts those weeks and moves a down week onto them.
+        </span>
+      )}
 
       {(list ?? []).map((a) => (
         <div key={a.id} style={{

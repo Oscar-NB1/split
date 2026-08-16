@@ -1,4 +1,4 @@
-import { addDays, mondayOf, today } from "../dates";
+import { addDays, today } from "../dates";
 import type { Intake } from "../intake";
 import type { Absence } from "./intake-rules";
 import type { Commitment } from "./slots";
@@ -103,7 +103,9 @@ export type Extra = {
 };
 
 export function paramsFrom(x: Intake, extra: Extra): Params {
-  const start = mondayOf(x.raceDate && !x.hasRace ? today() : (startFrom(x) ?? today()));
+  // Not snapped to a Monday: weeks are seven days from whenever the athlete
+  // starts, so insisting on one only moved their answer.
+  const start = startFrom(x) ?? today();
   const race = x.raceDate ?? null;
 
   /*

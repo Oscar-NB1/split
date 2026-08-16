@@ -108,3 +108,14 @@ test("the progress count only ever counts questions this athlete will see", () =
   assert.ok(running.length < hyrox.length);
   assert.ok(running.every((s) => STEPS.includes(s)), "no invented steps");
 });
+
+test("a 5 km time is not asked of someone who does not run 5 km", () => {
+  // a stepper defaulted to 32 minutes plus a "no idea" escape is a worse way of
+  // saying the same thing — their paces come from the running base instead
+  const asks = (runningSelf: string) =>
+    liveSteps({ ...doubles, runningSelf }, true).some((s) => s.id === "pace");
+  assert.equal(asks("I do not run"), false);
+  assert.equal(asks("Runs with walk breaks"), false);
+  assert.equal(asks("5 km nonstop"), true);
+  assert.equal(asks("Half marathon fit"), true);
+});

@@ -5,6 +5,7 @@ import IntakeKm from "./IntakeKm";
 import IntakeGoal from "./IntakeGoal";
 import IntakeStart from "./IntakeStart";
 import { filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
+import { divisionsFor } from "@/lib/intake";
 
 /**
  * The past-race lookup is deliberately not here.
@@ -281,6 +282,14 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
     if (id === "equipment") {
       return a.discipline === "Running race" ? opts.equipment.running : opts.equipment.default;
     }
+    /*
+     * Divisions are a different list per discipline, not a modifier — and the
+     * doubles list is where Mixed lives. The step spec carried a flat solo list,
+     * so a doubles athlete was asked to pick between Men and Women and Mixed was
+     * missing entirely, even though the loads table has carried
+     * "Mixed doubles" -> men's open all along.
+     */
+    if (id === "division") return [...divisionsFor(a.discipline as never)];
     if (s.opts) return s.opts.map(([label]) => label);
     return s.chips ?? [];
   };
@@ -421,6 +430,28 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
+      {/* Two shortcuts, because seven taps for "every day" is seven taps. The
+          individual chips stay — these only ever set them. */}
+      {id === "days" && (
+        <div style={{ display: "flex", gap: 6 }}>
+          {([["Weekdays", ["Mon", "Tue", "Wed", "Thu", "Fri"]],
+             ["Every day", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]]] as const)
+            .map(([label, set2]) => {
+              const on = set2.length === a.days.length
+                && set2.every((d) => a.days.includes(d));
+              return (
+                <button key={label} onClick={() => set("days", on ? [] : [...set2])}
+                  style={{
+                    flex: 1, padding: "10px 0", borderRadius: "var(--r-pill)",
+                    border: `1px solid ${on ? TEAL : LINE}`, fontSize: 12,
+                    fontWeight: 700, background: on ? TEAL_T : PAPER,
+                    color: on ? TEAL : INK55,
+                  }}>{label}</button>
+              );
+            })}
+        </div>
+      )}
+
       {q.kind === "chips" && (
         <>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
@@ -509,10 +540,20 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           </div>
           {!a.paceUnknown && (
             <div style={{ display: "flex", gap: 6 }}>
-              {([["−1 min", () => set("paceMin", Math.max(12, a.paceMin - 1))],
-                 ["+1 min", () => set("paceMin", Math.min(60, a.paceMin + 1))],
-                 ["−15 s", () => set("paceSec", (a.paceSec + 45) % 60)],
-                 ["+15 s", () => set("paceSec", (a.paceSec + 15) % 60)]] as const).map(([l, fn]) => (
+              {/*
+                * Stepped as one number of seconds, then split for display.
+                * Nudging the seconds used to wrap 00 -> 45 within the same
+                * minute, so −15 s from 21:00 gave 21:45 — the time went up when
+                * the button said down, and minutes could not be reached by
+                * pressing seconds.
+                */}
+              {([["−1 min", -60], ["+1 min", 60], ["−15 s", -15], ["+15 s", 15]] as const)
+                .map(([l, d]) => [l, () => {
+                  const total = Math.max(12 * 60, Math.min(60 * 60,
+                    a.paceMin * 60 + a.paceSec + d));
+                  set("paceMin", Math.floor(total / 60));
+                  set("paceSec", total % 60);
+                }] as const).map(([l, fn]) => (
                 <button key={l} onClick={fn} style={{ flex: 1, padding: "12px 0",
                   borderRadius: "var(--r-pill)", border: `1px solid ${LINE}`, background: PAPER,
                   fontSize: 12, fontWeight: 700, color: INK }}>{l}</button>

@@ -172,6 +172,17 @@ export function liveSteps(a: Answers, stravaConnected: boolean): Step[] {
         return isHyrox(a);
       case "raceDate": case "goal":
         return str(a, "hasRace") === "Yes";
+      /*
+       * A 5 km time is not a question you can ask someone who does not run 5 km.
+       * They were being shown a stepper defaulted to 32 minutes and a "no idea"
+       * escape, which is a worse way of saying the same thing. Their paces come
+       * from the running base instead, uncalibrated and flagged as such.
+       */
+      case "pace":
+        return !["doesnt_run", "walk_breaks"].includes(
+          String(a.runningSelf ?? "") === "I do not run" ? "doesnt_run"
+            : String(a.runningSelf ?? "") === "Runs with walk breaks" ? "walk_breaks" : "",
+        );
       // Only worth asking when the week does not fit the days.
       case "allowDoubles":
         return weeklyLoad(a) > 7;
