@@ -240,32 +240,21 @@ export function resolve(x: ResolveInput): Resolved {
    * the paces; it does not license the volume.
    */
   /**
-   * Not knowing has a cost, and it is stated.
+   * No haircut for not having been measured.
    *
-   * A benchmark clears it. Strava supplying the volume halves it rather than
-   * clearing it, because a measured week says what the athlete ran and still
-   * says nothing about how fast they can run it.
+   * The design's generator discounts week 1 by 15%, or 7% where Strava supplied
+   * the volume, whenever no benchmark has been run. Removed on instruction, and
+   * removed a second time after the intake form reinstated it: everything above
+   * this line is already an answer about what the athlete is doing now, and
+   * discounting it again for the absence of a test penalises not having taken
+   * one. A benchmark sharpens the paces; it does not license the volume.
    */
-  // The volume has to have actually arrived. A Strava survey that came back
-  // empty is not a measurement, and must not earn the measured discount.
-  const strava_volume = x.recent?.source === "measured" && !!x.recent.peak_week_km;
-  const haircut = x.confidence === "measured" ? 1
-    : strava_volume ? HAIRCUT_STRAVA : HAIRCUT_NONE;
-  const start_volume = Math.max(3, Math.round(capped * haircut * 10) / 10);
-  if (haircut < 1) {
-    flags.push(
-      haircut === HAIRCUT_STRAVA
-        ? `Week 1 sits ${Math.round((1 - haircut) * 100)}% under your ceiling. Strava gave us the volume, so this is half the usual margin — a benchmark clears the rest by measuring the pace.`
-        : `Week 1 sits ${Math.round((1 - haircut) * 100)}% under your ceiling, because nothing here is measured yet. A benchmark, or connecting Strava, closes most of that.`,
-    );
-  }
+  const start_volume = Math.max(3, Math.round(capped * 10) / 10);
 
   const dial = x.volume_dial ?? 1.0;
-  /** The same tiering on the climb: measured 12%, Strava 10%, neither 8%. */
-  const ramp_cap = x.confidence === "measured" ? 0.12
-    : strava_volume ? 0.10 : 0.08;
-  const ramp_rate =
-    Math.min(ramp_cap, BASE_RAMP[training_age], RUNNING_RAMP[running_base]) * dial;
+  // Not tiered by measurement either, for the same reason: the climb is what
+  // the athlete's training and running support, and a test does not change it.
+  const ramp_rate = Math.min(BASE_RAMP[training_age], RUNNING_RAMP[running_base]) * dial;
 
   // Training age sets the peak. Whether a test has been run does not: the same
   // athlete does not become capable of less by declining to be measured.
@@ -307,8 +296,3 @@ export function resolve(x: ResolveInput): Resolved {
 /** How far above a proven week a single block is allowed to build. */
 export const PROVEN_HEADROOM = 1.6;
 
-
-/** Week 1 sits under the ceiling by this much when nothing is measured. */
-export const HAIRCUT_NONE = 0.85;
-/** Halved when Strava supplied the volume: it says what, not how fast. */
-export const HAIRCUT_STRAVA = 0.93;

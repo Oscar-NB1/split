@@ -53,16 +53,16 @@ test("every ceiling in the table is enforced", () => {
   }
 });
 
-test("not knowing has a cost, and it is stated", () => {
-  // Reinstated by the intake form after being removed: a benchmark clears the
-  // haircut, Strava supplying the volume halves it rather than clearing it, and
-  // guessing pays it in full. The tiering is the whole point — see
-  // tests/plan-recent.test.ts for the three-way comparison.
+test("no benchmark is not a reason to train less", () => {
+  // Removed twice: once on instruction, and again after the intake form
+  // reinstated it as a tier. Every input above it is already an answer about
+  // what the athlete is doing now, and discounting those a second time for the
+  // absence of a test penalises not having taken one.
   const measured = resolve(base({ confidence: "measured" }));
   const guessed = resolve(base({ confidence: "estimated" }));
-  assert.equal(guessed.start_volume, Math.round(measured.start_volume * 0.85 * 10) / 10);
-  assert.ok(guessed.flags.some((f) => /under your ceiling/.test(f)));
-  assert.ok(!measured.flags.some((f) => /under your ceiling/.test(f)));
+  assert.equal(guessed.start_volume, measured.start_volume);
+  assert.equal(guessed.ramp_rate, measured.ramp_rate);
+  assert.ok(!guessed.flags.some((f) => /under your ceiling|15%|7%/.test(f)));
 });
 
 test("high availability on a low base schedules fewer sessions and flags it", () => {
