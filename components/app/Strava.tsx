@@ -51,6 +51,23 @@ export default function Strava({ onDone }: { onDone?: () => void }) {
 
   useEffect(() => { load(); }, []);
 
+  /**
+   * Strava is not configured on this deployment.
+   *
+   * Said here rather than discovered by being bounced to a Strava error page.
+   * The connect route refuses in the same case, so the two agree.
+   */
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get("strava") === "unavailable") {
+      setUnavailable(true);
+    }
+  }, []);
+
+  const notice = unavailable
+    ? "Strava is not set up on this deployment yet, so there is nothing to hand you to. Nothing was sent."
+    : null;
+
   async function disconnect() {
     setBusy(true);
     await fetch("/api/connections/strava", { method: "DELETE" });
@@ -104,6 +121,13 @@ export default function Strava({ onDone }: { onDone?: () => void }) {
       {!s.connected ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <p style={{ fontSize: 14, lineHeight: 1.6, color: INK70, margin: 0 }}>
+            {notice && (
+              <span style={{ display: "block", marginBottom: 12, padding: "11px 13px",
+                borderRadius: 12, background: "var(--cream)",
+                border: "1px solid #C07A3E", fontSize: 12, lineHeight: 1.5 }}>
+                {notice}
+              </span>
+            )}
             Connecting Strava is what makes the plan self-completing. Every activity you upload is
             matched to the session it was meant to be, and the numbers fill themselves in.
           </p>
