@@ -155,7 +155,12 @@ export async function notifyComment(sessionId: string, authorId: string, body: s
 
 // ---------------------------------------------------------------- scheduled
 
-const NOTABLE = ["key", "benchmark", "race"];
+/*
+ * Days worth a reminder the night before. "hard" is in here alongside "key":
+ * a Hyrox session does not drive what the plan prescribes next, but it is still
+ * a day you want to arrive fresh for, and that is what this list is for.
+ */
+const NOTABLE = ["key", "hard", "benchmark", "race"];
 
 /**
  * Everything the cron looks forward at. Idempotent by construction: every

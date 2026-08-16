@@ -22,12 +22,36 @@ const TITLES: Record<string, string> = {
   benchmark: "Benchmark test", race: "Race",
 };
 
-/** null | key | benchmark | race — what makes a day worth arriving fresh for. */
+/**
+ * What kind of day this is: key | hard | benchmark | race, or nothing.
+ *
+ * "key" and "hard" are not the same claim and were being made with one word.
+ * Both mean arrive fresh. Only "key" means the session the plan reads to decide
+ * what to prescribe next — and that is the key running work and the strength
+ * work, not the Hyrox session.
+ *
+ * A Hyrox session is unambiguously hard, and it should wake a reminder the night
+ * before. But it is a rehearsal of the event rather than a measurement of
+ * fitness: the stations are done at whatever weight the athlete can move, the
+ * runs are compromised on purpose, and the pace it produces is a fact about
+ * fatigue rather than about speed. Letting it read as "key" invites something
+ * downstream to anchor a prescription to it.
+ */
+const KEY_KINDS = ["quality_run", "long_run", "strength"];
+
 function significance(s: Session): string | undefined {
   const k = String(s.kind);
   if (k === "benchmark") return "benchmark";
   if (k === "race") return "race";
-  return s.hard && !s.commitment ? "key" : undefined;
+  if (s.commitment) return undefined;
+  /*
+   * A key kind is key whether or not the generator flagged it hard. A long run is
+   * the session the plan reads for durability and it is not always marked hard —
+   * it was coming through as an ordinary day, which is how a 19 km Sunday ends up
+   * with no reminder the night before.
+   */
+  if (KEY_KINDS.includes(k)) return "key";
+  return s.hard ? "hard" : undefined;
 }
 
 function minutes(s: Session): number {
