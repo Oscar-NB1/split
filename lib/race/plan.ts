@@ -296,3 +296,54 @@ export function roxzoneFrom(
     needs_confirmation: true,
   };
 }
+
+// ------------------------------------------------------------- race day
+
+export type Split = { label: string; run_s: number; station_s: number; transition_s: number };
+
+/**
+ * Cumulative time at each station, in race order.
+ *
+ * The one thing that gets glanced at mid-race, so it is precomputed rather than
+ * derived on a phone with no signal in a loud venue. Each entry is the clock
+ * after that station's run, station and transition.
+ */
+export function cumulative(p: RacePlan): { label: string; at_s: number }[] {
+  const out: { label: string; at_s: number }[] = [];
+  let acc = 0;
+  p.stations.forEach((s, i) => {
+    acc += (p.runs[i]?.target_pace_s_per_km ?? 0) * RUN_KM
+      + s.target_time_s * s.my_share
+      + (i < TRANSITION_COUNT ? p.roxzone.per_transition_s : 0);
+    out.push({ label: s.station_id, at_s: Math.round(acc) });
+  });
+  return out;
+}
+
+/**
+ * The three ways to close a gap, phrased as a choice.
+ *
+ * Any one of them gets there, which is the useful framing: the athlete picks the
+ * lever they believe in rather than being handed a rescaled plan and told it is
+ * theirs.
+ */
+export function routes(p: RacePlan): { kind: string; label: string }[] {
+  const ds = deltasToClose(p);
+  if (ds.length === 0) return [];
+  const find = (k: string) => ds.find((d) => d.component === k)!;
+  const dir = (n: number) => (n < 0 ? "quicker" : "slower");
+  return [
+    { kind: "runs", label: `${Math.abs(find("run_pace").change_s)} s/km ${dir(find("run_pace").change_s)} on every run` },
+    { kind: "stations", label: `${Math.abs(find("stations").change_s)} s off every station` },
+    { kind: "roxzone", label: `${Math.abs(find("roxzone").change_s)} s off every transition` },
+  ];
+}
+
+/** The sensitivity table as the sentence the screen shows. */
+export function sensitivityLine(): { line: string; why: string } {
+  const s = sensitivity();
+  return {
+    line: `One second per kilometre is ${s.run_pace_1s_per_km} seconds of race.`,
+    why: `There are eight kilometres of running in a Hyrox, so pace moves the total ${s.run_pace_1s_per_km}× faster than it looks. Five seconds off every station is ${s.each_station_5s} seconds; five off every transition is ${s.roxzone_5s}. Spend your weeks where the arithmetic is.`,
+  };
+}

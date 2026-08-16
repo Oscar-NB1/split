@@ -788,3 +788,44 @@ alter table users drop column if exists username;
 -- than eleven columns: they are answers, not relations, and nothing queries
 -- across them. An intake saved before they existed reads them back as null.
 alter table athlete_intake add column if not exists answers jsonb not null default '{}';
+
+-- Race plans (2026-08-16). One per race per athlete, held against race_targets.
+--
+-- Every field carries where its number came from, because that is what decides
+-- whether the client may present it as the athlete's own. The projection and the
+-- gap are not stored: both are pure functions of the components, and a stored
+-- total would be a second answer that could disagree with the first.
+create table if not exists race_plans (
+  id            uuid primary key default gen_random_uuid(),
+  race_id       uuid not null references race_targets(id) on delete cascade,
+  athlete_id    uuid not null references users(id) on delete cascade,
+  mode          text not null default 'components_up'
+    check (mode in ('target_down', 'components_up')),
+  target_total_s int,
+  runs          jsonb not null default '[]',
+  stations      jsonb not null default '[]',
+  roxzone       jsonb not null default '{}',
+  pushed_to_watch_at timestamptz,
+  updated_at    timestamptz not null default now(),
+  unique (race_id, athlete_id)
+);
+
+-- Race-week checklist state. The items themselves are code (lib/race/checklist.ts)
+-- so their wording can improve without a migration; only what the athlete has
+-- ticked, and anything they added, lives here.
+create table if not exists race_checklist (
+  race_id    uuid not null references race_targets(id) on delete cascade,
+  athlete_id uuid not null references users(id) on delete cascade,
+  item_id    text not null,
+  label      text,                    -- set only for items the athlete added
+  category   text,
+  due_offset_days int,
+  done       boolean not null default false,
+  updated_at timestamptz not null default now(),
+  primary key (race_id, athlete_id, item_id)
+);
+
+-- Venue details, which nothing can derive.
+alter table race_targets add column if not exists venue      text;
+alter table race_targets add column if not exists start_time text;
+alter table race_targets add column if not exists wave       text;
