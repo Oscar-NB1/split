@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { zonesFor } from "@/lib/coach";
 import type { Prof } from "./Profile";
 
@@ -23,6 +23,7 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
   const [p, setP] = useState<Prof | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const file = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/profile").then(async (r) => r.ok && setP(await r.json()));
@@ -38,12 +39,53 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
       body: JSON.stringify({
         display_name: p!.display_name, hr_max: p!.hr_max,
         weight_kg: p!.weight_kg, dob: p!.dob,
-        gender: p!.gender,
+        gender: p!.gender, avatar_url: p!.avatar_url ?? null,
       }),
     });
     setBusy(false);
-    if (!r.ok) { setMsg("That didn't save."); return; }
+    if (!r.ok) {
+      // The server's own words: "that image is too large" is worth reading, and
+      // "that didn't save" for a photo problem sends people back to the fields.
+      const j = await r.json().catch(() => ({}));
+      setMsg(j.error ?? "That didn't save.");
+      return;
+    }
     onSaved();
+  }
+
+  /**
+   * A chosen photo, resized before it goes anywhere.
+   *
+   * The picture is stored on the row rather than in an object store, so the size
+   * matters: 256 px square, re-encoded as JPEG, lands around 20 KB whatever came
+   * out of the camera. Cropped centrally, because an avatar is a circle and a
+   * letterboxed portrait in a circle is mostly forehead.
+   */
+  async function pick(f: File) {
+    setMsg(null);
+    if (!f.type.startsWith("image/")) { setMsg("That is not an image."); return; }
+    try {
+      const url = URL.createObjectURL(f);
+      const img = await new Promise<HTMLImageElement>((ok, no) => {
+        const i = new Image();
+        i.onload = () => ok(i);
+        i.onerror = () => no(new Error("unreadable"));
+        i.src = url;
+      });
+      const S = 256;
+      const canvas = document.createElement("canvas");
+      canvas.width = S; canvas.height = S;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("no canvas");
+      const side = Math.min(img.width, img.height);
+      ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side,
+        0, 0, S, S);
+      URL.revokeObjectURL(url);
+      set("avatar_url", canvas.toDataURL("image/jpeg", 0.8));
+      setMsg("Photo ready — save to keep it.");
+    } catch {
+      setMsg("That image could not be read.");
+    }
   }
 
   const zones = zonesFor(p.hr_max);
@@ -53,25 +95,38 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
       <div style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
         lineHeight: 1.1, letterSpacing: "-.02em" }}>Edit profile</div>
 
-      {/* The photo is whatever the sign-in provider gave us. There is nowhere to
-          upload one yet, so this shows what we have rather than offering a
-          control that does nothing — the design's "drop a photo" copy is
-          deliberately not here until it is true. */}
+      {/* Your own photo, or the one the sign-in provider gave us. */}
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span style={{ width: 72, height: 72, flex: "none", borderRadius: "50%",
-          overflow: "hidden", background: TEAL, color: "#fff", fontSize: 26,
-          fontWeight: 800, display: "flex", alignItems: "center",
-          justifyContent: "center" }}>
+        <button onClick={() => file.current?.click()} aria-label="Change your photo"
+          style={{ width: 72, height: 72, flex: "none", borderRadius: "50%",
+            overflow: "hidden", background: TEAL, color: "#fff", fontSize: 26,
+            fontWeight: 800, display: "flex", alignItems: "center",
+            justifyContent: "center", padding: 0, border: 0 }}>
           {p.avatar_url
             ? <img src={p.avatar_url} alt="" width={72} height={72}
                 style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             : (p.display_name ?? "?").slice(0, 1).toUpperCase()}
+        </button>
+        <span style={{ display: "flex", flexDirection: "column", gap: 6,
+          alignItems: "flex-start" }}>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => file.current?.click()} style={{
+              background: PAPER, border: `1px solid ${LINE}`,
+              borderRadius: "var(--r-pill)", padding: "8px 14px", fontSize: 11,
+              fontWeight: 700, color: "var(--ink)",
+            }}>{p.avatar_url ? "Change photo" : "Add a photo"}</button>
+            {p.avatar_url && (
+              <button onClick={() => { set("avatar_url", null); setMsg("Photo removed — save to keep it."); }}
+                style={{ background: "none", border: 0, fontSize: 11, fontWeight: 700,
+                  color: INK55, textDecoration: "underline" }}>Remove</button>
+            )}
+          </span>
+          <span style={{ fontSize: 11, color: INK55, lineHeight: 1.5 }}>
+            Square works best. It is resized to 256 px before it is saved.
+          </span>
         </span>
-        <span style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
-          {p.avatar_url
-            ? "From your Strava or Google account. Change it there and it follows."
-            : "No picture yet. Signing in with Google or Strava brings one across."}
-        </span>
+        <input ref={file} type="file" accept="image/*" hidden
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ""; }} />
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>

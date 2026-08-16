@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { addDays, dow, fmt, today } from "@/lib/dates";
+import { addDays, dow, fmt, mondayOf, today } from "@/lib/dates";
 import { kindColour, kindLabel, weekDates } from "@/lib/coach";
 import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
 import { prescribedPace } from "@/lib/signals";
@@ -51,10 +51,12 @@ function metrics(s: Session): [string, string, string] {
 }
 
 export default function Week({
-  data, me, monday, openActivity, openSession, reload, openWeek, coaching,
+  data, me, monday, setMonday, openActivity, openSession, reload, openWeek, coaching,
 }: {
   data: WeekData | null; me: User;
   monday: string;
+  /** moving between the weeks of the block, from the strip above the days */
+  setMonday: (m: string) => void;
   /** the athlete being coached, when the profile has opened someone else's week */
   coaching: string | null;
   openActivity: (id: string) => void; openSession: (s: Session) => void; reload: () => void;
@@ -95,7 +97,7 @@ export default function Week({
   const state = !block?.plan_state ? null : {
     estimated: {
       label: "Estimated", bg: OFF, fg: INK55,
-      why: "Volume is held 15% low and the ramp capped. Run the benchmark and it comes up.",
+      why: "Volume is real; the paces are estimated from what you told me. A benchmark turns them into numbers.",
     },
     awaiting: {
       label: "Awaiting baseline", bg: "var(--teal-tint2)", fg: "var(--teal)",
@@ -107,6 +109,20 @@ export default function Week({
     },
   }[block.plan_state];
 
+  /*
+   * How far the arrows go.
+   *
+   * A week inside the block either way, plus the current week always — someone with
+   * no block can still look at last week, and someone whose block has ended can
+   * still get back to it.
+   */
+  const first = block?.weeks[0]?.start ?? null;
+  const last = block?.weeks[block.weeks.length - 1]?.start ?? null;
+  const thisMonday = mondayOf(today());
+  const isThisWeek = monday === thisMonday;
+  const canBack = !first || addDays(monday, -7) >= first || addDays(monday, -7) >= thisMonday;
+  const canForward = !last || addDays(monday, 7) <= last || addDays(monday, 7) <= thisMonday;
+
   const kmDone = all.filter((s) => ["done", "adjusted", "unplanned"].includes(s.status))
     .reduce((n, s) => n + (Number(s.distance_m) || 0), 0) / 1000;
   const doneCount = all.filter((s) => s.status === "done").length;
@@ -117,6 +133,39 @@ export default function Week({
           the reordering the design asks for is sequence, not styling. */}
       <div style={{ margin: "-18px -18px 0", padding: "12px 18px", background: PAPER,
         borderBottom: `1px solid ${LINE}` }}>
+        {/*
+          * Which week this is, and the way to the ones either side.
+          *
+          * The screen could only ever show the current week: the state existed and
+          * nothing on this screen set it, so an athlete could not look at what is
+          * coming or at what they did last week without leaving for the plan.
+          * Bounded by the block, so the arrows never walk off either end of it.
+          */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 8, paddingBottom: 10 }}>
+          <button onClick={() => setMonday(addDays(monday, -7))} disabled={!canBack}
+            aria-label="The week before" style={{
+              ...arrow, opacity: canBack ? 1 : .3, color: "var(--ink)",
+            }}>‹</button>
+          <button onClick={() => setMonday(mondayOf(today()))} style={{
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
+            gap: 1, color: "var(--ink)",
+          }}>
+            <span style={{ fontSize: 12, fontWeight: 700 }}>
+              {week ? `Week ${week.n} of ${block?.weeks.length ?? week.n}`
+                : isThisWeek ? "This week" : "Outside the block"}
+            </span>
+            <span style={{ fontSize: 10, color: INK40 }}>
+              {isThisWeek ? "This week"
+                : `${fmt(monday, { day: "numeric", month: "short" })} – ${
+                    fmt(addDays(monday, 6), { day: "numeric", month: "short" })}`}
+            </span>
+          </button>
+          <button onClick={() => setMonday(addDays(monday, 7))} disabled={!canForward}
+            aria-label="The week after" style={{
+              ...arrow, opacity: canForward ? 1 : .3, color: "var(--ink)",
+            }}>›</button>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
           {dates.map((d, i) => {
             const has = all.filter((s) => s.planned_date === d);

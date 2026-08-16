@@ -58,7 +58,7 @@ export default function Plan({
   /** What explains cautious numbers without a notification. */
   const state = !block?.plan_state ? null : {
     estimated: { label: "Estimated", bg: OFF, fg: INK55,
-      why: "Volume held 15% low, ramp capped. The benchmark lifts it." },
+      why: "Volume is real; the paces are estimated. A benchmark turns them into numbers." },
     awaiting: { label: "Awaiting baseline", bg: "var(--teal-tint2)", fg: TEAL,
       why: "The benchmark is session 1; the numbers rebuild from it." },
     measured: { label: "Measured", bg: "var(--lime)", fg: "var(--on-lime)",

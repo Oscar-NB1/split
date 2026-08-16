@@ -289,7 +289,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "week" && (block || !data) && (
           <Week
-            data={data} me={me} monday={monday} coaching={coaching}
+            data={data} me={me} monday={monday} setMonday={setMonday}
+            coaching={coaching}
             openActivity={openActivity} openSession={openSession} reload={load}
             openWeek={() => setView("program")}
           />

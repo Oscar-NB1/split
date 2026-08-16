@@ -2,7 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { coachedBy, coachees } from "@/lib/coaching";
-import { route } from "@/lib/http";
+import { badRequest, route } from "@/lib/http";
+import { avatarFrom } from "@/lib/avatar";
 
 /** The athlete's own settings: zones come from hr_max, switches from notify. */
 export const GET = route(async () => {
@@ -78,8 +79,29 @@ export const PATCH = route(async (req: NextRequest) => {
   const name = typeof b.display_name === "string" && b.display_name.trim()
     ? b.display_name.trim().slice(0, 80) : null;
 
+  /*
+   * The picture, as a data URI in the row.
+   *
+   * There is no object store wired up, and adding one to change an avatar is a
+   * disproportionate amount of infrastructure — the client resizes to 256 px and
+   * re-encodes before sending, which lands around 20 KB. The cap here is what
+   * stops a bad client putting a two-megabyte row in front of every query that
+   * reads a user.
+   *
+   * `null` clears it; absent leaves it alone, so the rest of the form can be
+   * saved without touching the photo.
+   */
+  const avatar = avatarFrom(b.avatar_url);
+  if (avatar === "too_big") {
+    throw badRequest("That image is too large. Try a smaller one.");
+  }
+  if (avatar === "not_an_image") {
+    throw badRequest("That is not an image file.");
+  }
+
   await sql`
     update users set
+      avatar_url = ${avatar === "unchanged" ? sql`avatar_url` : avatar},
       hr_max = ${hr},
       weight_kg = ${kg},
       dob = ${b.dob || null},
