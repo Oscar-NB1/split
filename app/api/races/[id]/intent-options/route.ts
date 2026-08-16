@@ -21,7 +21,7 @@ export const GET = route(async (req: NextRequest, ctx: { params: Promise<{ id: s
     race_date: string; role: string; plan_id: string; intent: string | null;
   }[]>`
     select r.race_date::text as race_date, r.role, r.plan_id, r.intent
-      from plan_races r join plan_templates p on p.id = r.plan_id
+      from race_targets r join plan_templates p on p.id = r.plan_id
      where r.id = ${id} and p.athlete_id = ${me.id}
   `;
   if (!race) throw notFound("No such race.");
@@ -30,8 +30,8 @@ export const GET = route(async (req: NextRequest, ctx: { params: Promise<{ id: s
   }
 
   const [target] = await sql<{ race_date: string }[]>`
-    select race_date::text as race_date from plan_races
-     where plan_id = ${race.plan_id} and role = 'target'
+    select race_date::text as race_date from race_targets
+     where athlete_id = ${me.id} and role = 'target'
   `;
   if (!target) throw badRequest("This plan has no target race yet.");
 

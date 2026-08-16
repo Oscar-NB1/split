@@ -14,7 +14,8 @@ import { generate as buildPlan } from "@/lib/plan/generate";
 import { paramsFrom } from "@/lib/plan/from-intake";
 import { toTemplate } from "@/lib/plan/to-template";
 import { recentFor } from "@/lib/recent";
-import { measuredRecent } from "@/lib/recent";
+import { checkIntent, intentLocked, type Intent } from "@/lib/race/brace";
+import { today } from "@/lib/dates";
 
 /**
  * The intake: what the athlete says about themselves, and the block it builds.
@@ -400,6 +401,48 @@ export const POST = route(async (req: NextRequest) => {
       corrections = excluded.corrections
     returning id
   `;
+  /*
+   * The races themselves, which nothing was writing.
+   *
+   * The intake collected a race date and a list of secondary races and then
+   * dropped both on the floor — so the race planner, the race week and race day
+   * had nothing to plan against, and the B-race stage reshaped weeks around races
+   * that existed only in the answers blob. Written here because this is the point
+   * the athlete commits to the block.
+   *
+   * Replaced rather than merged: rebuilding a plan re-declares the races, and a
+   * leftover race from a previous build would quietly reshape the new one.
+   */
+  await sql`delete from race_targets where athlete_id = ${me.id}`;
+  if (intake.raceDate) {
+    await sql`
+      insert into race_targets (
+        athlete_id, race_date, start_date, discipline, division, goal,
+        target_time_s, role
+      ) values (
+        ${me.id}, ${intake.raceDate}, ${startDate}, ${intake.discipline},
+        ${intake.division}, ${intake.goal},
+        ${intake.goalMin ? Math.round(intake.goalMin * 60) : null}, 'target'
+      )
+    `;
+    for (const b of intake.bRaces ?? []) {
+      // The intent the athlete chose is re-checked here against the real gap:
+      // the answer was given before the start date was necessarily settled.
+      const ok = checkIntent(b.intent as Intent, b.date, intake.raceDate);
+      await sql`
+        insert into race_targets (
+          athlete_id, race_date, venue, discipline, division, role, intent,
+          intent_locked
+        ) values (
+          ${me.id}, ${b.date}, ${b.venue || null}, ${intake.discipline},
+          ${intake.division}, 'secondary',
+          ${ok.ok ? b.intent : "training"},
+          ${intentLocked(b.date, today())}
+        )
+      `;
+    }
+  }
+
   const { created } = await materialise(tpl.id);
 
   return NextResponse.json({

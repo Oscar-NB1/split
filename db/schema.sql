@@ -887,3 +887,40 @@ create table if not exists race_results (
   field_usability jsonb not null default '{}',
   captured_at    timestamptz not null default now()
 );
+
+-- One race table (2026-08-16). plan_races and race_targets were the same concept
+-- arrived at twice: race_targets from the plan briefs, plan_races from the B-race
+-- brief a few hours later. race_targets wins because twelve other places already
+-- reference it; the role and intent columns move onto it, and plan_races goes.
+--
+-- Free to do because both were empty. It would not have been tomorrow.
+alter table race_targets add column if not exists role text not null default 'target'
+  check (role in ('target', 'secondary'));
+alter table race_targets add column if not exists intent text
+  check (intent in ('training', 'sharpen', 'compete'));
+alter table race_targets add column if not exists intent_locked boolean not null default false;
+alter table race_targets add column if not exists partner_name text;
+
+-- One target per athlete per plan window, enforced rather than intended.
+create unique index if not exists race_targets_one_target
+  on race_targets (athlete_id) where role = 'target';
+
+drop table if exists race_results;
+drop table if exists plan_races;
+
+-- Results hang off the one race table.
+create table if not exists race_results (
+  id             uuid primary key default gen_random_uuid(),
+  race_id        uuid not null unique references race_targets(id) on delete cascade,
+  athlete_id     uuid not null references users(id) on delete cascade,
+  finish_s       int,
+  run_avg_s      int,
+  stations_s     int,
+  rox_s          int,
+  my_share       numeric,
+  partner_slower boolean,
+  -- stored beside the numbers so a later change to the usability rules cannot
+  -- retroactively promote a field that was distorted when it was captured
+  field_usability jsonb not null default '{}',
+  captured_at    timestamptz not null default now()
+);

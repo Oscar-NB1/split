@@ -17,9 +17,16 @@ import {
 
 type Row = { id: string; race_date: string; role: string; intent: string | null };
 
-const racesOf = (planId: string) => sql<Row[]>`
+/*
+ * Races belong to the athlete, not to a plan row.
+ *
+ * The path is still /plans/:id/races because that is how the client reaches it,
+ * and the plan is checked to be theirs — but race_targets keys on athlete_id, and
+ * a race outlives the plan that was built around it.
+ */
+const racesOf = (athleteId: string) => sql<Row[]>`
   select id, race_date::text as race_date, role, intent
-    from plan_races where plan_id = ${planId} order by race_date
+    from race_targets where athlete_id = ${athleteId} order by race_date
 `;
 
 /** The plan, if it is this athlete's. A plan id in a path is a permission question. */
@@ -36,7 +43,7 @@ export const GET = route(async (req: NextRequest, ctx: { params: Promise<{ id: s
   const me = await requireUser();
   const { id } = await ctx.params;
   await mine(id, me.id);
-  const races = await racesOf(id);
+  const races = await racesOf(me.id);
   return NextResponse.json({
     races: races.map((r) => ({
       ...r,
@@ -55,7 +62,7 @@ export const POST = route(async (req: NextRequest, ctx: { params: Promise<{ id: 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw badRequest("A race needs a date.");
   const role = b.role === "target" ? "target" : "secondary";
 
-  const existing = await racesOf(id);
+  const existing = await racesOf(me.id);
   const target = existing.find((r) => r.role === "target");
 
   // One target, and the second is refused rather than replacing the first.
@@ -82,14 +89,14 @@ export const POST = route(async (req: NextRequest, ctx: { params: Promise<{ id: 
   }
 
   const [row] = await sql<{ id: string }[]>`
-    insert into plan_races (
-      plan_id, race_date, venue, role, discipline, division, sex_category,
+    insert into race_targets (
+      athlete_id, race_date, venue, role, discipline, division, sex_category,
       partner_name, intent, intent_locked
     ) values (
-      ${id}, ${date}, ${b.venue ?? null}, ${role}, ${b.discipline ?? null},
+      ${me.id}, ${date}, ${b.venue ?? null}, ${role}, ${b.discipline ?? null},
       ${b.division ?? null}, ${b.sex_category ?? null}, ${b.partner_name ?? null},
       ${intent}, ${role === "secondary" && intentLocked(date, today())}
     ) returning id
   `;
-  return NextResponse.json({ id: row.id, role, intent, races: await racesOf(id) });
+  return NextResponse.json({ id: row.id, role, intent, races: await racesOf(me.id) });
 });
