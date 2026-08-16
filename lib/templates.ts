@@ -129,8 +129,35 @@ export async function materialise(templateId: string) {
   // from the current week rather than from week 1 of a plan begun in the past.
   const elapsedWeeks = Math.max(0, diffWeeks(mondayOf(now), anchor));
   let created = 0;
-  /** Every ref this template should own from today on, for the sweep below. */
-  const expected = new Set<string>();
+
+  /*
+   * Clear the future first, then write it.
+   *
+   * Matching the rows that should still exist against the rows that do turned out
+   * to be unreliable — a session whose slot or kind moved kept its old row and got
+   * a new one beside it, so a day showed the same session twice, once with paces
+   * and once without. Deleting what has not been touched and writing it again is
+   * deterministic, and the guards are the same ones the rebuild uses: anything
+   * logged, moved, commented on or with sets against it is a record of what
+   * happened and survives.
+   */
+  /*
+   * Not scoped to this template's id.
+   *
+   * A rebuild that produced a new template left the previous one's sessions behind —
+   * they no longer matched the id being written, so the day showed the same session
+   * twice, once with paces and once without. An athlete has one active plan; a
+   * future session written by a template that is no longer active is stale whatever
+   * wrote it.
+   */
+  await sql`
+    delete from planned_sessions
+     where user_id = ${tpl.athlete_id} and source = 'template'
+       and planned_date > ${now}
+       and status = 'planned' and activity_id is null
+       and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
+       and not exists (select 1 from session_sets st where st.session_id = planned_sessions.id)
+  `;
 
   /*
    * Every remaining week of the block, not the next three.
@@ -192,7 +219,6 @@ export async function materialise(templateId: string) {
             : null;
       const note = [d.coach_note, adaptation].filter(Boolean).join("\n\n") || null;
 
-      expected.add(ref);
       const rows = await sql<{ id: string }[]>`
         insert into planned_sessions
           (user_id, author_id, planned_date, title, kind, planned_minutes, target,
@@ -209,15 +235,11 @@ export async function materialise(templateId: string) {
       created += rows.length;
 
       /*
-       * A future week already written is brought up to date rather than left as it
-       * was. This is what makes writing the whole block safe: the deload and
-       * fatigue factors are re-applied every time the plan is materialised, so week
-       * twelve reflects this week's news instead of the day it was created.
-       *
-       * Only sessions nobody has touched: anything logged, moved, commented on or
-       * with sets against it is a record of what happened.
+       * This week's untouched sessions are refreshed in place: the delete above only
+       * clears the future, because a session dated today may already have been
+       * started.
        */
-      if (rows.length === 0 && date > now) {
+      if (rows.length === 0 && date >= now) {
         await sql`
           update planned_sessions set
             title = ${d.title}, kind = ${d.kind}, planned_minutes = ${minutes},
@@ -233,29 +255,8 @@ export async function materialise(templateId: string) {
     }
   }
 
-  /*
-   * Sessions this template no longer writes.
-   *
-   * The ref carries the date, so a session the generator moved to another day
-   * leaves its old row behind — two sessions where the plan has one. Untouched
-   * future rows that are no longer expected go; anything logged, moved or written
-   * on stays, because it is a record of what happened rather than a plan.
-   */
-  const refs = [...expected];
-  const stale = await sql<{ id: string }[]>`
-    delete from planned_sessions
-     where user_id = ${tpl.athlete_id} and source = 'template'
-       and source_ref like ${tpl.id + "%"}
-       and planned_date > ${now}
-       and status = 'planned' and activity_id is null
-       and not (source_ref = any(${refs}))
-       and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
-       and not exists (select 1 from session_sets st where st.session_id = planned_sessions.id)
-     returning id
-  `;
-
   created += await materialiseRaces(tpl, planStart, rules, now);
-  return { created, removed: stale.length };
+  return { created };
 }
 
 /**
