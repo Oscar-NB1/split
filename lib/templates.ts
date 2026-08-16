@@ -129,8 +129,20 @@ export async function materialise(templateId: string) {
   // from the current week rather than from week 1 of a plan begun in the past.
   const elapsedWeeks = Math.max(0, diffWeeks(mondayOf(now), anchor));
   let created = 0;
+  /** Every ref this template should own from today on, for the sweep below. */
+  const expected = new Set<string>();
 
-  for (let w = 0; w < tpl.horizon; w++) {
+  /*
+   * Every remaining week of the block, not the next three.
+   *
+   * The rolling horizon meant an athlete with a fifteen-week plan could see weeks
+   * 1–3 and nothing else — which reads as "no plan" rather than as "not written
+   * yet". Writing all of it is only safe because the loop below refreshes the
+   * future weeks it has already written, so a plan stays adaptive instead of being
+   * frozen at the moment it was created.
+   */
+  const remaining = Math.max(0, tpl.weeks.length - elapsedWeeks);
+  for (let w = 0; w < remaining; w++) {
     const weekStart = addDays(anchor, elapsedWeeks * 7 + w * 7);
 
     // which week of the plan is this? counted in days, so a DST weekend
@@ -180,6 +192,7 @@ export async function materialise(templateId: string) {
             : null;
       const note = [d.coach_note, adaptation].filter(Boolean).join("\n\n") || null;
 
+      expected.add(ref);
       const rows = await sql<{ id: string }[]>`
         insert into planned_sessions
           (user_id, author_id, planned_date, title, kind, planned_minutes, target,
@@ -194,11 +207,55 @@ export async function materialise(templateId: string) {
         returning id
       `;
       created += rows.length;
+
+      /*
+       * A future week already written is brought up to date rather than left as it
+       * was. This is what makes writing the whole block safe: the deload and
+       * fatigue factors are re-applied every time the plan is materialised, so week
+       * twelve reflects this week's news instead of the day it was created.
+       *
+       * Only sessions nobody has touched: anything logged, moved, commented on or
+       * with sets against it is a record of what happened.
+       */
+      if (rows.length === 0 && date > now) {
+        await sql`
+          update planned_sessions set
+            title = ${d.title}, kind = ${d.kind}, planned_minutes = ${minutes},
+            target = ${d.target ?? null}, coach_note = ${note},
+            significance = ${d.significance ?? null}
+          where user_id = ${tpl.athlete_id} and source = 'template'
+            and source_ref = ${ref}
+            and status = 'planned' and activity_id is null
+            and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
+            and not exists (select 1 from session_sets st where st.session_id = planned_sessions.id)
+        `;
+      }
     }
   }
 
+  /*
+   * Sessions this template no longer writes.
+   *
+   * The ref carries the date, so a session the generator moved to another day
+   * leaves its old row behind — two sessions where the plan has one. Untouched
+   * future rows that are no longer expected go; anything logged, moved or written
+   * on stays, because it is a record of what happened rather than a plan.
+   */
+  const refs = [...expected];
+  const stale = await sql<{ id: string }[]>`
+    delete from planned_sessions
+     where user_id = ${tpl.athlete_id} and source = 'template'
+       and source_ref like ${tpl.id + "%"}
+       and planned_date > ${now}
+       and status = 'planned' and activity_id is null
+       and not (source_ref = any(${refs}))
+       and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
+       and not exists (select 1 from session_sets st where st.session_id = planned_sessions.id)
+     returning id
+  `;
+
   created += await materialiseRaces(tpl, planStart, rules, now);
-  return { created };
+  return { created, removed: stale.length };
 }
 
 /**

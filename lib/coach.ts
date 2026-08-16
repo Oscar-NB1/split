@@ -68,6 +68,8 @@ export function zoneSeconds(
 /** Colour per session kind, matching the design's accent map. */
 export const KIND_COLOUR: Record<string, string> = {
   run_easy: "#0A8FB0", run_intervals: "#13A6CC", run_long: "#0A8FB0",
+  easy_run: "#0A8FB0", quality_run: "#13A6CC", long_run: "#0A8FB0",
+  benchmark: "#E8C051", race: "#C6FF5B",
   Run: "#0A8FB0", TrailRun: "#0A8FB0",
   hyrox: "#AAEA42", Workout: "#AAEA42", HighIntensityIntervalTraining: "#AAEA42", Crossfit: "#AAEA42",
   strength: "#13A6CC", WeightTraining: "#13A6CC",
@@ -81,6 +83,14 @@ export const kindColour = (k: string | null | undefined) =>
 export const KIND_LABEL: Record<string, string> = {
   run_easy: "Run · easy", run_intervals: "Run · intervals", run_long: "Run · long",
   hyrox: "Hyrox", strength: "Strength", rest: "Rest",
+  /*
+   * The kinds the current generator writes.
+   *
+   * Without them the chip above a session read "QUALITY_RUN" — the internal name,
+   * upper-cased by the style, shown to the athlete.
+   */
+  quality_run: "Run · intervals", easy_run: "Run · easy", long_run: "Run · long",
+  benchmark: "Benchmark", race: "Race", commitment: "Yours",
 };
 export const kindLabel = (k: string) =>
   KIND_LABEL[k] ?? k.replace(/([a-z])([A-Z])/g, "$1 $2");

@@ -87,27 +87,7 @@ export default function Week({
     .filter((s) => s.planned_date === dates[day])
     .sort((a, b) => Number(a.slot === "PM") - Number(b.slot === "PM"));
 
-  /**
-   * How much of this plan is measured rather than assumed.
-   *
-   * Shown permanently rather than as a notification, because it is what explains
-   * cautious numbers without anyone having to ask — and it makes the upgrade
-   * obvious. Absent for a plan written by hand, which predates the state model.
-   */
-  const state = !block?.plan_state ? null : {
-    estimated: {
-      label: "Estimated", bg: OFF, fg: INK55,
-      why: "Volume is real; the paces are estimated from what you told me. A benchmark turns them into numbers.",
-    },
-    awaiting: {
-      label: "Awaiting baseline", bg: "var(--teal-tint2)", fg: "var(--teal)",
-      why: "The benchmark is session 1. Every number rebuilds from its result.",
-    },
-    measured: {
-      label: "Measured", bg: LIME, fg: "var(--on-lime)",
-      why: "Paces, limiter and roxzone all come from real numbers.",
-    },
-  }[block.plan_state];
+
 
   /*
    * How far the arrows go.
@@ -303,18 +283,16 @@ export default function Week({
         </span>
       </button>
 
-      {/* The block, as context rather than the lead — and the plan-state chip,
-          which is what explains cautious numbers without a notification. */}
+      {/*
+        * The block, as context rather than the lead.
+        *
+        * The plan-state strip used to sit here, above every week of the plan for as
+        * long as the plan was estimated — the same sentence, fifteen times, saying
+        * something that changes once. It lives on the plan screen, which is where
+        * you go to ask what kind of plan this is.
+        */}
       <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 16,
         display: "flex", flexDirection: "column", gap: 7 }}>
-        {state && (
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".08em",
-              textTransform: "uppercase", borderRadius: "var(--r-pill)", padding: "4px 10px",
-              flex: "none", background: state.bg, color: state.fg }}>{state.label}</span>
-            <span style={{ fontSize: 11, lineHeight: 1.45, color: INK55 }}>{state.why}</span>
-          </div>
-        )}
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
           textTransform: "uppercase", color: "var(--teal)" }}>
           {intent ? intent.phase : !block ? "No block" : beforeBlock ? "Before the block" : "Off block"}

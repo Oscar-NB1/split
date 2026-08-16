@@ -1,4 +1,5 @@
 import type { Generated, GeneratedWeek, Session } from "./generate";
+import { intentRanges, type IntentRange } from "./intents";
 import type { TemplateDay } from "../templates";
 
 /**
@@ -16,11 +17,34 @@ const FLAT_MINUTES: Record<string, number> = {
   strength: 45, hyrox: 60, rest: 0, benchmark: 50, race: 75, commitment: 60,
 };
 
+/**
+ * What a session is called when it has no name of its own.
+ *
+ * A session is named after what you do in it. "Key session" was the title of every
+ * quality run — a session called after its own importance, which tells the athlete
+ * nothing about what to run — while the generator had already produced "6 × 800 m"
+ * and this table overwrote it. Key is a marker, and it is carried by
+ * `significance`; the title is the work.
+ */
 const TITLES: Record<string, string> = {
-  easy_run: "Easy run", quality_run: "Key session", long_run: "Long run",
+  easy_run: "Easy run", quality_run: "Intervals", long_run: "Long run",
   strength: "Strength", hyrox: "Hyrox session", rest: "Rest",
   benchmark: "Benchmark test", race: "Race",
 };
+
+/**
+ * The session's own name, where it has one.
+ *
+ * The generator writes the ladder rung onto quality runs and the Hyrox session:
+ * "6 × 800 m", "3 × 15 min", "Compromised running". Anything it did not name comes
+ * back with its kind as a label, which is what the table above is for.
+ */
+function titleOf(s: Session): string {
+  if (s.commitment) return s.label;
+  const kind = String(s.kind);
+  const named = s.label && s.label !== kind ? s.label : null;
+  return named ?? TITLES[kind] ?? kind;
+}
 
 /**
  * What kind of day this is: key | hard | benchmark | race, or nothing.
@@ -109,7 +133,7 @@ const weekToDays = (w: GeneratedWeek): TemplateDay[] =>
     .map((s) => ({
       day: s.day,
       kind: String(s.kind),
-      title: s.commitment ? s.label : (TITLES[String(s.kind)] ?? s.label),
+      title: titleOf(s),
       minutes: minutes(s),
       target: target(s),
       coach_note: note(s, w),
@@ -126,20 +150,29 @@ const weekToDays = (w: GeneratedWeek): TemplateDay[] =>
 
 export type Template = {
   weeks: TemplateDay[][];
-  volume: { n: number; km: number; note: string }[];
-  intents: { n: number; phase: string; note: string }[];
+  volume: { n: number; km: number; note: string; phase: string }[];
+  /**
+   * One per phase, with the weeks it covers and what those weeks are for.
+   *
+   * This was one row per week carrying only its phase name, which is not what the
+   * app reads: the week screen looks for the range containing this week so it can
+   * say what the phase is for, which sessions to protect, what to drop and what to
+   * watch. Finding nothing, it showed "Off block" over a plan that was running.
+   */
+  intents: IntentRange[];
   rules: Record<string, unknown>;
 };
 
-export function toTemplate(g: Generated): Template {
+export function toTemplate(g: Generated, maxHr: number | null = null): Template {
   return {
     weeks: g.weeks.map(weekToDays),
-    volume: g.weeks.map((w) => ({ n: w.n, km: w.km, note: w.note ?? "" })),
-    intents: g.weeks.map((w) => ({
-      n: w.n,
-      phase: w.phase,
-      note: w.deload ? "Down week" : w.taper ? "Taper" : w.benchmark ? "Benchmark" : "",
+    volume: g.weeks.map((w) => ({
+      n: w.n, km: w.km, phase: String(w.phase),
+      // The week's own label, where it has one worth a chip on the plan screen.
+      note: w.note
+        || (w.deload ? "Down week" : w.taper ? "Taper" : w.benchmark ? "Benchmark" : ""),
     })),
+    intents: intentRanges(g, maxHr),
     /*
      * Empty on purpose. `rules` exists so the old template could progress a long
      * run week to week without storing every week; this generator writes all of

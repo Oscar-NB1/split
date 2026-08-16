@@ -1,7 +1,7 @@
 import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "./allocate";
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
-import { canDoStations, ladderFor, rungFor } from "./ladders";
+import { canDoStations, ladderFor, otherLadder, rungFor } from "./ladders";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
 import { type PhaseName, type Week, skeleton } from "./skeleton";
@@ -136,11 +136,34 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
 
     const ladder = ladderFor(w.phase, inPhase, stations);
     const rung = rungFor(ladder, p.running_base, inPhase, w.phase);
+    /*
+     * The Hyrox session is named as well.
+     *
+     * It was labelled "hyrox" and titled "Hyrox session", which says only that it
+     * exists. The race-specific ladder already describes what the session is —
+     * compromised running, transitions, a half or full simulation — and it
+     * progresses with the phase, so the name says what week of the block it is.
+     */
+    const hyroxRung = stations
+      ? rungFor("L6", p.running_base, inPhase, w.phase).label
+      : null;
 
     // the benchmark replaces ONE quality run, not every one of them
     let benchTaken = false;
+    /*
+     * The second quality run is a different session, not the same one twice.
+     *
+     * A Hard week asks for two, and both were written from the same ladder rung —
+     * "4 × 8 min" on Monday and "4 × 8 min" on Tuesday. The second draws from the
+     * next rung in the cycle, so the week holds two different stimuli.
+     */
+    let qualitySeen = 0;
     const sessions: Session[] = placed.week.map((s) => {
       const isQuality = s.kind === "quality_run";
+      const second = isQuality && qualitySeen++ > 0;
+      const thisRung = second
+        ? rungFor(otherLadder(ladder, stations), p.running_base, inPhase, w.phase)
+        : rung;
       const isBench = benchmarks.has(w.n) && isQuality && !benchTaken;
       if (isBench) benchTaken = true;
       const share = SHARE[s.kind as SlotKind];
@@ -150,7 +173,10 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         kind: isBench ? "benchmark" : s.kind,
         ...(isCommitment ? { commitment: true } : {}),
         hard: s.hard,
-        label: isBench ? "Benchmark test" : isQuality ? rung.label : String(s.kind),
+        label: s.label ?? (isBench ? "Benchmark test"
+          : isQuality ? thisRung.label
+          : s.kind === "hyrox" && hyroxRung ? `Hyrox · ${hyroxRung.toLowerCase()}`
+          : String(s.kind)),
         km: share ? Math.round(runnable * share * 10) / 10 : undefined,
         prescription: share
           ? prescribe(p.anchor, isQuality ? "cv" : s.kind === "long_run" ? "long" : "easy",

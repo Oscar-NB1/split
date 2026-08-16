@@ -410,7 +410,7 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
     hyrox_races: races + (intake.pastRaces?.length ?? 0),
   });
   const built = buildPlan(params);
-  const tpl0 = toTemplate(built);
+  const tpl0 = toTemplate(built, urow?.hr_max ?? null);
   /*
    * The start date the generator actually planned from.
    *

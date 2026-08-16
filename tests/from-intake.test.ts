@@ -111,7 +111,9 @@ test("commitments are added, not substituted", () => {
   }), EMPTY_EXTRA);
   assert.equal(p.commitments.length, 1, "'Nothing fixed' is not a commitment");
   assert.deepEqual(p.commitments[0], {
-    activity: "kickboxing", per_week: 2, fixed_days: [0, 3],
+    // The key is normalised; the label is what the athlete typed, because that is
+    // what appears on the day. "padel" was showing up as the title of a session.
+    activity: "kickboxing", label: "Kickboxing", per_week: 2, fixed_days: [0, 3],
     intensity: "high", mode: "add", locked: true,
   });
 });

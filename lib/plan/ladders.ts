@@ -125,3 +125,19 @@ export function rungFor(
 
 /** Can this athlete do a race-specific session at all? */
 export const canDoStations = (variant: string) => variant !== "field";
+
+/**
+ * A different stimulus for a second quality run in the same week.
+ *
+ * Asking the cycle for "next week's ladder" returned the same one often enough that
+ * a Hard week held "4 × 8 min" on Monday and "4 × 8 min" on Tuesday. The pairing
+ * here is deliberate: threshold and CV are the two that complement each other, and
+ * where the athlete cannot do stations the race-specific ladder is not an option.
+ */
+export function otherLadder(first: LadderId, canDoStations: boolean): LadderId {
+  const pair: Record<LadderId, LadderId> = {
+    L1: "L2", L2: "L1", L3: "L4", L4: "L3", L5: "L3",
+    L6: canDoStations ? "L4" : "L3",
+  };
+  return pair[first];
+}

@@ -9,6 +9,8 @@ export type SlotKind = (typeof SLOT_KIND)[number];
 
 export type Commitment = {
   activity: string;
+  /** what the athlete called it, for the title on the day */
+  label?: string;
   per_week: number;
   fixed_days: number[];          // 0 = Monday
   intensity: "low" | "medium" | "high";
@@ -183,7 +185,11 @@ export function allocateSlots(x: SlotInput): SlotPlan {
 
 // ------------------------------------------------------------------ placement
 
-export type Placed = { day: number; kind: SlotKind | string; hard: boolean };
+export type Placed = {
+  day: number; kind: SlotKind | string; hard: boolean;
+  /** the athlete's own name for a commitment */
+  label?: string;
+};
 
 const HARD: SlotKind[] = ["quality_run", "hyrox"];
 
@@ -209,6 +215,37 @@ export const PENALTY = {
  *  tolerates a compromised week that would cost a beginner their next session. */
 export const penaltyScale = (age: string) =>
   age === "elite" ? 0.25 : age === "advanced" ? 0.5 : 1;
+
+/**
+ * Every way of spacing the hard sessions that is worth considering.
+ *
+ * The even spread, then the same spread rotated through the pool: enough to find an
+ * alternating week where one exists, cheap enough to score them all.
+ */
+function hardArrangements(
+  hard: SlotKind[], days: number[], taken: Set<number>,
+): Placed[][] {
+  if (hard.length === 0) return [[]];
+  const free = days.filter((d) => !taken.has(d));
+  const pool = free.length >= hard.length ? free : days;
+  const n = hard.length;
+  const out: Placed[][] = [];
+
+  for (let offset = 0; offset < pool.length; offset++) {
+    const picked: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const at = n === 1 ? offset
+        : (offset + Math.round((i * (pool.length - 1)) / (n - 1))) % pool.length;
+      const day = pool[at];
+      if (!picked.includes(day)) picked.push(day);
+    }
+    // A rotation that collides with itself is not an arrangement of n sessions.
+    if (picked.length !== n) continue;
+    out.push(picked.sort((a, b) => a - b)
+      .map((day, i) => ({ day, kind: hard[i], hard: true })));
+  }
+  return out.length ? out : [[]];
+}
 
 export type PlaceInput = {
   slots: SlotKind[];
@@ -292,7 +329,10 @@ export function placeWeek(x: PlaceInput): { week: Placed[]; cost: number; flags:
 
   for (const c of x.commitments) {
     for (let i = 0; i < c.per_week; i++) {
-      week.push({ day: c.fixed_days[i] ?? days[i % days.length], kind: c.activity, hard: false });
+      week.push({
+        day: c.fixed_days[i] ?? days[i % days.length], kind: c.activity,
+        label: c.label, hard: false,
+      });
     }
   }
 
@@ -319,17 +359,39 @@ export function placeWeek(x: PlaceInput): { week: Placed[]; cost: number; flags:
   const easy = rest.filter((s) => !HARD.includes(s));
   const taken = new Set<number>(week.map((p) => p.day));
 
+  /*
+   * Hard sessions as far apart as the week allows.
+   *
+   * `floor(pool / n)` gave a step of 1 for four hard sessions in six free days, so
+   * they were placed on the first four consecutive days — the exact thing
+   * PENALTY.hardAdjacent exists to prevent, done by the placer itself before the
+   * score ever saw it. Spanning the pool end to end is what "spread" means.
+   */
   const spread = (n: number) => {
     const free = days.filter((d) => !taken.has(d));
     const pool = free.length >= n ? free : days;
-    const step = Math.max(1, Math.floor(pool.length / Math.max(1, n)));
-    return Array.from({ length: n }, (_, i) => pool[Math.min(pool.length - 1, i * step)]);
+    if (n <= 0) return [];
+    if (n === 1) return [pool[0]];
+    return Array.from({ length: n }, (_, i) =>
+      pool[Math.round((i * (pool.length - 1)) / (n - 1))]);
   };
 
-  spread(hard.length).forEach((day, i) => {
-    week.push({ day, kind: hard[i], hard: true });
-    taken.add(day);
-  });
+  /*
+   * The best arrangement of the hard days, not the first.
+   *
+   * One spread and whatever it produced was accepted: four hard sessions across five
+   * free days came out as two adjacent pairs, which is what score() charges for and
+   * nothing was checking. Rotating the pool gives a handful of candidates and the
+   * cheapest one wins — still deterministic, and it costs a few array shuffles.
+   */
+  const candidates = hardArrangements(hard, days, taken);
+  let best = candidates[0] ?? [];
+  let bestCost = Infinity;
+  for (const arrangement of candidates) {
+    const cost = score([...week, ...arrangement], x);
+    if (cost < bestCost) { best = arrangement; bestCost = cost; }
+  }
+  for (const p of best) { week.push(p); taken.add(p.day); }
 
   for (const kind of easy) {
     const free = days.find((d) => !taken.has(d));

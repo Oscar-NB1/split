@@ -196,16 +196,12 @@ type Built = {
   plan: {
     name: string; weeks: number; start: string; race_date: string | null;
     total_km: number; plan_state: string;
-    volume: { n: number; km: number; note: string }[];
-    /**
-     * One row per week, not one per phase.
-     *
-     * This was typed as the older generator's shape — {from, to, phase, purpose} —
-     * so the screen read `it.from` off a per-week row and rendered "Weeks
-     * undefined–undefined", a week number of NaN, and a phase card per week with
-     * nothing in it but the word "base". The phases are grouped here instead.
-     */
-    intents: { n: number; phase: string; note: string }[];
+    volume: { n: number; km: number; note: string; phase: string }[];
+    /** One per phase, with the weeks it covers and what they are for. */
+    intents: {
+      from: number; to: number; phase: string; purpose: string;
+      protect: string[]; sacrifice: string; watch: string;
+    }[];
   };
   corrections: Correction[];
   flags: string[];
@@ -1181,22 +1177,19 @@ type PhaseGroup = {
  * the weeks do not have.
  */
 function phaseGroups(
-  intents: { n: number; phase: string; note: string }[],
-  volume: { n: number; km: number; note: string }[],
+  intents: Built["plan"]["intents"],
+  volume: Built["plan"]["volume"],
 ): PhaseGroup[] {
-  const out: PhaseGroup[] = [];
-  intents.forEach((it, k) => {
-    const v = volume[k] ?? { n: it.n, km: 0, note: "" };
-    const meta = PHASE[it.phase] ?? { label: it.phase, purpose: "" };
-    const week = { n: it.n, km: v.km, note: it.note || v.note };
-    const last = out[out.length - 1];
-    if (last && last.label === meta.label) {
-      last.to = it.n; last.km += v.km; last.weeks.push(week);
-    } else {
-      out.push({ ...meta, from: it.n, to: it.n, km: v.km, weeks: [week] });
-    }
+  return intents.map((it) => {
+    const weeks = volume.filter((v) => v.n >= it.from && v.n <= it.to);
+    return {
+      label: it.phase,
+      purpose: it.purpose || PHASE[it.phase.toLowerCase()]?.purpose || "",
+      from: it.from, to: it.to,
+      km: weeks.reduce((n, v) => n + v.km, 0),
+      weeks: weeks.map((v) => ({ n: v.n, km: v.km, note: v.note })),
+    };
   });
-  return out;
 }
 
 /** The generated plan, with its own screen rather than a button on the review. */

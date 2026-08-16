@@ -238,7 +238,15 @@ function commitmentsOf(x: Intake): Commitment[] {
   return (x.commitments ?? [])
     .filter((c) => c !== "Nothing fixed")
     .map((c) => ({
+      /*
+       * The activity is a key, and the athlete's own words are the title.
+       *
+       * Only the key was carried through, so a session called "Padel" appeared on
+       * the week as "padel" — the internal form of their answer, shown back to
+       * them.
+       */
       activity: c.toLowerCase().replace(/\s+/g, "_"),
+      label: c,
       per_week: x.freq?.[c] ?? 1,
       fixed_days: (x.commitDay?.[c] ?? []).map((d) => DAY_INDEX[d]).filter((n) => n !== undefined),
       intensity: INTENSITY[c] ?? "medium",
