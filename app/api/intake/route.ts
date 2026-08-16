@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { badRequest, route } from "@/lib/http";
+import { HttpError, badRequest, route } from "@/lib/http";
 import { materialise } from "@/lib/templates";
 import {
   BASE, BENCH_VARIANTS, COMMITMENT, COMMITMENTS, DAYS, DIFFICULTY, DISCIPLINE,
@@ -18,6 +18,8 @@ import {
   B_KINDS, checkIntent, intentLocked, type Intent,
 } from "@/lib/race/brace";
 import { today } from "@/lib/dates";
+import { recordFailure } from "@/lib/failures";
+import { roleFrom } from "@/lib/plan/allocate";
 
 /**
  * The intake: what the athlete says about themselves, and the block it builds.
@@ -176,15 +178,32 @@ function parse(body: Record<string, unknown>): Intake {
     discipline,
     raceDistance: (str(body.raceDistance) as Intake["raceDistance"]) ?? null,
     raceDate: str(body.raceDate),
-    role: (str(body.role) as Intake["role"]) ?? null,
+    /*
+     * The role, derived rather than asked.
+     *
+     * The reworked form dropped "which partner are you?" for the two comparisons
+     * it can be read off — but the validator still required it, so every doubles
+     * athlete was told an answer needed another look for a question the form never
+     * put to them, and could not finish. Derived here from the same deltas the
+     * real generator uses, so the preview split and the plan's agree.
+     */
+    role: (str(body.role) as Intake["role"]) ?? legacyRole(body),
     division: (str(body.division) as Intake["division"]) ?? null,
     base: body.base as Intake["base"],
     runningSelf: body.runningSelf as Intake["runningSelf"],
     paceMin: int(body.paceMin),
     paceSec: int(body.paceSec) ?? 0,
     paceUnknown: body.paceUnknown === true,
-    peakWeekKm: km(body.peakWeekKm),
-    longestRunKm: km(body.longestRunKm),
+    /*
+     * The form's own field names.
+     *
+     * It sends peakWeek and longestRun; this read peakWeekKm and longestRunKm, so
+     * both were null on every submission — the two questions added specifically to
+     * anchor week 1 were collected and thrown away. Both spellings are accepted:
+     * an intake saved by an older client still reads back.
+     */
+    peakWeekKm: km(body.peakWeekKm) ?? km(body.peakWeek),
+    longestRunKm: km(body.longestRunKm) ?? km(body.longestRun),
     volumeSource: body.volumeSource === "strava" ? "strava"
       : body.volumeSource === "self" ? "self" : null,
     goal: str(body.goal),
@@ -251,6 +270,24 @@ function parse(body: Record<string, unknown>): Intake {
 }
 
 /**
+ * Run something and record whatever escapes it.
+ *
+ * HttpErrors are the deliberate answers — a 400 for a bad date is not a failure
+ * worth a row. Everything else is a bug, and the row is the only way to find out
+ * which one from a report that says "I cannot get past the last step".
+ */
+async function guard<T>(
+  where: string, userId: string | null, payload: unknown, fn: () => Promise<T> | T,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (!(e instanceof HttpError)) await recordFailure(where, userId, e, payload);
+    throw e;
+  }
+}
+
+/**
  * The scaffold and the offer, without committing to anything.
  *
  * The design shows the resolved variables and the benchmark offer before a plan
@@ -258,13 +295,16 @@ function parse(body: Record<string, unknown>): Intake {
  * answers produce, and what the test would buy them, before deciding.
  */
 export const PUT = route(async (req: NextRequest) => {
-  await requireUser();
-  const intake = parse(await req.json());
+  const me = await requireUser();
+  const body = await req.json();
+  const intake = parse(body);
   const problems = validate(intake);
   if (problems.length > 0) return NextResponse.json({ problems }, { status: 400 });
 
-  const r = resolve(intake);
-  const plan = legacyGenerate(intake);
+  // Recorded rather than only logged: "something broke at the last step" has to be
+  // readable afterwards, with the answers that broke it.
+  const r = await guard("PUT /api/intake", me.id, body, () => resolve(intake));
+  const plan = await guard("PUT /api/intake", me.id, body, () => legacyGenerate(intake));
   return NextResponse.json({
     resolved: {
       weeks: r.weeks, start: r.start, race_date: r.raceDate,
@@ -292,7 +332,15 @@ export const PUT = route(async (req: NextRequest) => {
 
 export const POST = route(async (req: NextRequest) => {
   const me = await requireUser();
-  const intake = parse(await req.json());
+  const body = await req.json();
+  // Anything that escapes the build is recorded with the answers that produced it
+  // before route() answers with the generic message. See lib/failures.ts.
+  return guard("POST /api/intake", me.id, body, () => commit(me.id, body));
+});
+
+async function commit(meId: string, body: Record<string, unknown>): Promise<Response> {
+  const me = { id: meId };
+  const intake = parse(body);
 
   const problems = validate(intake);
   if (problems.length > 0) {
@@ -485,7 +533,35 @@ export const POST = route(async (req: NextRequest) => {
     violations: built.violations,
     sessions_created: created,
   });
-});
+}
+
+/**
+ * The legacy role, from the two partner comparisons.
+ *
+ * lib/plan/ decides the real role with roleFrom(); this exists because the older
+ * generator still produces the corrections panel and the benchmark offer, and its
+ * allocation table is keyed on the three-way answer the form no longer asks for.
+ * The mapping is by what the two tables actually prescribe: a protected athlete
+ * and a run limiter both run more, a station carrier runs less.
+ */
+function legacyRole(body: Record<string, unknown>): Intake["role"] {
+  if (!String(body.discipline ?? "").includes("doubles")) return null;
+  const run = DELTA_SIGN[String(body.runDelta ?? "")];
+  const station = DELTA_SIGN[String(body.stationDelta ?? "")];
+  if (run === undefined || station === undefined) return null;
+  const role = roleFrom(run, station);
+  return role === "station_carrier" ? "Engine"
+    : role === "balanced" ? "Even split"
+    : "Protected";
+}
+
+/** The five answers, as the signed deltas roleFrom() reads. */
+const DELTA_SIGN: Record<string, number> = {
+  "They are much faster": 2, "They are a bit faster": 1, "About the same": 0,
+  "I am a bit faster": -1, "I am much faster": -2,
+  "They are much stronger": 2, "They are a bit stronger": 1,
+  "I am a bit stronger": -1, "I am much stronger": -2,
+};
 
 /** The reworked form's steps, stored together. */
 const EXTRA_KEYS = [

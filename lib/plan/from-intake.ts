@@ -51,11 +51,21 @@ const GOALS: Record<string, Goal> = {
 };
 
 /** Where a partner answer sits on the −2..2 scale the roles are read from. */
+/**
+ * The five answers as signed deltas, on roleFrom()'s scale: positive means the
+ * PARTNER is the stronger of the two, for running and for stations alike.
+ *
+ * The station half of this table was inverted, so a pair where the partner runs
+ * faster and carries the heavy stations came out as "run_limiter" — the athlete
+ * holding the stations — and got the wrong split for the whole block. Protected
+ * and run_limiter were swapped for every doubles athlete who answered either
+ * comparison in the partner's favour.
+ */
 const DELTA: Record<string, number> = {
   "They are much faster": 2, "They are a bit faster": 1, "About the same": 0,
   "I am a bit faster": -1, "I am much faster": -2,
-  "They are much stronger": -2, "They are a bit stronger": -1,
-  "I am a bit stronger": 1, "I am much stronger": 2,
+  "They are much stronger": 2, "They are a bit stronger": 1,
+  "I am a bit stronger": -1, "I am much stronger": -2,
 };
 
 const KIT: Record<string, Kit> = {

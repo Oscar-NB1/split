@@ -669,15 +669,34 @@ alter table benchmark_results add column if not exists applied_at  timestamptz;
 -- than the matrix guess they replace. Where they exist they beat every
 -- adjective in the form — "runs regularly" is a self-description, 40 km a week
 -- with a 16 km long run is a measurement.
-alter table athlete_intake add column if not exists recent_weekly_km   numeric;
-alter table athlete_intake add column if not exists recent_long_run_km numeric;
+-- Added under their old names and renamed below on 2026-08-16; a database built
+-- from this file gets the current names directly, and the rename that follows is
+-- for the ones that already had the old ones.
+alter table athlete_intake add column if not exists peak_week_km   numeric;
+alter table athlete_intake add column if not exists longest_run_km numeric;
 
 -- Renamed to match the form (2026-08-16): the biggest week of the last four is
 -- what week 1 builds from, and the longest run of the last eight caps the long
 -- run. volume_source records whether Strava supplied them, which halves the
 -- unmeasured haircut rather than clearing it.
-alter table athlete_intake rename column recent_weekly_km   to peak_week_km;
-alter table athlete_intake rename column recent_long_run_km to longest_run_km;
+-- The pre-rename columns, where they are still there.
+--
+-- A database that predates the rename carries the data under the old names, so it
+-- is copied across; one that does not simply has nothing to copy. Either way the
+-- old columns go, because two columns for one answer is how the wrong one ends up
+-- being read.
+do $$ begin
+  if exists (select 1 from information_schema.columns
+              where table_name = 'athlete_intake' and column_name = 'recent_weekly_km') then
+    update athlete_intake set peak_week_km = coalesce(peak_week_km, recent_weekly_km);
+    alter table athlete_intake drop column recent_weekly_km;
+  end if;
+  if exists (select 1 from information_schema.columns
+              where table_name = 'athlete_intake' and column_name = 'recent_long_run_km') then
+    update athlete_intake set longest_run_km = coalesce(longest_run_km, recent_long_run_km);
+    alter table athlete_intake drop column recent_long_run_km;
+  end if;
+end $$;
 alter table athlete_intake add column if not exists volume_source text;
 
 -- Time away (2026-08-16). Kept against the athlete rather than the race target,
@@ -971,3 +990,23 @@ create unique index if not exists connection_invites_open
 -- Every connection query is "mine, whatever side I am on".
 create index if not exists connections_requester on connections (requester_id, status);
 create index if not exists connections_addressee on connections (addressee_id, status);
+
+-- Build failures (2026-08-16).
+--
+-- The intake answered a 500 with "Something broke. Try again.", which tells the
+-- athlete nothing and tells whoever has to fix it less. The error is recorded here
+-- with the answers that produced it, so a failure reported as "I cannot get past
+-- the last step" can be read rather than guessed at from the outside.
+--
+-- Kept deliberately small: the message, where it happened, and the payload. No
+-- stack in the client's hands — this is the server's copy.
+create table if not exists build_failures (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references users(id) on delete cascade,
+  at         timestamptz not null default now(),
+  route      text not null,
+  message    text not null,
+  stack      text,
+  payload    jsonb not null default '{}'
+);
+create index if not exists build_failures_at on build_failures (at desc);

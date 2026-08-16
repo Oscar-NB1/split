@@ -71,13 +71,22 @@ test("only a logged benchmark counts as measured", () => {
   assert.equal(paramsFrom(base(), { ...EMPTY_EXTRA, measured: true }).confidence, "measured");
 });
 
-test("the partner scale reads both ways round", () => {
-  const p = paramsFrom(base(), EMPTY_EXTRA);
+test("the partner scale reads both ways round, on one convention", () => {
+  // Positive is the partner, on both axes — the scale roleFrom() documents. The
+  // station column used to be inverted, which swapped protected and run_limiter.
+  const p = paramsFrom(base({
+    runDelta: "They are a bit faster", stationDelta: "They are a bit stronger",
+  }), EMPTY_EXTRA);
   assert.deepEqual(p.partner, { run_delta: 1, station_delta: 1 });
   const flipped = paramsFrom(base({
-    runDelta: "I am much faster", stationDelta: "They are much stronger",
+    runDelta: "I am much faster", stationDelta: "I am much stronger",
   }), EMPTY_EXTRA);
   assert.deepEqual(flipped.partner, { run_delta: -2, station_delta: -2 });
+
+  const protectedPair = paramsFrom(base({
+    runDelta: "They are much faster", stationDelta: "They are much stronger",
+  }), EMPTY_EXTRA);
+  assert.deepEqual(protectedPair.partner, { run_delta: 2, station_delta: 2 });
 });
 
 test("a partner only exists for doubles, and only once answered", () => {
