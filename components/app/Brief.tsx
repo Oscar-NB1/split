@@ -55,13 +55,46 @@ export function useSession(id: string) {
 
 const TEAL = "#0A8FB0";
 const INK55 = "var(--ink-55)";
+/** "4:10/km" back to seconds, so a prescribed pace can be restated as a belt speed. */
+const secondsOf = (pace: string): number | null => {
+  const m = /^(\d{1,2}):([0-5]\d)/.exec(pace.trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+};
+
+/**
+ * A prescribed pace, in the units of the mode.
+ *
+ * A treadmill is set in kilometres per hour, so a screen that prints 4:10 /km in
+ * treadmill mode is asking the athlete to do the arithmetic on the belt. The
+ * prescription carries minutes per kilometre; this is where it becomes a speed.
+ */
+const sayPace = (pace: string, mode: string): string => {
+  const sec = secondsOf(pace);
+  if (!sec) return pace;
+  // A range — "5:45-6:06/km" — converts at both ends.
+  const range = /^(\d{1,2}:[0-5]\d)\s*[-–]\s*(\d{1,2}:[0-5]\d)/.exec(pace.trim());
+  if (range) {
+    const a = secondsOf(range[1])!, b = secondsOf(range[2])!;
+    return mode === "Treadmill"
+      ? `${say(b, mode)} to ${say(a, mode)}`
+      : `${range[1]} to ${range[2]} /km`;
+  }
+  return say(sec, mode);
+};
+
 const say = (sec: number, mode: string) =>
   mode === "Treadmill"
     ? `${(3600 / sec).toFixed(1)} kph`
     : `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")} /km`;
 
 type Item = { main: string; sub: string; work: boolean };
-type Group = { label: string; color: string; items: Item[]; note: string };
+type Group = {
+  label: string; color: string; items: Item[]; note: string;
+  /** how many times the pair repeats; 1 for a block that runs once */
+  repeat: number;
+  /** the whole set in one line, above the two rows it is made of */
+  summary: string;
+};
 
 /**
  * The prescription as the design renders it: every rep its own numbered row.
@@ -89,10 +122,11 @@ function groupsFor(
       const it = g.items[0];
       out.push({
         label: isWarm ? "Warm-up" : "Cool down", color: INK55, note: "",
+        repeat: 1, summary: "",
         items: [{
           main: `${humanDose(it?.dose ?? "")} ${isWarm ? "conversational" : "easy"}`.trim(),
           sub: it?.pace
-            ? `${it.pace.replace("/km", " /km")}${isWarm ? " — no faster" : " or slower"}`
+            ? `${sayPace(it.pace, mode)}${isWarm ? " — no faster" : " or slower"}`
             : prescribed
               ? isWarm
                 ? `${say(prescribed + 60, mode)} to ${say(prescribed + 90, mode)} — no faster`
@@ -114,8 +148,16 @@ function groupsFor(
      * eight minutes at a pace, then a hundred and fifty seconds walking. Hiding the
      * recovery under the rep made a session that could not be sent anywhere.
      */
+    /*
+     * One pair and a count, not the pair written out six times.
+     *
+     * Six identical rows is six chances to lose your place, and it is not how the
+     * session is executed or how a watch stores it: a rep, its recovery, and the
+     * number of times round. The set is summarised above the pair so the whole
+     * session is legible in one line.
+     */
     const items: Item[] = [];
-    for (let i = 0; i < g.repeat; i++) {
+    for (let i = 0; i < 1; i++) {
       /*
        * The pace the prescription states, where it states one. The screen used to
        * derive it from the plan's easy pace, which meant it could differ from what
@@ -123,7 +165,7 @@ function groupsFor(
        */
       items.push({
         main: work?.pace
-          ? `${humanDose(work.dose)} at ${work.pace.replace("/km", mode === "Treadmill" ? "" : " /km")}`
+          ? `${humanDose(work.dose)} at ${sayPace(work.pace, mode)}`
           : `${humanDose(work?.dose ?? "")}${prescribed ? ` at ${say(prescribed, mode)}` : ""}`,
         sub: "",
         work: true,
@@ -136,7 +178,7 @@ function groupsFor(
           // gives the watch a target nobody can hold.
           sub: walking
             ? "Walk it. No pace target."
-            : rest.pace ? `${rest.pace.replace("/km", " /km")} or slower`
+            : rest.pace ? `${sayPace(rest.pace, mode)} or slower`
             : prescribed ? `${say(prescribed + 90, mode)} or slower` : "Easy.",
           work: false,
         });
@@ -150,8 +192,18 @@ function groupsFor(
      * how a week is read at a glance; it cannot mean one thing in the list and
      * another inside.
      */
+    const restDose = rest ? humanDose(rest.dose) : "";
     out.push({
-      label: `Session · ${g.repeat} reps`, color: kindColour(kind), items, note: cap,
+      label: "Session",
+      color: kindColour(kind),
+      items,
+      note: cap,
+      repeat: g.repeat,
+      summary: [
+        `${g.repeat} × ${humanDose(work?.dose ?? "")}`,
+        work?.pace ? `at ${sayPace(work.pace, mode)}` : null,
+        rest ? `${restDose} rest between` : null,
+      ].filter(Boolean).join(" "),
     });
   }
   return out;
@@ -306,10 +358,23 @@ export default function Brief({
                 <div key={gi} style={{ display: "flex", flexDirection: "column",
                   border: "1px solid var(--line)", borderRadius: "var(--r-card)", overflow: "hidden" }}>
                   <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".12em",
-                    textTransform: "uppercase", color: "#fff", background: g.color, padding: "9px 14px" }}>
+                    textTransform: "uppercase", color: "#fff", background: g.color,
+                    padding: "9px 14px", display: "flex", alignItems: "center",
+                    justifyContent: "space-between", gap: 10 }}>
                     {g.label}
+                    {g.repeat > 1 && (
+                      <span style={{ background: "rgba(255,255,255,.22)", borderRadius: "var(--r-pill)",
+                        padding: "3px 10px", fontSize: 11, letterSpacing: ".02em" }}>
+                        × {g.repeat}
+                      </span>
+                    )}
                   </div>
                   <div style={{ background: "var(--paper)" }}>
+                    {g.summary && (
+                      <div style={{ fontSize: 12, color: "var(--ink-55)", padding: "11px 14px 0" }}>
+                        {g.summary}
+                      </div>
+                    )}
                     {g.items.map((it, ii) => {
                       n += 1;
                       return (
@@ -330,6 +395,20 @@ export default function Brief({
                       );
                     })}
                   </div>
+                  {/* Said once, under the pair it applies to. */}
+                  {g.repeat > 1 && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8,
+                      background: "var(--paper)", padding: "11px 14px",
+                      borderTop: "1px dashed var(--line)", color: "var(--teal)",
+                      fontSize: 12, fontWeight: 700 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+                        <path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 014-4h14" />
+                        <path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 01-4 4H3" />
+                      </svg>
+                      Repeat the pair × {g.repeat}
+                    </div>
+                  )}
                   {g.note && (
                     <div style={{ fontSize: 11, lineHeight: 1.5, color: "var(--ink-55)",
                       background: "var(--paper)", padding: "12px 14px 13px",
