@@ -44,7 +44,7 @@ const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%
  * twelve-kilometre week finished beats a thirty-four-kilometre week half-done,
  * and putting the absolute first would say the opposite.
  */
-export default function Versus() {
+export default function Versus({ onConnect }: { onConnect?: () => void }) {
   const [d, setD] = useState<{ empty: boolean; rivalries: Rivalry[] } | null>(null);
   const [at, setAt] = useState(0);
   const [sent, setSent] = useState<string | null>(null);
@@ -67,11 +67,18 @@ export default function Versus() {
           Training is more fun with someone chasing you. Connect with a training
           partner and compare how much of your plan you each finish.
         </span>
-        {/* The design has a "Connect someone" button here. There is nothing
-            behind it yet — the invite and accept endpoints are not built — and a
-            button that opens nothing is worse than a sentence that explains. */}
+        {onConnect && (
+          <button onClick={onConnect} style={{
+            width: "100%", background: "var(--lime)", border: 0,
+            borderRadius: "var(--r-pill)", padding: 16, fontSize: 12,
+            fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+            color: "var(--on-lime)", marginTop: 4,
+          }}>Connect someone</button>
+        )}
         <span style={{ fontSize: 11, lineHeight: 1.55, color: INK40 }}>
-          Inviting someone is not built yet.
+          You send them a link or a code. Nothing is shared until they accept, and
+          what is shared is the share of your own plan you finished — never the plan
+          itself.
         </span>
       </div>
     );
@@ -90,8 +97,10 @@ export default function Versus() {
           letterSpacing: "-.02em" }}>You vs {name}</div>
       </div>
 
-      {d.rivalries.length > 1 && (
-        <div style={{ display: "flex", gap: 3, background: OFF,
+      {/* Who you are up against, and the way to add another. The row shows even
+          with one rival, because the plus is the only route to a second. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ flex: 1, display: "flex", gap: 3, background: OFF,
           borderRadius: "var(--r-pill)", padding: 3 }}>
           {d.rivalries.map((x, i) => (
             <button key={x.id} onClick={() => setAt(i)} style={{
@@ -101,7 +110,14 @@ export default function Versus() {
             }}>{x.rival.display_name}</button>
           ))}
         </div>
-      )}
+        {onConnect && (
+          <button onClick={onConnect} aria-label="Connect another partner" style={{
+            flex: "none", width: 32, height: 32, borderRadius: "50%",
+            border: `1px solid ${LINE}`, background: "var(--paper)", fontSize: 15,
+            color: INK55,
+          }}>+</button>
+        )}
+      </div>
 
       {/* The rivalry does not start until both have a plan. Saying so beats
           showing a scoreboard of dashes. */}

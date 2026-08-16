@@ -30,21 +30,22 @@ export const GET = route(async () => {
   const me = await requireUser();
 
   /*
-   * Rivalries come from accepted connections. Until the connection endpoints
-   * exist there is at most one, inferred from the coaching relationship, which
-   * is how the two accounts here are already paired — the shape below is the
-   * multi-rivalry one either way, so the screen does not change when they land.
+   * Rivalries come from accepted connections — the ones both athletes agreed to.
+   * Coaching used to stand in for this while the connection endpoints did not
+   * exist; it no longer does, because a coach is not a rival.
    */
-  const [other] = await sql<{ id: string; display_name: string }[]>`
-    select u.id, u.display_name from users u
-     where u.id <> ${me.id}
-       and (exists (select 1 from coaching c
-                     where (c.coach_id = ${me.id} and c.athlete_id = u.id)
-                        or (c.athlete_id = ${me.id} and c.coach_id = u.id)))
-     order by u.created_at limit 1
+  const others = await sql<{ id: string; display_name: string; started: string }[]>`
+    select u.id, u.display_name, r.started_at::text as started
+      from connections c
+      join rivalries r on r.connection_id = c.id
+      join users u on u.id = case when c.requester_id = ${me.id}
+                                  then c.addressee_id else c.requester_id end
+     where c.status = 'accepted'
+       and (c.requester_id = ${me.id} or c.addressee_id = ${me.id})
+     order by r.started_at
   `;
 
-  if (!other) {
+  if (others.length === 0) {
     return NextResponse.json({
       rivalries: [],
       // The client renders the connect prompt off this, rather than an empty
@@ -54,40 +55,45 @@ export const GET = route(async () => {
   }
 
   const thisWeek = mondayOf(today());
-  const weeks: {
-    week_start: string; winner: Winner;
-    mine: ReturnType<typeof shareable>; theirs: ReturnType<typeof shareable>;
-  }[] = [];
 
-  for (let i = WEEKS_BACK - 1; i >= 0; i--) {
-    const ws = addDays(thisWeek, -7 * i);
-    const w = await weekFor(me.id, other.id, ws, isFinalised(ws));
-    weeks.push({
-      week_start: ws,
-      winner: w.winner,
-      mine: shareable(w.requester as unknown as Record<string, unknown>),
-      theirs: shareable(w.addressee as unknown as Record<string, unknown>),
-    });
-  }
+  /*
+   * Every rivalry, every week, in parallel.
+   *
+   * Twelve weeks each and one query per athlete per week: run in sequence, a
+   * second connection doubled the time the screen took to appear. They do not
+   * depend on each other, so nothing is gained by waiting.
+   */
+  const rivalries = await Promise.all(others.map(async (other) => {
+    const weeks = await Promise.all(
+      Array.from({ length: WEEKS_BACK }, (_, k) => addDays(thisWeek, -7 * (WEEKS_BACK - 1 - k)))
+        .map(async (ws) => {
+          const w = await weekFor(me.id, other.id, ws, isFinalised(ws));
+          return {
+            week_start: ws,
+            winner: w.winner,
+            mine: shareable(w.requester as unknown as Record<string, unknown>),
+            theirs: shareable(w.addressee as unknown as Record<string, unknown>),
+          };
+        }),
+    );
+    const current = await weekFor(me.id, other.id, thisWeek, false);
+    const decided = weeks.filter((w) => w.winner !== "undecided");
 
-  const current = await weekFor(me.id, other.id, thisWeek, false);
-  const decided = weeks.filter((w) => w.winner !== "undecided");
-  const myWeeks = decided.filter((w) => w.winner === "requester").length;
-  const theirWeeks = decided.filter((w) => w.winner === "addressee").length;
-
-  return NextResponse.json({
-    empty: false,
-    rivalries: [{
+    return {
       id: `${me.id}:${other.id}`,
       rival: { id: other.id, display_name: other.display_name },
+      since: other.started,
       /** null on either side means the rivalry has not started */
       one_sided: !current.requester.has_plan || !current.addressee.has_plan,
-      weeks_won: { mine: myWeeks, theirs: theirWeeks },
+      weeks_won: {
+        mine: decided.filter((w) => w.winner === "requester").length,
+        theirs: decided.filter((w) => w.winner === "addressee").length,
+      },
       consistency: {
         mine: consistency(weeks.map((w) => w.mine as { adherence_pct: number | null })),
         theirs: consistency(weeks.map((w) => w.theirs as { adherence_pct: number | null })),
       },
-      /** the four rows the screen compares, relative first, absolute beside */
+      /** the rows the screen compares, relative first, absolute beside */
       rows: [
         row("Plan completed", current.requester.adherence_pct, current.addressee.adherence_pct,
           `${current.requester.sessions_done}/${current.requester.sessions_planned}`,
@@ -106,8 +112,10 @@ export const GET = route(async () => {
       history: weeks,
       scoring_note:
         "Every row is your share of your own plan, so a smaller week done properly beats a bigger one half-finished. Weeks settle a day after they close.",
-    }],
-  });
+    };
+  }));
+
+  return NextResponse.json({ empty: false, rivalries });
 });
 
 /** One comparison. The percentage decides it; the absolute is context. */

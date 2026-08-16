@@ -939,3 +939,35 @@ create index if not exists activity_splits_activity
 -- The week screen's own query: one athlete, one date range, ordered by day.
 create index if not exists planned_sessions_user_date
   on planned_sessions (user_id, planned_date);
+
+-- Invite codes (2026-08-16).
+--
+-- An open invite cannot live in `connections`: that row needs both athletes, and
+-- the point of a code is that the second one is not known yet. So the code is its
+-- own record, and redeeming it is what creates the connection.
+--
+-- Single-use and seven days by rule, both enforced here as well as in lib/connect
+-- so a code cannot be redeemed twice by two requests arriving together.
+create table if not exists connection_invites (
+  code        text primary key,
+  inviter_id  uuid not null references users(id) on delete cascade,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null,
+  used_by     uuid references users(id) on delete set null,
+  used_at     timestamptz,
+  revoked_at  timestamptz,
+  check ((used_by is null) = (used_at is null))
+);
+create index if not exists connection_invites_inviter
+  on connection_invites (inviter_id, created_at desc);
+
+-- One open invite per athlete: the screen shows a single code, and a second live
+-- code would mean a link they had already sent still worked after they replaced
+-- it. Partial, so spent and revoked codes stay for the audit.
+create unique index if not exists connection_invites_open
+  on connection_invites (inviter_id)
+  where used_at is null and revoked_at is null;
+
+-- Every connection query is "mine, whatever side I am on".
+create index if not exists connections_requester on connections (requester_id, status);
+create index if not exists connections_addressee on connections (addressee_id, status);

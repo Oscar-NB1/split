@@ -7,6 +7,8 @@ import Week from "./Week";
 import Activity from "./Activity";
 import Past from "./Past";
 import Versus from "./Versus";
+import Partners from "./Partners";
+import { PENDING_INVITE } from "./Invite";
 import Awards from "./Awards";
 import Plan from "./Plan";
 import Strategy from "./Strategy";
@@ -54,7 +56,7 @@ const TABS = [
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
   | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect" | "build"
-  | "notes" | "inbox" | "bench" | "preflight";
+  | "notes" | "inbox" | "bench" | "preflight" | "partners";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
@@ -63,6 +65,7 @@ const TAB_FOR: Record<View, string> = {
   past: "past", awards: "awards", versus: "versus", profile: "week",
   brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week", connect: "week", build: "week",
   notes: "week", inbox: "week", bench: "week", preflight: "week",
+  partners: "versus",
 };
 
 /** Where the back arrow goes, and what it is called. */
@@ -82,6 +85,7 @@ const BACK: Partial<Record<View, { to: View; label: string }>> = {
   inbox: { to: "notes", label: "Messages" },
   bench: { to: "profile", label: "Profile" },
   preflight: { to: "profile", label: "Profile" },
+  partners: { to: "versus", label: "Versus" },
 };
 
 export default function Shell({ me, other }: { me: User; other: User | null }) {
@@ -115,6 +119,24 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     sessionStorage.removeItem("split-after-strava");
     setView(back === "build" ? "build" : "connect");
   }, []);
+  /*
+   * An invite link opened before there was an account.
+   *
+   * The code was put in localStorage by the invite screen and survives the OAuth
+   * round trip; this is the first moment there is a session to send it with. It is
+   * cleared whatever the answer — a code that failed once fails the same way every
+   * time, and retrying it on every load would be a request nobody made.
+   */
+  useEffect(() => {
+    const code = localStorage.getItem(PENDING_INVITE);
+    if (!code) return;
+    localStorage.removeItem(PENDING_INVITE);
+    void fetch("/api/partners/redeem", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ code }),
+    }).then(() => setView("partners"));
+  }, []);
+
   const [monday, setMonday] = useState(() => mondayOf());
   const [openId, setOpenId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -179,6 +201,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "strategy" ? "Race plan"
     : view === "editProfile" ? "Your details"
     : view === "connect" ? "One connection"
+    : view === "partners" ? "Who you are up against"
     : view === "build" ? "From your answers"
     : view === "notes" ? "Written ahead, read in her week"
     : view === "inbox" ? "Between the two of you"
@@ -202,7 +225,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "record" ? "Record" : view === "connect" ? "Strava"
     : view === "build" ? "Build my plan"
     : view === "notes" ? "Messages" : view === "inbox" ? "Thread"
-    : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions" : "Hyrox";
+    : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions"
+    : view === "partners" ? "Connections" : "Hyrox";
 
   return (
     <div className="app" ref={shell}>
@@ -278,7 +302,10 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Strength id={sessionId} meId={me.id} onChanged={load} startRest={setRest} />
         )}
         {view === "past" && <Past openActivity={openActivity} />}
-        {view === "versus" && <Versus />}
+        {view === "versus" && <Versus onConnect={() => setView("partners")} />}
+        {view === "partners" && (
+          <Partners onOpenVersus={() => setView("versus")} />
+        )}
         {view === "awards" && (
           <Awards meId={me.id} openActivity={openActivity}
             openRecord={(dist) => { setRecordDist(dist); setView("record"); }} />

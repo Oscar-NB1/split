@@ -19,10 +19,22 @@ export default async function Home() {
     return <div className="app topsafe"><Auth /></div>;
   }
 
-  const users = await sql<{ id: string; display_name: string }[]>`
-    select id, display_name from users order by created_at
+  /*
+   * Who the header means by "the other one".
+   *
+   * An accepted connection, not simply the next row in `users` — which is what
+   * this was while there were no connection endpoints, and which named a stranger
+   * on the versus header as soon as a third person registered.
+   */
+  const [other] = await sql<{ id: string; display_name: string }[]>`
+    select u.id, u.display_name
+      from connections c
+      join users u on u.id = case when c.requester_id = ${me.id}
+                                  then c.addressee_id else c.requester_id end
+     where c.status = 'accepted'
+       and (c.requester_id = ${me.id} or c.addressee_id = ${me.id})
+     order by c.responded_at limit 1
   `;
-  const other = users.find((u) => u.id !== me.id) ?? null;
 
-  return <Shell me={me} other={other} />;
+  return <Shell me={me} other={other ?? null} />;
 }
