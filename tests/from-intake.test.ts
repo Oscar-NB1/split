@@ -180,7 +180,18 @@ test("a full intake generates a valid block", () => {
     max_hr: 189,
   }));
   assert.equal(out.weeks.length, 15);
-  assert.equal(out.weeks[0].km, 38, "week 1 is the biggest recent week");
+  /*
+   * The week's number is what it prescribes, not what the curve aimed at.
+   *
+   * The curve puts week 1 at the athlete's biggest recent week — 38 km — and the
+   * commitments they already keep absorb part of that, so the running written is
+   * less. It used to display the curve's number over sessions that added up to
+   * twelve kilometres less, which made every week read as unfinished.
+   */
+  const written = out.weeks[0].sessions.reduce((n, s) => n + (s.km ?? 0), 0);
+  assert.equal(Math.round(out.weeks[0].km), Math.round(written),
+    "the week is the sum of its sessions");
+  assert.ok(out.weeks[0].km <= 38, "and never more than the curve allowed");
   assert.ok(out.weeks.some((w) => w.benchmark), "and the benchmark is in it");
   assert.deepEqual(out.violations, [], "no assertion failures");
 });

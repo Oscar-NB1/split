@@ -28,6 +28,7 @@ const FLAT_MINUTES: Record<string, number> = {
  */
 const TITLES: Record<string, string> = {
   easy_run: "Easy run", quality_run: "Intervals", long_run: "Long run",
+  easy_hyrox: "Easy Hyrox",
   strength: "Strength", hyrox: "Hyrox session", rest: "Rest",
   benchmark: "Benchmark test", race: "Race",
 };

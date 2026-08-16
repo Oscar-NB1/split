@@ -4,7 +4,17 @@ import type { Allocation } from "./allocate";
  * Stage 4: how many sessions of each kind, and which days they land on.
  */
 
-export const SLOT_KIND = ["quality_run", "long_run", "easy_run", "hyrox", "strength"] as const;
+export const SLOT_KIND = [
+  "quality_run", "long_run", "easy_run", "hyrox", "strength",
+  /**
+   * Aerobic work on the machines: ski, row, a light drag, a carry.
+   *
+   * Zone 2 on the two modalities that are a quarter of the race, without another
+   * eight kilometres of impact on legs already carrying a sixty-kilometre week. It
+   * is also the one session a class cannot stand in for — a class is never easy.
+   */
+  "easy_hyrox",
+] as const;
 export type SlotKind = (typeof SLOT_KIND)[number];
 
 export type Commitment = {
@@ -32,6 +42,15 @@ export type SlotInput = {
   target_sessions: number;
   /** which phase this week belongs to; the second Hyrox session is phase-gated */
   phase?: string;
+  /**
+   * Which of the two alternating weeks this is.
+   *
+   * Only a week that would otherwise carry three hard days alternates: at four or
+   * five sessions there are already only two, and taking one away is not recovery,
+   * it is not enough stimulus to progress. An athlete training four times a week is
+   * limited by consistency, not by fatigue, and gets the same week every week.
+   */
+  absorb?: boolean;
   allocation: Allocation;
   discipline: "doubles" | "singles" | "running";
   commitments: Commitment[];
@@ -66,7 +85,7 @@ export function allocateSlots(x: SlotInput): SlotPlan {
 
   const isHyrox = x.discipline !== "running";
   const counts: Record<SlotKind, number> = {
-    quality_run: 0, long_run: 0, easy_run: 0, hyrox: 0, strength: 0,
+    quality_run: 0, long_run: 0, easy_run: 0, hyrox: 0, strength: 0, easy_hyrox: 0,
   };
 
   // A Hyrox session pays half into running, so the running share buys fewer
@@ -187,6 +206,24 @@ export function allocateSlots(x: SlotInput): SlotPlan {
       : null;
     if (!from) break;
     counts[from]--; counts.quality_run++;
+  }
+
+  /*
+   * The absorb week: three hard days become two.
+   *
+   * Which one goes depends on the phase. Outside the specific weeks it is the second
+   * quality run, and it becomes easy running. Inside them both Hyrox sessions stay —
+   * that is the point of the phase — and the second one becomes the easy machine
+   * session instead, so the race exposure survives and the hard day does not.
+   */
+  if (x.absorb && counts.quality_run + counts.hyrox >= 3) {
+    if (x.phase === "specific" && counts.hyrox > 1) {
+      counts.hyrox--; counts.easy_hyrox = (counts.easy_hyrox ?? 0) + 1;
+    } else if (counts.quality_run > 1) {
+      counts.quality_run--; counts.easy_run++;
+    } else if (counts.hyrox > 1) {
+      counts.hyrox--; counts.easy_run++;
+    }
   }
 
   // --- hard days ----------------------------------------------------------

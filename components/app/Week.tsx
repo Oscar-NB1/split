@@ -120,8 +120,17 @@ export default function Week({
    */
   const lead = (() => {
     const disciplineOf = (n: string) => n.split(" · ")[0];
+    /*
+     * Hard days, not key days.
+     *
+     * "Key" marks the sessions the plan reads to decide what to prescribe next —
+     * which includes the strength day and the long run. Counting those as hard
+     * produced "Five hard days" over a week with two interval sessions and a Hyrox
+     * session in it, which is the number that matters and is three.
+     */
+    const HARD_KINDS = ["quality_run", "hyrox", "benchmark", "race"];
     const hardDays = [...new Set(all
-      .filter((s) => s.significance === "key" || s.significance === "hard"
+      .filter((s) => HARD_KINDS.includes(s.kind) || s.significance === "hard"
         || s.significance === "benchmark" || s.significance === "race")
       .map((s) => s.planned_date))].sort();
     const names = hardDays.map((d) => fmt(d, { weekday: "long" }));
@@ -175,6 +184,23 @@ export default function Week({
       headline, sub,
     };
   })();
+
+  /*
+   * The sessions to protect in the week on screen.
+   *
+   * They came from the phase intent, which quotes the first week of the phase — so
+   * week nine of a fifteen-week block listed week five's sessions, and every week of
+   * a phase looked like the same week. The phase's purpose, what to drop and what to
+   * watch are properties of the phase and still come from it; which sessions to
+   * protect is a property of the week you are looking at.
+   */
+  const protectThese = all
+    .filter((s) => !["easy_run", "run_easy"].includes(s.kind))
+    .filter((s) => s.significance === "key" || s.significance === "benchmark"
+      || s.significance === "race" || s.significance === "hard")
+    .sort((a, b) => a.planned_date.localeCompare(b.planned_date))
+    .slice(0, 4)
+    .map((s) => `${fmt(s.planned_date, { weekday: "short" })} · ${s.title}`);
 
   const kmDone = all.filter((s) => ["done", "adjusted", "unplanned"].includes(s.status))
     .reduce((n, s) => n + (Number(s.distance_m) || 0), 0) / 1000;
@@ -390,7 +416,7 @@ export default function Week({
             borderTop: `1px solid ${LINE}`, paddingTop: 12 }}>
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
               textTransform: "uppercase", color: INK55 }}>Protect these</span>
-            {intent.protect.map((p) => (
+            {protectThese.map((p) => (
               <div key={p} style={{ display: "flex", alignItems: "center", gap: 9,
                 background: "var(--teal-tint)", border: "1px solid var(--teal-tint2)",
                 borderRadius: 10, padding: "10px 12px" }}>

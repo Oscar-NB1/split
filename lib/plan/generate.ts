@@ -2,7 +2,7 @@ import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, otherRung, rungFor } from "./ladders";
-import { continuousRun, hyroxSession, qualityRun } from "./session";
+import { continuousRun, hyroxSession, longRun, qualityRun, type LongShape } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
@@ -84,8 +84,16 @@ export type Generated = {
 };
 
 /** Roughly what share of a week's kilometres each kind of session carries. */
+/**
+ * Where a long run stops being worth it.
+ *
+ * The race is eight one-kilometre repeats with stations between them. Twenty-two
+ * kilometres builds every bit of durability that demands; twenty-six buys fatigue.
+ */
+export const LONG_RUN_CAP = 22;
+
 const SHARE: Partial<Record<SlotKind, number>> = {
-  long_run: 0.32, quality_run: 0.22, easy_run: 0.20, hyrox: 0.18,
+  long_run: 0.32, quality_run: 0.22, easy_run: 0.20, hyrox: 0.18, easy_hyrox: 0.10,
 };
 
 function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
@@ -129,6 +137,12 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       target_sessions: r.sessions, allocation,
       discipline: p.discipline, commitments: p.commitments, max_hard: r.max_hard,
       quality_target: p.quality_target, phase: w.phase,
+      /*
+       * Alternating weeks, from the block's own count rather than a setting: every
+       * other loading week absorbs. The deload weeks are already light, so they are
+       * left out of the alternation rather than being made lighter again.
+       */
+      absorb: !w.deload && !w.taper && w.n % 2 === 0,
     });
     for (const f of slotPlan.flags) flags.push({ code: "slots", message: f });
 
@@ -142,9 +156,17 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
 
     // commitments give some of the week's volume back, less and less as the
     // block goes on
-    const credited = p.commitments.reduce(
-      (n, c) => n + creditFor(c.activity, c.per_week, w.km, w.phase), 0);
-    const runnable = Math.max(3, Math.round((w.km - credited) * 10) / 10);
+    /*
+     * The week's running is the week's running.
+     *
+     * Commitments used to buy it down — two kickboxing sessions credited nine
+     * kilometres of "equivalent volume", so a 60 km week prescribed 48 km of actual
+     * running and the athlete was short of their own target every week. A class the
+     * athlete already attends is load on top of the plan, not running the plan no
+     * longer has to write. The credit still exists for the load budget; it no longer
+     * reduces what gets prescribed.
+     */
+    const runnable = Math.max(3, Math.round(w.km * 10) / 10);
 
     const ladder = ladderFor(w.phase, inPhase, stations);
     const rung = rungFor(ladder, p.running_base, inPhase, w.phase);
@@ -197,6 +219,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         hard: s.hard,
         label: s.label ?? (isBench ? "Benchmark test"
           : isQuality ? thisRung.label
+          : s.kind === "easy_hyrox" ? "Easy Hyrox · ski, row and carries"
           : s.kind === "hyrox" && hyroxRung
             ? `Hyrox · ${(hyroxSeen++ === 0 ? hyroxRung : hyroxRung2 ?? hyroxRung).toLowerCase()}`
           : String(s.kind)),
@@ -234,16 +257,47 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * built from, so it takes its share of the week before anything else is sized,
      * and the quality work fits around it.
      */
-    const longRun = sessions.find((s) => String(s.kind) === "long_run");
-    if (longRun) {
-      const built = continuousRun(Math.max(5, Math.min(w.km * 0.30, runnable * 0.34)),
-        easyPace);
-      longRun.km = built.km;
-      longRun.target_text = built.target;
-      longRun.minutes = built.minutes;
+    const long = sessions.find((s) => String(s.kind) === "long_run");
+    if (long) {
+      /*
+       * What the long run asks for follows the difficulty dial, which the screen has
+       * been promising and the plan has been ignoring: distance alone on Steady, a
+       * quarter at effort on Challenging, and blocks — or a whole run at an average —
+       * on Hard, because switching pace under fatigue is the demand of the race.
+       */
+      /*
+       * The long run carries the quality in the absorb week, and nothing in the
+       * load week.
+       *
+       * A week with two hard sessions in it does not need a third; a week with one
+       * can afford to put pace inside the long run, which is where running under
+       * fatigue is actually trained. So the same block alternates: intervals and a
+       * plain long run one week, one interval session and a structured long run the
+       * next — at the same volume, differently spent.
+       */
+      const absorbWeek = !w.deload && !w.taper && w.n % 2 === 0;
+      const shape: LongShape = !p.long_run_pace || !absorbWeek ? "steady"
+        : (p.quality_target ?? 1) < 2 ? "finish"
+        : w.n % 4 === 0 ? "timed"
+        : "blocks";
+      const steady = Math.round(cvPace * 1.12);
+      /*
+       * It grows with the block and then stops.
+       *
+       * Past about 22 km a long run costs a Hyrox athlete more in recovery than it
+       * returns: the race is eight kilometre repeats, not a marathon, and the
+       * durability it needs is trained by the blocks inside the run rather than by
+       * another four kilometres on the end.
+       */
+      const built = longRun(
+        Math.max(5, Math.min(LONG_RUN_CAP, w.km * 0.32, runnable * 0.36)),
+        easyPace, steady, w.taper || w.deload ? "steady" : shape, String(w.phase));
+      long.km = built.km;
+      long.target_text = built.target;
+      long.minutes = built.minutes;
     }
 
-    let spent = longRun?.km ?? 0;
+    let spent = long?.km ?? 0;
     for (const s of sessions) {
       const kind = String(s.kind);
       if (kind === "long_run") continue;
@@ -258,6 +312,9 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       } else if (kind === "hyrox") {
         const built = hyroxSession(s.label, easyPace);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+      } else if (kind === "easy_hyrox") {
+        const built = hyroxSession(s.label, easyPace, 3);
+        s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
       } else if (kind === "strength") {
         /*
          * The lifts, which were never written at all — the screen said "no lifts
@@ -267,20 +324,56 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         s.target_text = strengthTarget(w.phase, w.n, kitFrom(p.equipment));
         s.note_text = strengthNote(w.phase);
       }
-      spent += s.km ?? 0;
+      /*
+       * Easy runs are not counted here: they are sized from what is left, and
+       * counting their placeholder share first meant they were subtracted from
+       * their own budget. That is why an absorb week came out smaller — the second
+       * interval session became an easy run and then the easy runs were funded from
+       * a total that already pretended they existed.
+       */
+      if (kind !== "easy_run") spent += s.km ?? 0;
     }
     const easies = sessions.filter((s) => String(s.kind) === "easy_run");
-    // Whatever the week has left over goes to the easy running, which is what easy
-    // running is for: the volume that makes the hard days possible.
-    const left = Math.max(easies.length * 3, runnable - spent);
+    /*
+     * Easy running fills the week to its target.
+     *
+     * Not "whatever is left over" — the difference between the prescribed sessions
+     * and the week's volume is real running that has to be written somewhere, and
+     * easy running is where it belongs. This is also what stops an absorb week from
+     * being a smaller week: the second interval session becomes an easy run of the
+     * same volume, not a shorter one.
+     */
+    const left = Math.max(easies.length * 4, runnable - spent);
     for (const s of easies) {
       const built = continuousRun(Math.max(3, left / easies.length), easyPace);
       s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
     }
 
+    /*
+     * The week's number is the sum of what it asks for.
+     *
+     * It was the volume curve's number, while the sessions written under it added up
+     * to twelve kilometres less — the commitment credit was subtracted from what got
+     * prescribed and not from what was displayed. Every screen quoted the target, so
+     * an athlete doing exactly what they were told was short of it every week. The
+     * curve still governs the ramp and the ceiling; it is no longer also a promise
+     * nobody kept.
+     */
+    const prescribed = Math.round(
+      sessions.reduce((n, s) => n + (s.km ?? 0), 0) * 10) / 10;
+
     return {
       ...w, allocation, benchmark: benchmarks.has(w.n), sessions,
-      km: w.km,
+      km: prescribed || w.km,
+      /**
+       * What the volume curve asked for, kept beside what was written.
+       *
+       * The ramp assertion is about the curve — it is the rule the curve is built
+       * to obey — while the number on the screen has to be the sum of the sessions.
+       * Checking the ramp against the prescribed sum failed the plan for rounding:
+       * a session gaining a rep is not the block breaking its ramp.
+       */
+      target_km: w.km,
       /*
        * Why this week is what it is, in one phrase.
        *

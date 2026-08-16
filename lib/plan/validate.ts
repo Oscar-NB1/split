@@ -12,6 +12,8 @@ import type { SlotKind } from "./slots";
 
 export type PlanWeek = Week & {
   sessions: { kind: SlotKind | string; km?: number; hard: boolean }[];
+  /** what the volume curve asked for, where it differs from what was written */
+  target_km?: number;
   /** below 1 where time away cut the week; 1 or absent otherwise */
   volumeFactor?: number;
 };
@@ -23,7 +25,8 @@ const NO_TARGET_NEEDED = new Set(["strength", "hyrox", "benchmark", "rest"]);
 
 export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
   const out: Violation[] = [];
-  const peak = Math.max(...weeks.map((w) => w.km), 0);
+  // The curve's peak, for the same reason every other share reads the curve.
+  const peak = Math.max(...weeks.map((w) => w.target_km ?? w.km), 0);
 
   const loading = weeks.filter((w) => !w.deload && !w.taper);
   for (let i = 1; i < loading.length; i++) {
@@ -35,11 +38,19 @@ export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
      * and the whole block was softened by 10% because of a two-day trip in week 1.
      * The comparison uses what the previous week would have been.
      */
+    /*
+     * Against the curve, not against the sessions.
+     *
+     * The week now displays the sum of what it prescribes, which moves by a rep
+     * here and a rounding there; the ramp is a property of the curve those sessions
+     * were written to fill.
+     */
     const prev = loading[i - 1];
+    const prevKm = prev.target_km ?? prev.km;
     const base = prev.volumeFactor && prev.volumeFactor < 1
-      ? prev.km / prev.volumeFactor
-      : prev.km;
-    const rise = loading[i].km / base - 1;
+      ? prevKm / prev.volumeFactor
+      : prevKm;
+    const rise = (loading[i].target_km ?? loading[i].km) / base - 1;
     if (rise > r.ramp_rate + 0.02) {
       out.push({
         assertion: "week-on-week increase", week: loading[i].n,
@@ -65,17 +76,23 @@ export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
       if (n > 1) out.push({ assertion: "hard sessions per day", week: w.n, detail: `${n} on one day` });
     }
 
+    /*
+     * The share checks read the curve as well, for the same reason the ramp does:
+     * the sessions are written to fill it, and comparing a session to the rounded
+     * sum of its siblings is comparing it to itself.
+     */
+    const weekKm = w.target_km ?? w.km;
     const longest = Math.max(0, ...w.sessions.map((s) => s.km ?? 0));
-    if (w.km > 0 && longest > w.km * 0.4) {
+    if (weekKm > 0 && longest > weekKm * 0.4) {
       out.push({ assertion: "single session share", week: w.n,
-        detail: `${longest} km of a ${w.km} km week` });
+        detail: `${longest} km of a ${weekKm} km week` });
     }
 
     const long = w.sessions.find((s) => s.kind === "long_run")?.km ?? 0;
     const strict = r.training_age === "novice" || r.training_age === "intermediate";
-    if (strict && w.km > 0 && long > w.km * 0.35) {
+    if (strict && weekKm > 0 && long > weekKm * 0.35) {
       out.push({ assertion: "long run share", week: w.n,
-        detail: `${long} km of a ${w.km} km week, before advanced` });
+        detail: `${long} km of a ${weekKm} km week, before advanced` });
     }
 
     /**
@@ -95,9 +112,10 @@ export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
   }
 
   const race = weeks[weeks.length - 1];
-  if (race && peak > 0 && race.km > peak * 0.4) {
+  const raceKm = race ? (race.target_km ?? race.km) : 0;
+  if (race && peak > 0 && raceKm > peak * 0.4) {
     out.push({ assertion: "race-week volume", week: race.n,
-      detail: `${race.km} km against a peak of ${peak}` });
+      detail: `${raceKm} km against a peak of ${peak}` });
   }
 
   // deload spacing

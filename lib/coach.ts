@@ -86,6 +86,8 @@ const KIND_COLOUR: Record<string, string> = {
   Run: "#8FD0E0", TrailRun: "#8FD0E0",
   // the rest of the plan
   hyrox: "#12314D",                                    // Hyrox work: navy
+  // The aerobic machine session: Hyrox work, but easy — the navy, lightened.
+  easy_hyrox: "#5C7A99",
   strength: "#6FA8DC", WeightTraining: "#6FA8DC",      // strength: light blue
   benchmark: "#E8C051",                                // the test: gold
   race: "#C6FF5B",                                     // race day: lime
@@ -124,6 +126,7 @@ export const KIND_LABEL: Record<string, string> = {
    * upper-cased by the style, shown to the athlete.
    */
   quality_run: "Run · intervals", easy_run: "Run · easy", long_run: "Run · long",
+  easy_hyrox: "Hyrox · easy",
   benchmark: "Benchmark", race: "Race", commitment: "Yours",
 };
 export const kindLabel = (k: string) =>

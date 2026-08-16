@@ -293,3 +293,72 @@ export function hyroxSession(label: string, paceS: number, rounds = 4): Built {
     ((WARMUP_KM + 1) * paceS + n * ((runM / 1000) * paceS + stationSeconds)) / 60);
   return { target: lines.join("\n"), km, minutes };
 }
+
+/**
+ * The long run, and what is asked of it.
+ *
+ * A flat Zone 2 at every setting, while the dials screen promised "finishes at
+ * effort" for Challenging and Hard — a claim the plan did not keep. What a long run
+ * is *for* changes with the difficulty:
+ *
+ *   steady       nothing but distance. The pace is whatever holds the distance.
+ *   challenging  the last quarter at steady effort — running tired, on purpose.
+ *   hard         blocks inside it, and later a timed run at an average. Switching
+ *                pace under fatigue is the demand of the race, and it is the one
+ *                thing a flat long run never trains.
+ *
+ * The blocks grow with the phase: a single 2 km insert in the base weeks, two by
+ * the specific phase, and a whole run at an average once there is a race pace worth
+ * holding.
+ */
+export type LongShape = "steady" | "finish" | "blocks" | "timed";
+
+export function longRun(
+  km: number, easyS: number, steadyS: number, shape: LongShape, phase = "base",
+): Built {
+  const total = km1(km);
+  if (shape === "steady" || total < 8) {
+    return continuousRun(total, easyS);
+  }
+
+  if (shape === "finish") {
+    const fast = km1(Math.max(2, total * 0.25));
+    const easy = km1(total - fast);
+    return {
+      target: [
+        `- ${doseKm(easy)} Z2 ${between(easyS, Math.round(easyS * 1.06))}`,
+        `- ${doseKm(fast)} Z3 ${at(steadyS)}`,
+      ].join("\n"),
+      km: total,
+      minutes: Math.round((easy * easyS + fast * steadyS) / 60),
+    };
+  }
+
+  if (shape === "timed") {
+    // One number to hold for the whole run. Nowhere to hide, which is the point.
+    const avg = Math.round((easyS + steadyS) / 2);
+    return {
+      target: `- ${doseKm(total)} Z3 ${at(avg)}`,
+      km: total,
+      minutes: Math.round((total * avg) / 60),
+    };
+  }
+
+  const blocks = phase === "base" ? 1 : 2;
+  const each = km1(Math.min(4, Math.max(2, total * 0.15)));
+  const easyEach = km1(Math.max(2, (total - blocks * each) / (blocks + 1)));
+  const lines: string[] = [];
+  for (let i = 0; i < blocks; i++) {
+    lines.push(`- ${doseKm(easyEach)} Z2 ${between(easyS, Math.round(easyS * 1.06))}`);
+    lines.push(`- ${doseKm(each)} Z3 ${at(steadyS)}`);
+  }
+  lines.push(`- ${doseKm(easyEach)} Z2 ${between(easyS, Math.round(easyS * 1.06))}`);
+
+  const fastKm = blocks * each;
+  const easyKm = total - fastKm;
+  return {
+    target: lines.join("\n"),
+    km: total,
+    minutes: Math.round((easyKm * easyS + fastKm * steadyS) / 60),
+  };
+}
