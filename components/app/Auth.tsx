@@ -30,6 +30,10 @@ const OUTCOME: Record<string, string> = {
   "already-linked": "That account is already attached to someone else here.",
   state: "That sign-in took too long. Worth trying again.",
   failed: "That did not complete. Worth trying again.",
+  // Split by stage, because the causes are different in kind: one is worth
+  // retrying and one never will be.
+  "failed-exchange": "That sign-in did not complete. Worth trying again.",
+  "failed-store": "You signed in, but we could not save it. This one is on us — it will not fix itself by retrying.",
   unavailable: "That sign-in is not set up yet.",
 };
 

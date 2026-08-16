@@ -20,8 +20,20 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
 
   const linkTo = (state.link as string | null) ?? null;
 
+  /**
+   * Which step failed, carried back in the URL.
+   *
+   * "That did not complete, worth trying again" was the answer to every
+   * exception here, which is useless when the cause is permanent — three
+   * different failures were indistinguishable from the outside, and diagnosing
+   * one meant digging through server logs. The stage is not sensitive: it names
+   * a step in a published OAuth flow, not why it failed.
+   */
+  let stage = "exchange";
+
   try {
     const profile = await exchange(p, params.get("code")!);
+    stage = "store";
 
     // Signing in with Strava also connects it: we have just been handed the
     // tokens, and asking again on the next screen would be asking twice for
@@ -60,8 +72,8 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
     await issueSession(outcome.userId);
     return back("/", outcome.kind === "created" ? "created" : "signed-in");
   } catch (e) {
-    console.error("oauth callback", p, e);
-    return back("/", "failed");
+    console.error("oauth callback", p, stage, e);
+    return back("/", `failed-${stage}`);
   }
 }
 
