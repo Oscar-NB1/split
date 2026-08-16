@@ -538,7 +538,9 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
     plan: {
       id: tpl.id, name: plan.name, weeks: built.weeks.length, start: startDate,
       race_date: plan.race_date, plan_state: plan.plan_state,
-      total_km: tpl0.volume.reduce((n, v) => n + v.km, 0),
+      // Rounded here rather than at each of the places that print it: a total is
+      // a whole number of kilometres, and 766.6999999999998 reached the screen.
+      total_km: Math.round(tpl0.volume.reduce((n, v) => n + v.km, 0)),
       volume: tpl0.volume, intents: tpl0.intents,
       weeks_generated: built.weeks.length, role: built.role,
       generator: built.version,

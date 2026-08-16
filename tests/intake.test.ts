@@ -92,8 +92,14 @@ test("no benchmark does not discount the volume", () => {
   const guessed = resolve({ ...HER, benchmark: "offered" });
   assert.equal(guessed.startKm, measured.startKm);
   assert.ok(!guessed.corrections.some((c) => /15%|below your ceiling/.test(c.title)));
-  // What it says instead is about paces, which is the part a test actually fixes.
-  assert.ok(guessed.corrections.some((c) => /paces are estimates/i.test(c.title)));
+  /*
+   * And it says nothing about paces either, unless the test is going to happen.
+   * "Offered" is an athlete who has not decided; telling them their paces are
+   * guesses is a sales pitch for a screen they have not agreed to.
+   */
+  assert.ok(!guessed.corrections.some((c) => /paces/i.test(c.title)));
+  const booked = resolve({ ...HER, benchmark: "scheduled" });
+  assert.ok(booked.corrections.some((c) => /paces/i.test(c.title)));
 });
 
 test("a logged benchmark restores the full ceiling and lifts the ramp cap", () => {
@@ -511,4 +517,18 @@ test("the allocation is a copy, so adjusting it cannot rewrite the table", () =>
   a[0] = 99;
   assert.deepEqual(allocationFor(HER), [60, 25, 15], "the table is untouched");
   assert.deepEqual(ALLOC.Protected, [60, 25, 15]);
+});
+
+test("the pace-estimate note only appears where a test is actually scheduled", () => {
+  // It went to every athlete who had not been measured, including the ones who
+  // declined the benchmark — so the plan opened by explaining what was missing
+  // from it to someone who had chosen for it to be missing.
+  const note = (benchmark: Intake["benchmark"]) =>
+    generate({ ...HER, benchmark }).corrections
+      .some((c) => /paces/i.test(c.title));
+
+  assert.equal(note("scheduled"), true);
+  assert.equal(note("skipped"), false);
+  assert.equal(note("offered"), false);
+  assert.equal(note("logged"), false, "nothing to firm up: it is already measured");
 });

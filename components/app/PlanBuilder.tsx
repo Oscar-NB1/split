@@ -196,8 +196,16 @@ type Built = {
   plan: {
     name: string; weeks: number; start: string; race_date: string | null;
     total_km: number; plan_state: string;
-    volume: { km: number; note: string }[];
-    intents: { from: number; to: number; phase: string; purpose: string }[];
+    volume: { n: number; km: number; note: string }[];
+    /**
+     * One row per week, not one per phase.
+     *
+     * This was typed as the older generator's shape — {from, to, phase, purpose} —
+     * so the screen read `it.from` off a per-week row and rendered "Weeks
+     * undefined–undefined", a week number of NaN, and a phase card per week with
+     * nothing in it but the word "base". The phases are grouped here instead.
+     */
+    intents: { n: number; phase: string; note: string }[];
   };
   corrections: Correction[];
   flags: string[];
@@ -1144,6 +1152,53 @@ function Offer({
   );
 }
 
+/** A weekly distance, always to one decimal. */
+const km1 = (n: number) => `${n.toFixed(1)} km`;
+/** A block total, always whole: 766.6999999999998 km is not a number anyone wants. */
+const kmWhole = (n: number) => `${Math.round(n)} km`;
+
+const PHASE: Record<string, { label: string; purpose: string }> = {
+  base: { label: "Base",
+    purpose: "Volume and easy running. The weeks that make the later ones possible." },
+  build: { label: "Build",
+    purpose: "The same volume with harder sessions inside it — intervals, tempo, stations at load." },
+  specific: { label: "Specific",
+    purpose: "Race-shaped work: compromised running, transitions, the stations in order." },
+  taper: { label: "Taper",
+    purpose: "Volume drops, intensity stays. You arrive fresh rather than fit and tired." },
+};
+
+type PhaseGroup = {
+  label: string; purpose: string; from: number; to: number; km: number;
+  weeks: { n: number; km: number; note: string }[];
+};
+
+/**
+ * Consecutive weeks of the same phase, as one group.
+ *
+ * Derived from the per-week rows rather than assumed, so a block whose phases are
+ * squeezed — four weeks, one of each — groups correctly instead of promising a span
+ * the weeks do not have.
+ */
+function phaseGroups(
+  intents: { n: number; phase: string; note: string }[],
+  volume: { n: number; km: number; note: string }[],
+): PhaseGroup[] {
+  const out: PhaseGroup[] = [];
+  intents.forEach((it, k) => {
+    const v = volume[k] ?? { n: it.n, km: 0, note: "" };
+    const meta = PHASE[it.phase] ?? { label: it.phase, purpose: "" };
+    const week = { n: it.n, km: v.km, note: it.note || v.note };
+    const last = out[out.length - 1];
+    if (last && last.label === meta.label) {
+      last.to = it.n; last.km += v.km; last.weeks.push(week);
+    } else {
+      out.push({ ...meta, from: it.n, to: it.n, km: v.km, weeks: [week] });
+    }
+  });
+  return out;
+}
+
 /** The generated plan, with its own screen rather than a button on the review. */
 function PlanLive({ built, onStart }: { built: Built; onStart: () => void }) {
   const { plan: p, corrections } = built;
@@ -1151,17 +1206,12 @@ function PlanLive({ built, onStart }: { built: Built; onStart: () => void }) {
   const peak = Math.max(...p.volume.map((v) => v.km), 1);
   const stats: [string, string][] = [
     ["Weeks", String(p.weeks)],
-    ["Week 1", `${p.volume[0]?.km ?? 0} km`],
-    ["Peak", `${peak} km`],
-    ["Total", `${p.total_km} km`],
+    ["Week 1", km1(p.volume[0]?.km ?? 0)],
+    ["Peak", km1(peak)],
+    ["Total", kmWhole(p.total_km)],
   ];
 
-  const groups = p.intents.map((it) => ({
-    label: it.phase.split(" · ")[0],
-    span: `Weeks ${it.from}–${it.to}`,
-    total: `${p.volume.slice(it.from - 1, it.to).reduce((n, v) => n + v.km, 0)} km`,
-    weeks: p.volume.slice(it.from - 1, it.to).map((v, k) => ({ ...v, n: it.from + k })),
-  }));
+  const groups = phaseGroups(p.intents, p.volume);
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1188,26 +1238,41 @@ function PlanLive({ built, onStart }: { built: Built; onStart: () => void }) {
       </div>
 
       <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ background: CREAM, border: `1px solid ${LINE}`, borderRadius: "var(--r-card)",
-          padding: "14px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 13, lineHeight: 1.6, color: INK70 }}>
-            {corrections.length
-              ? `"${corrections[0].title.charAt(0).toLowerCase()}${corrections[0].title.slice(1)}" is the decision I made for you. Week 1 is a test, not a workout — run it honestly and every pace target after it comes from real numbers rather than a guess.`
-              : "Week 1 is a test, not a workout. Run it honestly and every pace target after it comes from real numbers rather than a guess."}
-          </span>
-        </div>
+        {/*
+          * The decisions the plan made, as they were written.
+          *
+          * This used to quote the first correction's title inside a sentence about
+          * the benchmark — "\"your paces are estimates until you test\" is the
+          * decision I made for you" — which read as a bug because it was one: a
+          * heading spliced into a body, and a claim about a test the athlete may
+          * have declined. Each correction now says its own piece.
+          */}
+        {corrections.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {corrections.map((c) => (
+              <div key={c.title} style={{ background: CREAM, border: `1px solid ${LINE}`,
+                borderRadius: "var(--r-card)", padding: "14px 16px",
+                display: "flex", flexDirection: "column", gap: 5 }}>
+                <span style={{ fontSize: 12, fontWeight: 700 }}>{c.title}</span>
+                <span style={{ fontSize: 12, lineHeight: 1.6, color: INK70 }}>{c.body}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <span style={caps}>How the block runs</span>
-          {p.intents.map((it) => (
-            <div key={it.from} style={{ display: "flex", gap: 11, alignItems: "flex-start",
-              background: PAPER, border: `1px solid ${LINE}`, borderRadius: "var(--r-card)",
-              padding: "14px 16px" }}>
+          {groups.map((g) => (
+            <div key={`${g.label}-${g.from}`} style={{ display: "flex", gap: 11,
+              alignItems: "flex-start", background: PAPER, border: `1px solid ${LINE}`,
+              borderRadius: "var(--r-card)", padding: "14px 16px" }}>
               <span style={{ width: 8, height: 8, borderRadius: "50%", flex: "none",
                 marginTop: 6, background: "#0A8FB0" }} />
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>{it.phase}</span>
-                <span style={{ fontSize: 12, lineHeight: 1.55, color: INK55 }}>{it.purpose}</span>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>
+                  {g.label} · {g.from === g.to ? `week ${g.from}` : `weeks ${g.from}–${g.to}`}
+                </span>
+                <span style={{ fontSize: 12, lineHeight: 1.55, color: INK55 }}>{g.purpose}</span>
               </div>
             </div>
           ))}
@@ -1216,12 +1281,15 @@ function PlanLive({ built, onStart }: { built: Built; onStart: () => void }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <span style={caps}>Every week</span>
           {groups.map((g) => (
-            <div key={g.label + g.span} style={{ background: PAPER, border: `1px solid ${LINE}`,
+            <div key={`${g.label}-${g.from}`} style={{ background: PAPER, border: `1px solid ${LINE}`,
               borderRadius: "var(--r-card)", overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "baseline",
                 justifyContent: "space-between", gap: 10, padding: "12px 14px", background: OFF }}>
                 <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em" }}>{g.label}</span>
-                <span style={{ fontSize: 10, color: INK55 }}>{g.span} · {g.total}</span>
+                <span style={{ fontSize: 10, color: INK55 }}>
+                  {g.from === g.to ? `Week ${g.from}` : `Weeks ${g.from}–${g.to}`} ·{" "}
+                  {kmWhole(g.km)}
+                </span>
               </div>
               <div style={{ padding: "4px 14px 10px" }}>
                 {g.weeks.map((w) => {
@@ -1243,7 +1311,7 @@ function PlanLive({ built, onStart }: { built: Built; onStart: () => void }) {
                               width: `${Math.max(8, Math.min(100, (w.km / peak) * 100))}%` }} />
                           </span>
                           <span style={{ fontSize: 12, fontWeight: 700, width: 48,
-                            flex: "none", textAlign: "right" }}>{w.km} km</span>
+                            flex: "none", textAlign: "right" }}>{km1(w.km)}</span>
                         </span>
                         {w.note && (
                           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".04em",

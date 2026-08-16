@@ -212,7 +212,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "form" ? "Pace and volume against plan"
     : view === "program" ? "Edit the week"
     : view === "picker" ? "Add a session"
-    : week ? `Week ${week.n} · ${week.km} km target`
+    : week ? `Week ${week.n} · ${week.km.toFixed(1)} km target`
     : !block ? "Nothing scheduled"
     : left == null ? block.name
     : left > 0 ? `${left} days to race` : "Off block";

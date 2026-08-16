@@ -233,7 +233,7 @@ export default function Week({
         <span style={{ display: "flex", alignItems: "center",
           justifyContent: "space-between", gap: 10 }}>
           <span style={{ fontSize: 14, fontWeight: 700 }}>
-            {week ? `Week ${week.n} · ${week.km} km target` : "This week"}
+            {week ? `Week ${week.n} · ${week.km.toFixed(1)} km target` : "This week"}
           </span>
           <span style={{ fontSize: 13, color: INK40 }}>›</span>
         </span>
@@ -272,7 +272,7 @@ export default function Week({
         </div>
         <div style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700,
           lineHeight: 1.15, letterSpacing: "-.02em" }}>
-          {week ? `${week.km} km, and two hard days.`
+          {week ? `${week.km.toFixed(1)} km, and two hard days.`
             : !block ? "No block on your account."
             : beforeBlock ? "The block starts Monday." : "Off block."}
         </div>

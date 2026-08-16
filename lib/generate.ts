@@ -176,10 +176,19 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
    * unmeasured plan has honest volume and uncalibrated *paces*, and that is what
    * the athlete should be told.
    */
-  if (estimated) {
+  /*
+   * Only where a test is actually going to happen.
+   *
+   * Told to every athlete who had not been measured, including the ones who had
+   * declined the benchmark — so the plan opened by explaining what was missing from
+   * it to someone who had chosen for it to be missing. Where the test is scheduled
+   * it is worth saying, because the paces really do change afterwards; where it is
+   * not, the sessions already carry efforts and zones and say so themselves.
+   */
+  if (estimated && x.benchmark === "scheduled") {
     corrections.push({
-      title: "Your paces are estimates until you test",
-      body: "Volume comes from what you told me about your training and your running, and it is not discounted for the absence of a test. Paces are the part a benchmark fixes: until then every target is a heart-rate zone or an effort rather than a number, and it says so on the session.",
+      title: "Your paces firm up after week 1",
+      body: "Volume comes from what you told me about your training and your running, and it is not discounted for the absence of a test. Paces are the part the benchmark fixes: until you run it every target is a heart-rate zone or an effort rather than a number, and it says so on the session.",
     });
   }
   if (baseKm > ceil) {

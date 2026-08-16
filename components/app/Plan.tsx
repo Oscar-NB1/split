@@ -124,7 +124,7 @@ export default function Plan({
 
             <div style={{ display: "flex", gap: 3 }}>
               {WEEKS.map((w) => (
-                <span key={w.n} title={`Week ${w.n} · ${w.km} km`} style={{
+                <span key={w.n} title={`Week ${w.n} · ${w.km.toFixed(1)} km`} style={{
                   flex: 1, height: 8, borderRadius: 2,
                   background: w.start < thisMonday ? TEAL
                     : w.start === thisMonday ? "#C6FF5B" : "rgba(18,49,77,.12)",
@@ -214,7 +214,7 @@ export default function Plan({
                 </div>
 
                 <span style={{ fontSize: 12, color: INK55 }}>
-                  {w.km} km planned
+                  {w.km.toFixed(1)} km planned
                   {ran != null && ` · ${ran.toFixed(1)} logged`}
                   {ran != null && ran < w.km * .9 && ` · ${(w.km - ran).toFixed(1)} short`}
                 </span>
