@@ -1,7 +1,7 @@
 import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "./allocate";
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
-import { canDoStations, ladderFor, otherLadder, rungFor } from "./ladders";
+import { canDoStations, ladderFor, otherLadder, otherRung, rungFor } from "./ladders";
 import { continuousRun, hyroxSession, qualityRun } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { type Anchor, prescribe } from "./paces";
@@ -154,9 +154,10 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * compromised running, transitions, a half or full simulation — and it
      * progresses with the phase, so the name says what week of the block it is.
      */
-    const hyroxRung = stations
-      ? rungFor("L6", p.running_base, inPhase, w.phase).label
-      : null;
+    const hyroxRungAt = stations ? rungFor("L6", p.running_base, inPhase, w.phase) : null;
+    const hyroxRung = hyroxRungAt?.label ?? null;
+    // The second one in a week is deliberately a different rung of the same ladder.
+    const hyroxRung2 = hyroxRungAt ? otherRung("L6", hyroxRungAt.rung) : null;
 
     // the benchmark replaces ONE quality run, not every one of them
     let benchTaken = false;
@@ -168,6 +169,12 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * next rung in the cycle, so the week holds two different stimuli.
      */
     let qualitySeen = 0;
+    /*
+     * Two Hyrox sessions in a week were the same session twice — the same rung, the
+     * same name, on consecutive days. The second takes the next rung of the
+     * race-specific ladder, so a week that carries two carries two different ones.
+     */
+    let hyroxSeen = 0;
     const sessions: Session[] = placed.week.map((s) => {
       const isQuality = s.kind === "quality_run";
       const second = isQuality && qualitySeen++ > 0;
@@ -185,7 +192,8 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         hard: s.hard,
         label: s.label ?? (isBench ? "Benchmark test"
           : isQuality ? thisRung.label
-          : s.kind === "hyrox" && hyroxRung ? `Hyrox · ${hyroxRung.toLowerCase()}`
+          : s.kind === "hyrox" && hyroxRung
+            ? `Hyrox · ${(hyroxSeen++ === 0 ? hyroxRung : hyroxRung2 ?? hyroxRung).toLowerCase()}`
           : String(s.kind)),
         km: share ? Math.round(runnable * share * 10) / 10 : undefined,
         prescription: share

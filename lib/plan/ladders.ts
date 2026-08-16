@@ -141,3 +141,17 @@ export function otherLadder(first: LadderId, canDoStations: boolean): LadderId {
   };
   return pair[first];
 }
+
+/**
+ * A different rung of the same ladder.
+ *
+ * Asking for "next week's rung" returns the same one whenever the phase cap binds,
+ * which is how a week ended up with the same Hyrox session on two consecutive days.
+ * This steps deliberately: one up where there is room, one down where there is not.
+ */
+export function otherRung(ladder: LadderId, rung: number): string {
+  const rungs = LADDERS[ladder].rungs;
+  if (rungs.length < 2) return rungs[0];
+  const next = rung + 1 < rungs.length ? rung + 1 : Math.max(0, rung - 1);
+  return rungs[next];
+}

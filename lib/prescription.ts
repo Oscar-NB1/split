@@ -23,6 +23,13 @@
 export type Step = {
   /** e.g. "800m" or "15m" — the dose as written */
   dose: string;
+  /**
+   * The pace target, exactly as prescribed: "4:10/km", or a range for the easy
+   * steps. Written into the prescription rather than derived by the screen, so the
+   * watch, the session card and the plan cannot disagree about what to run — and so
+   * a step that genuinely has no pace (a walking recovery) can say so.
+   */
+  pace: string | null;
   /** Z1..Z5 if stated */
   zone: string | null;
   /** "warm up", "walk", "cool down", or "" */
@@ -40,6 +47,8 @@ export type StepGroup = {
 };
 
 const REST_WORDS = /(walk|jog|rest|recover|easy|float|standing)/i;
+/** "@ 4:10/km" or "@ 6:33-7:03/km". */
+const PACE = /@\s*(\d{1,2}:[0-5]\d(?:\s*[-–]\s*\d{1,2}:[0-5]\d)?)\s*\/?\s*km/i;
 const ZONE = /\b(Z[1-5])\b/i;
 const DOSE = /^(\d+(?:\.\d+)?\s*(?:m|km|k|min|s|sec|mi))\b/i;
 
@@ -50,17 +59,21 @@ function parseStep(raw: string): Step | null {
 
   const zoneMatch = line.match(ZONE);
   const zone = zoneMatch ? zoneMatch[1].toUpperCase() : null;
+  const paceMatch = line.match(PACE);
+  const pace = paceMatch ? `${paceMatch[1].replace(/\s+/g, "")}/km` : null;
   const doseMatch = line.match(DOSE);
   const dose = doseMatch ? doseMatch[1].replace(/\s+/g, "") : "";
 
   const label = line
     .replace(DOSE, "")
     .replace(ZONE, "")
+    .replace(PACE, "")
     .replace(/\s+/g, " ")
     .trim();
 
   return {
     dose,
+    pace,
     zone,
     label,
     // a recovery is named as one, or is Z1 inside a rep block

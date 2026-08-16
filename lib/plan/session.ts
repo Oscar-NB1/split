@@ -86,6 +86,21 @@ export function readRung(label: string): Work | null {
 
 const km1 = (n: number) => Math.round(n * 10) / 10;
 
+/** Seconds per kilometre as a pace anybody can read. */
+const paceOf = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}`;
+/** The pace target as it is written into the prescription. */
+const at = (s: number) => `@ ${paceOf(s)}/km`;
+const between = (a: number, b: number) => `@ ${paceOf(a)}-${paceOf(b)}/km`;
+
+/**
+ * How much slower than critical velocity each kind of running is.
+ *
+ * The same table the pace module hangs off, restated here only as the two numbers
+ * this file needs: easy running and the jog between reps.
+ */
+const EASY = 1.30;
+const RECOVERY_JOG = 1.42;
+
 /**
  * Fit the work inside what the week can afford.
  *
@@ -144,7 +159,18 @@ export function qualityRun(
   label: string, paceS: number, easyS: number, maxKm = Infinity,
 ): Built {
   const work = trim(readRung(label), paceS, maxKm);
-  const lines: string[] = [`- ${doseKm(WARMUP_KM)} Z2 warm up`];
+  /*
+   * Every step carries its pace.
+   *
+   * The prescription used to say "8m Z4" and leave the screen to find a pace from
+   * somewhere else, which meant the watch could not be sent anything and a step
+   * with no pace of its own — a walking recovery — was indistinguishable from a
+   * step whose pace had simply gone missing.
+   */
+  const easyPace = Math.round(paceS * EASY);
+  const lines: string[] = [
+    `- ${doseKm(WARMUP_KM)} Z2 warm up ${between(easyPace, Math.round(easyPace * 1.08))}`,
+  ];
   let workKm = 0;
   let workSeconds = 0;
 
@@ -157,8 +183,10 @@ export function qualityRun(
   if (work.shape === "reps" || work.shape === "strides") {
     const rest = work.shape === "strides" ? 60 : restFor((work.metres / 1000) * paceS);
     title = `${work.reps} × ${work.metres} m`;
+    const repPace = work.shape === "strides" ? Math.round(paceS * 0.88) : paceS;
     lines.push(`- ${work.reps}x`);
-    lines.push(`- ${work.metres}m ${work.shape === "strides" ? "Z5" : "Z4"}`);
+    lines.push(`- ${work.metres}m ${work.shape === "strides" ? "Z5" : "Z4"} ${at(repPace)}`);
+    // A walking recovery has no pace, and saying so is the honest instruction.
     lines.push(`- ${rest}s Z1 walk`);
     workKm = (work.metres / 1000) * work.reps;
     workSeconds = work.reps * ((work.metres / 1000) * paceS + rest);
@@ -166,25 +194,25 @@ export function qualityRun(
     const rest = restFor(work.seconds);
     title = `${work.reps} × ${Math.round(work.seconds / 60)} min`;
     lines.push(`- ${work.reps}x`);
-    lines.push(`- ${Math.round(work.seconds / 60)}m Z4`);
-    lines.push(`- ${rest}s Z1 jog`);
+    lines.push(`- ${Math.round(work.seconds / 60)}m Z4 ${at(paceS)}`);
+    lines.push(`- ${rest}s Z1 jog ${at(Math.round(paceS * RECOVERY_JOG))}`);
     workKm = (work.seconds / paceS) * work.reps;
     workSeconds = work.reps * (work.seconds + rest);
   } else if (work.shape === "continuous") {
     title = `${Math.round(work.seconds / 60)} min continuous`;
-    lines.push(`- ${Math.round(work.seconds / 60)}m Z3`);
+    lines.push(`- ${Math.round(work.seconds / 60)}m Z3 ${at(Math.round(paceS * 1.06))}`);
     workKm = work.seconds / paceS;
     workSeconds = work.seconds;
   } else {
     const rounds = work.reps;
     lines.push(`- ${rounds}x`);
-    lines.push(`- ${Math.round(work.onSeconds / 60)}m Z3`);
+    lines.push(`- ${Math.round(work.onSeconds / 60)}m Z3 ${at(Math.round(paceS * 1.06))}`);
     lines.push(`- ${Math.round(work.offSeconds / 60)}m Z1 walk`);
     workKm = (work.onSeconds / paceS) * rounds;
     workSeconds = rounds * (work.onSeconds + work.offSeconds);
   }
 
-  lines.push(`- ${doseKm(COOLDOWN_KM)} Z1 cool down`);
+  lines.push(`- ${doseKm(COOLDOWN_KM)} Z1 cool down ${at(Math.round(paceS * RECOVERY_JOG))}`);
 
   const km = km1(WARMUP_KM + workKm + COOLDOWN_KM);
   const minutes = Math.round(
@@ -195,7 +223,9 @@ export function qualityRun(
 /** An easy or long run: one instruction, and the discipline is in holding it. */
 export function continuousRun(km: number, paceS: number, zone = "Z2"): Built {
   return {
-    target: `- ${doseKm(km1(km))} ${zone}`,
+    // paceS here is already the pace this run is meant to be held at, so the range
+    // around it is the tolerance rather than a conversion.
+    target: `- ${doseKm(km1(km))} ${zone} ${between(paceS, Math.round(paceS * 1.06))}`,
     km: km1(km),
     minutes: Math.max(15, Math.round((km * paceS) / 60)),
   };
@@ -212,11 +242,13 @@ export function hyroxSession(label: string, paceS: number, rounds = 4): Built {
   const runM = /simulation/.test(label.toLowerCase()) ? 1000 : 400;
   const n = /full simulation/.test(label.toLowerCase()) ? 8 : rounds;
   const lines = [
-    `- ${doseKm(WARMUP_KM)} Z2 warm up`,
+    `- ${doseKm(WARMUP_KM)} Z2 warm up ${between(paceS, Math.round(paceS * 1.08))}`,
     `- ${n}x`,
-    `- ${runM}m Z3`,
+    // Running off a station is slower than fresh running, and the target says so
+    // rather than setting one nobody hits and everybody chases.
+    `- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`,
     `- 1 station Z4`,
-    `- ${doseKm(1)} Z1 cool down`,
+    `- ${doseKm(1)} Z1 cool down ${at(paceS)}`,
   ];
   const km = km1(WARMUP_KM + (runM / 1000) * n + 1);
   // A station is roughly the time of the run beside it, plus the transition.

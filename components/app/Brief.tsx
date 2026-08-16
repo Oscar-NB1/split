@@ -91,7 +91,13 @@ function groupsFor(
         label: isWarm ? "Warm-up" : "Cool down", color: INK55, note: "",
         items: [{
           main: `${humanDose(it?.dose ?? "")} ${isWarm ? "conversational" : "easy"}`.trim(),
-          sub: isWarm && prescribed ? `No faster than ${say(prescribed + 45, mode)}` : "or slower",
+          sub: it?.pace
+            ? `${it.pace.replace("/km", " /km")}${isWarm ? " — no faster" : " or slower"}`
+            : prescribed
+              ? isWarm
+                ? `${say(prescribed + 60, mode)} to ${say(prescribed + 90, mode)} — no faster`
+                : `${say(prescribed + 90, mode)} or slower`
+              : isWarm ? "Conversational" : "or slower",
           work: false,
         }],
       });
@@ -101,13 +107,40 @@ function groupsFor(
     // the repeat block, expanded
     const work = g.items.find((i) => !i.rest);
     const rest = g.items.find((i) => i.rest);
+    /*
+     * The rep and its recovery are two rows, not one row with a caption.
+     *
+     * A watch executes them as separate steps, and an athlete reads them that way:
+     * eight minutes at a pace, then a hundred and fifty seconds walking. Hiding the
+     * recovery under the rep made a session that could not be sent anywhere.
+     */
     const items: Item[] = [];
     for (let i = 0; i < g.repeat; i++) {
+      /*
+       * The pace the prescription states, where it states one. The screen used to
+       * derive it from the plan's easy pace, which meant it could differ from what
+       * a watch would be sent — and could appear on a step that has no pace at all.
+       */
       items.push({
-        main: `${humanDose(work?.dose ?? "")}${prescribed ? ` at ${say(prescribed, mode)}` : ""}`,
-        sub: rest ? `${humanDose(rest.dose)} ${/walk/i.test(rest.label) ? "walking rest" : "recovery"}` : "",
+        main: work?.pace
+          ? `${humanDose(work.dose)} at ${work.pace.replace("/km", mode === "Treadmill" ? "" : " /km")}`
+          : `${humanDose(work?.dose ?? "")}${prescribed ? ` at ${say(prescribed, mode)}` : ""}`,
+        sub: "",
         work: true,
       });
+      if (rest) {
+        const walking = /walk/i.test(rest.label);
+        items.push({
+          main: `${humanDose(rest.dose)} ${walking ? "walking recovery" : "easy recovery"}`,
+          // A jog recovery has a pace; a walk does not, and pretending otherwise
+          // gives the watch a target nobody can hold.
+          sub: walking
+            ? "Walk it. No pace target."
+            : rest.pace ? `${rest.pace.replace("/km", " /km")} or slower`
+            : prescribed ? `${say(prescribed + 90, mode)} or slower` : "Easy.",
+          work: false,
+        });
+      }
     }
     /*
      * The work block wears the session's own colour.
@@ -118,7 +151,7 @@ function groupsFor(
      * another inside.
      */
     out.push({
-      label: `Session · ${items.length} reps`, color: kindColour(kind), items, note: cap,
+      label: `Session · ${g.repeat} reps`, color: kindColour(kind), items, note: cap,
     });
   }
   return out;
