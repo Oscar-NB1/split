@@ -252,7 +252,12 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
     });
   }, []);
 
-  const set = <K extends keyof Answers>(k: K, v: Answers[K]) => setA((p) => ({ ...p, [k]: v }));
+  const set = <K extends keyof Answers>(k: K, v: Answers[K]) => {
+    setA((p) => ({ ...p, [k]: v }));
+    // Changing an answer clears the complaint about it: a message that outlives
+    // the thing it described is worse than no message.
+    setProblems((ps) => ps.filter((p) => p.field !== k));
+  };
 
   /**
    * The steps this athlete is actually asked, from lib/intake-steps.ts.
@@ -299,6 +304,8 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
 
   const value = (id === "pace" ? null : (a as unknown as Record<string, unknown>)[id]);
   const ready = filled(s, a as unknown as StepAnswers);
+  /** The problems that belong to this step. */
+  const here = problems.filter((p) => p.field === s.id);
 
   /** "Nothing fixed" is not additive — it is the absence of everything else. */
   const toggle = (k: "days" | "commitments" | "equipment", v: string) => {
@@ -329,8 +336,16 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
     setBusy(false);
     if (!r.ok) {
       setProblems(j.problems ?? [{ field: "", why: j.error ?? "That did not resolve." }]);
+      /*
+       * Jump to the step that is actually wrong.
+       *
+       * This searched `live` with indexOf for a field name, and `live` became an
+       * array of step objects when the flow went data-driven — so it always
+       * returned -1 and never moved. The athlete was told at step 24 that step 7
+       * was wrong, with nothing naming which step that was.
+       */
       const first = j.problems?.[0]?.field;
-      const at = live.indexOf(first === "pace" ? "pace" : first);
+      const at = live.findIndex((st) => st.id === first);
       if (at > -1) setStep(at);
       return;
     }
@@ -666,10 +681,23 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      {problems.length > 0 && (
+      {/* Only the problems for the step being looked at. A message about the
+          division shown under the volume dials is noise, and it was what made
+          the end-of-flow error impossible to act on. */}
+      {here.length > 0 && (
         <div style={{ fontSize: 11, color: "#8E3521", lineHeight: 1.5 }}>
-          {problems.map((p) => p.why).join(" ")}
+          {here.map((p) => p.why).join(" ")}
         </div>
+      )}
+      {here.length === 0 && problems.length > 0 && (
+        <button onClick={() => {
+          const at = live.findIndex((st) => st.id === problems[0].field);
+          if (at > -1) setStep(at);
+        }} style={{ fontSize: 11, color: "#8E3521", lineHeight: 1.5, textAlign: "left",
+          textDecoration: "underline" }}>
+          {problems.length === 1 ? "One answer needs" : `${problems.length} answers need`} another
+          look — tap to go back to {problems.length === 1 ? "it" : "the first"}.
+        </button>
       )}
 
       <button
