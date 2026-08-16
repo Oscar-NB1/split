@@ -67,15 +67,14 @@ a:hover{color:var(--teal-l)}
   background:var(--off); max-width:520px; margin:0 auto;
   position:relative; overflow:hidden;
   /*
-   * The inset belongs here, not on .appbar.
+   * No top padding here.
    *
-   * .appbar is Shell's header, and the screens that most need this do not use
-   * it — sign-in, sign-up and the intake render their own top chrome, so the
-   * status bar sat straight on top of a progress bar and a back arrow. Putting
-   * the padding on the shell covers every screen inside it, whatever header it
-   * happens to draw.
+   * Padding on the shell shows the shell's own background, which put a coloured
+   * band above the header instead of letting the header reach the top of the
+   * screen — and because it came out of the 100dvh, it also left a gap under the
+   * tab bar. The insets belong on the bars themselves, which have the right
+   * background to bleed into: see .appbar and .tabbar.
    */
-  padding-top:env(safe-area-inset-top);
   padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right);
 }
 /*
@@ -88,7 +87,9 @@ a:hover{color:var(--teal-l)}
  * than decorative. Without it the app bar renders underneath them.
  */
 .appbar{
-  padding:15px 20px 12px;
+  /* Extends up behind the clock and battery in its own paper, so the status bar
+     sits on the header rather than on a strip above it. */
+  padding:calc(15px + env(safe-area-inset-top)) 20px 12px;
   display:flex; align-items:center; justify-content:space-between;
   gap:12px; background:var(--paper); border-bottom:1px solid var(--line);
   flex:none;
@@ -103,6 +104,9 @@ a:hover{color:var(--teal-l)}
 .whoami .nm{font-size:12px;font-weight:600;color:var(--ink-55)}
 
 .scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch}
+
+/* Screens with no .appbar — sign-in, sign-up — carry the inset themselves. */
+.topsafe{padding-top:env(safe-area-inset-top)}
 .pad{padding:18px 18px 26px;display:flex;flex-direction:column;gap:18px}
 
 .tabbar{

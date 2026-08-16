@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const me = await currentUser();
   if (!me) {
-    return <div className="app"><Auth /></div>;
+    return <div className="app topsafe"><Auth /></div>;
   }
 
   const users = await sql<{ id: string; display_name: string }[]>`

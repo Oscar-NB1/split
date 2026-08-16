@@ -26,7 +26,7 @@ export default function Bootstrap() {
   }
 
   return (
-    <div className="app">
+    <div className="app topsafe">
       <div style={{ flex: 1, display: "flex", flexDirection: "column",
         justifyContent: "center", gap: 18, padding: "40px 26px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
