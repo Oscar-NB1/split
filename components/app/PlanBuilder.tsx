@@ -711,15 +711,41 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           {here.map((p) => p.why).join(" ")}
         </div>
       )}
+      {/*
+        * Name the question and say what is wrong with it.
+        *
+        * This used to read "one answer needs another look — tap to go back to it",
+        * which is the same failure as the end-of-flow error it replaced: it knows
+        * which step and why, and told the athlete neither. One row per problem,
+        * each naming its own question.
+        */}
       {here.length === 0 && problems.length > 0 && (
-        <button onClick={() => {
-          const at = live.findIndex((st) => st.id === problems[0].field);
-          if (at > -1) setStep(at);
-        }} style={{ fontSize: 11, color: "#8E3521", lineHeight: 1.5, textAlign: "left",
-          textDecoration: "underline" }}>
-          {problems.length === 1 ? "One answer needs" : `${problems.length} answers need`} another
-          look — tap to go back to {problems.length === 1 ? "it" : "the first"}.
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {problems.map((p) => {
+            const at = live.findIndex((st) => st.id === p.field);
+            const q = at > -1 ? live[at].q : null;
+            return (
+              <button key={p.field || p.why} onClick={() => at > -1 && setStep(at)}
+                disabled={at < 0}
+                style={{
+                  textAlign: "left", display: "flex", flexDirection: "column", gap: 2,
+                  padding: "10px 12px", borderRadius: 12, border: "1px solid #C07A3E",
+                  background: "var(--cream)",
+                }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#8E3521" }}>
+                  {q ? `Step ${at + 1} · ${q}` : "One answer needs another look"}
+                </span>
+                <span style={{ fontSize: 11, lineHeight: 1.5, color: "var(--ink-70)" }}>
+                  {p.why}
+                </span>
+                {at > -1 && (
+                  <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em",
+                    textTransform: "uppercase", color: "#8E3521" }}>Tap to fix it ›</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       <button
