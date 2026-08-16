@@ -130,7 +130,7 @@ test("a full intake generates a valid block", () => {
   assert.equal(out.weeks.length, 15);
   assert.equal(out.weeks[0].km, 38, "week 1 is the biggest recent week");
   assert.ok(out.weeks.some((w) => w.benchmark), "and the benchmark is in it");
-  assert.deepEqual(out.assertions ?? [], [], "no assertion failures");
+  assert.deepEqual(out.violations, [], "no assertion failures");
 });
 
 test("the sparsest survivable intake still generates", () => {

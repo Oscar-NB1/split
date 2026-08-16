@@ -63,8 +63,17 @@ export const COMMITMENTS = [
   "Spin class", "Kickboxing", "Football", "Padel", "Climbing", "Nothing fixed",
 ] as const;
 
+/**
+ * Kit, as the reworked form lists it.
+ *
+ * Two sleds rather than one: training on a lighter sled is not the same access
+ * as race weight, and it is the single most common place a first race falls
+ * apart, so the answer has to be able to say which.
+ */
 export const EQUIPMENT = [
-  "Full Hyrox gym", "Sled", "SkiErg", "Rower", "Wall balls", "Barbell", "Treadmill only",
+  "Sled — race weight", "Sled — lighter only", "SkiErg", "Rower", "Wall balls",
+  "Sandbag", "Kettlebells", "Barbell", "Rig or pull-up bar", "Burpee floor space",
+  "Treadmill", "Indoor track", "Run from the door",
 ] as const;
 
 /** A running block asks a different equipment question. */

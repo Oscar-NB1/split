@@ -115,9 +115,16 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
   // The test is never blocked by a missing sled: there is a variant for every
   // level of equipment, and one for when the gate fires.
   const equipment = x.equipment ?? [];
+  /*
+   * Kit labels changed with the reworked form. "Full Hyrox gym" became the four
+   * pieces that actually make one, so a full setup is now checked rather than
+   * claimed — and a race-weight sled is distinguished from a lighter one, which
+   * is the difference that decides whether transitions are trainable.
+   */
+  const FULL = ["Sled — race weight", "SkiErg", "Rower", "Wall balls"];
   const variant: BenchVariant = gate ? "submax"
-    : equipment.includes("Full Hyrox gym") ? "full"
-    : equipment.includes("Sled") || equipment.includes("Barbell") || equipment.includes("Gym") ? "gym"
+    : FULL.every((k) => equipment.includes(k as (typeof equipment)[number])) ? "full"
+    : equipment.some((e) => e.startsWith("Sled")) || equipment.includes("Barbell") ? "gym"
     : "field";
   const offerSuppressed = weeksToRace < 3;
 
@@ -353,7 +360,10 @@ const sledPct = (x: Intake, phase: PhaseName) =>
  */
 export function strengthFor(x: Intake, phase: PhaseName): string | null {
   const has = (e: string) => (x.equipment ?? []).includes(e as never);
-  const gym = has("Full Hyrox gym") || has("Barbell") || has("Gym") || has("Sled");
+  // Any sled counts as gym access; whether it is race weight is a separate
+  // question, asked below.
+  const anySled = (x.equipment ?? []).some((e) => e.startsWith("Sled"));
+  const gym = anySled || has("Barbell") || has("SkiErg") || has("Rower");
   if (!gym) return null;
 
   const std = standardsFor(x);
@@ -366,7 +376,7 @@ export function strengthFor(x: Intake, phase: PhaseName): string | null {
     lines.push("Goblet squat 3×8", "Single-leg RDL 3×8 each", "Press-up 3×12");
   }
 
-  if (has("Sled") || has("Full Hyrox gym")) {
+  if (anySled) {
     if (phase === "specific") {
       lines.push(std ? `Sled push ${std.sled_push_total_kg} kg loaded, 50 m` : "Sled push at race weight, race distance");
       lines.push(std ? `Sled pull ${std.sled_pull_total_kg} kg loaded, 50 m` : "Sled pull at race weight, race distance");
@@ -384,7 +394,7 @@ export function strengthFor(x: Intake, phase: PhaseName): string | null {
       lines.push(phase === "build" ? `Wall ball technique ${w}3×10` : `Wall balls ${w}4×15`);
     }
   }
-  if (phase === "specific" && has("Full Hyrox gym")) {
+  if (phase === "specific" && (has("Sandbag") || anySled)) {
     lines.push(std ? `Sandbag lunges ${std.lunge_kg} kg, 3×20 m` : "Sandbag lunges 3×20 m");
   }
   if (phase !== "base" && (has("Full Hyrox gym") || has("Barbell"))) {

@@ -35,7 +35,7 @@ const HER: Intake = {
   commitments: ["Spin class"],
   freq: { "Spin class": 1 },
   commitDay: { "Spin class": ["Wed"] },
-  equipment: ["Full Hyrox gym"],
+  equipment: ["Sled — race weight", "SkiErg", "Rower", "Wall balls"],
   sled: "Used a lighter sled",
   injuries: null,
   volume: "Progressive",
@@ -132,8 +132,8 @@ test("a fired gate downgrades the benchmark to the submaximal variant", () => {
 
 test("the variant comes from equipment, so a missing sled never blocks the test", () => {
   const at = (equipment: Intake["equipment"]) => resolve({ ...HER, equipment }).variant;
-  assert.equal(at(["Full Hyrox gym"]), "full");
-  assert.equal(at(["Sled"]), "gym");
+  assert.equal(at(["Sled — race weight", "SkiErg", "Rower", "Wall balls"]), "full");
+  assert.equal(at(["Sled — lighter only"]), "gym");
   assert.equal(at(["Barbell"]), "gym");
   assert.equal(at([]), "field", "no equipment still gets a benchmark");
   assert.equal(BENCH_VARIANTS.field.stations.length, 4);
