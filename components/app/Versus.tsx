@@ -3,16 +3,28 @@ import { useEffect, useState } from "react";
 import { fmt } from "@/lib/dates";
 
 const TEAL = "#0A8FB0", LIME = "#C6FF5B", NAVY = "#12314D";
-const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
+const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)", INK70 = "var(--ink-70)";
 const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)", CREAM = "var(--cream)";
 
-type Data = {
-  me: { id: string; name: string };
-  other: { id: string; name: string } | null;
-  week: { start: string; metric: string; label: string; mine: number; theirs: number };
-  rows: { label: string; suffix?: string; mine: number; theirs: number }[];
-  history: { week: string; label: string; mine: number; theirs: number; result: "W" | "L" | "D" }[];
-  record: { won: number; lost: number; drawn: number };
+type Share = {
+  adherence_pct: number | null; volume_pct: number | null; station_pct: number | null;
+  sessions_done: number; sessions_planned: number;
+};
+type Row = {
+  label: string; mine: number | null; theirs: number | null;
+  mineAbs: string; theirAbs: string; i_win: boolean; they_win: boolean;
+};
+type Week = { week_start: string; winner: string; mine: Share; theirs: Share };
+type Rivalry = {
+  id: string;
+  rival: { id: string; display_name: string };
+  one_sided: boolean;
+  weeks_won: { mine: number; theirs: number };
+  consistency: { mine: number; theirs: number };
+  rows: Row[];
+  current: Week;
+  history: Week[];
+  scoring_note: string;
 };
 
 const NUDGES = [
@@ -22,8 +34,19 @@ const NUDGES = [
   "Nice week. Still behind though.",
 ];
 
+const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`);
+
+/**
+ * The head-to-head, scored on each athlete's own plan.
+ *
+ * Every row is a percentage of what that person was prescribed, with the raw
+ * number underneath it in smaller type. That ordering is the whole design: a
+ * twelve-kilometre week finished beats a thirty-four-kilometre week half-done,
+ * and putting the absolute first would say the opposite.
+ */
 export default function Versus() {
-  const [d, setD] = useState<Data | null>(null);
+  const [d, setD] = useState<{ empty: boolean; rivalries: Rivalry[] } | null>(null);
+  const [at, setAt] = useState(0);
   const [sent, setSent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,182 +57,190 @@ export default function Versus() {
   }, []);
 
   if (!d) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
-  if (!d.other) {
+
+  if (d.empty || d.rivalries.length === 0) {
     return (
-      <div style={{ padding: 18 }}>
-        <p className="empty">
-          Versus needs a second athlete. Only one account has been set up so far.
-        </p>
+      <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <span style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700,
+          letterSpacing: "-.02em" }}>No head-to-heads yet</span>
+        <span style={{ fontSize: 13, lineHeight: 1.6, color: INK55 }}>
+          Training is more fun with someone chasing you. Connect with a training
+          partner and compare how much of your plan you each finish.
+        </span>
+        {/* The design has a "Connect someone" button here. There is nothing
+            behind it yet — the invite and accept endpoints are not built — and a
+            button that opens nothing is worse than a sentence that explains. */}
+        <span style={{ fontSize: 11, lineHeight: 1.55, color: INK40 }}>
+          Inviting someone is not built yet.
+        </span>
       </div>
     );
   }
 
-  const { mine, theirs } = d.week;
-  const total = mine + theirs || 1;
-  const lead = mine === theirs ? "Level" : mine > theirs ? "You lead" : `${d.other.name} leads`;
-  const initial = (n: string) => n.slice(0, 1).toUpperCase();
+  const r = d.rivalries[Math.min(at, d.rivalries.length - 1)];
+  const name = r.rival.display_name;
+  const lead = r.weeks_won.mine === r.weeks_won.theirs ? "All square"
+    : r.weeks_won.mine > r.weeks_won.theirs ? "You lead" : `${name} leads`;
 
   return (
     <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-          textTransform: "uppercase", color: "var(--teal)" }}>Head to head</div>
-        <div style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
-          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 5 }}>
-          You vs {d.other.name}
-        </div>
+        <div style={{ ...caps, color: TEAL }}>Head to head</div>
+        <div style={{ fontFamily: "var(--display)", fontSize: 22, fontWeight: 700,
+          letterSpacing: "-.02em" }}>You vs {name}</div>
       </div>
+
+      {d.rivalries.length > 1 && (
+        <div style={{ display: "flex", gap: 3, background: OFF,
+          borderRadius: "var(--r-pill)", padding: 3 }}>
+          {d.rivalries.map((x, i) => (
+            <button key={x.id} onClick={() => setAt(i)} style={{
+              flex: 1, borderRadius: "var(--r-pill)", padding: "9px 12px", fontSize: 11,
+              fontWeight: 700, background: i === at ? NAVY : "transparent",
+              color: i === at ? "#fff" : INK55,
+            }}>{x.rival.display_name}</button>
+          ))}
+        </div>
+      )}
+
+      {/* The rivalry does not start until both have a plan. Saying so beats
+          showing a scoreboard of dashes. */}
+      {r.one_sided && (
+        <div style={{ background: CREAM, border: `1px solid ${LINE}`,
+          borderRadius: "var(--r-card)", padding: 16,
+          display: "flex", flexDirection: "column", gap: 5 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>Not started yet</span>
+          <span style={{ fontSize: 12, lineHeight: 1.55, color: INK70 }}>
+            One of you has no plan running, so there is nothing to be a share of.
+            Weeks stay undecided until you both have one.
+          </span>
+        </div>
+      )}
 
       <div style={{ background: NAVY, borderRadius: "var(--r-card)", padding: "18px 16px",
         display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr",
-          alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <span style={{ width: 34, height: 34, borderRadius: "50%", background: TEAL,
-              color: "#fff", fontSize: 13, fontWeight: 800, display: "flex",
-              alignItems: "center", justifyContent: "center" }}>{initial(d.me.name)}</span>
-            <span style={{ fontFamily: "var(--display)", fontSize: 30, fontWeight: 700,
-              lineHeight: 1, color: mine >= theirs ? LIME : "#fff" }}>{mine}</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}>You</span>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Tally initial="Y" weeks={r.weeks_won.mine} label="You" />
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".1em",
+            color: "rgba(255,255,255,.5)", textAlign: "center", lineHeight: 1.5 }}>
+            WEEKS<br />WON
+          </span>
+          <Tally initial={name.slice(0, 1).toUpperCase()} weeks={r.weeks_won.theirs} label={name} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#fff" }}>{lead}</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,.65)" }}>
+            {r.consistency.mine} of your last 11 weeks at 80% or better · {name}{" "}
+            {r.consistency.theirs}
+          </span>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,.5)" }}>
+            Last 11 weeks. A dash is a week nobody won.
+          </span>
+          <div style={{ display: "flex", gap: 3 }}>
+            {r.history.map((h) => (
+              <span key={h.week_start} title={h.week_start} style={{
+                flex: 1, textAlign: "center", fontSize: 9, fontWeight: 800,
+                borderRadius: 4, padding: "4px 0",
+                background: h.winner === "requester" ? LIME
+                  : h.winner === "addressee" ? "rgba(255,255,255,.28)"
+                  : "rgba(255,255,255,.10)",
+                color: h.winner === "requester" ? NAVY : "#fff",
+              }}>
+                {h.winner === "requester" ? "W" : h.winner === "addressee" ? "L"
+                  : h.winner === "tie" ? "=" : "·"}
+              </span>
+            ))}
           </div>
-          <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".1em",
-            color: "rgba(255,255,255,.4)" }}>VS</span>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-            <span style={{ width: 34, height: 34, borderRadius: "50%",
-              background: "rgba(255,255,255,.18)", color: "#fff", fontSize: 13, fontWeight: 800,
-              display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {initial(d.other.name)}
-            </span>
-            <span style={{ fontFamily: "var(--display)", fontSize: 30, fontWeight: 700,
-              lineHeight: 1, color: theirs > mine ? LIME : "#fff" }}>{theirs}</span>
-            <span style={{ fontSize: 11, color: "rgba(255,255,255,.6)" }}>{d.other.name}</span>
-          </div>
-        </div>
-
-        <div style={{ display: "flex", height: 10, borderRadius: 5, overflow: "hidden",
-          background: "rgba(255,255,255,.12)" }}>
-          <span style={{ width: `${(mine / total) * 100}%`, background: LIME }} />
-          <span style={{ width: `${(theirs / total) * 100}%`, background: "rgba(255,255,255,.35)" }} />
-        </div>
-
-        <div style={{ display: "flex", alignItems: "baseline",
-          justifyContent: "space-between", gap: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: LIME }}>{lead}</span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,.55)" }}>{d.week.label}</span>
-        </div>
-
-        <div style={{ borderTop: "1px solid rgba(255,255,255,.15)", paddingTop: 12,
-          display: "flex", flexDirection: "column", gap: 7 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
-            textTransform: "uppercase", color: "rgba(255,255,255,.5)" }}>Weeks won</span>
-          {d.history.length === 0 ? (
-            <span style={{ fontSize: 12, color: "rgba(255,255,255,.6)", lineHeight: 1.5 }}>
-              No finished weeks yet. The first result lands next Sunday.
-            </span>
-          ) : (
-            <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-              {d.history.map((h) => (
-                <span key={h.week} title={`${fmt(h.week, { day: "numeric", month: "short" })} · ${h.label} · ${h.mine}–${h.theirs}`}
-                  style={{
-                    width: 22, height: 22, borderRadius: 6, fontSize: 10, fontWeight: 800,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    background: h.result === "W" ? LIME : h.result === "L" ? "rgba(255,255,255,.22)" : "rgba(255,255,255,.10)",
-                    color: h.result === "W" ? NAVY : "#fff",
-                  }}>{h.result}</span>
-              ))}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* ------------------------------------------------------- the metrics */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, background: PAPER,
-        border: `1px solid ${LINE}`, borderRadius: "var(--r-card)", padding: 16 }}>
-        {d.rows.map((r) => {
-          const max = Math.max(r.mine, r.theirs, 1);
-          const iWin = r.mine > r.theirs, theyWin = r.theirs > r.mine;
-          return (
-            <div key={r.label} style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr auto 1fr",
-                alignItems: "baseline", gap: 10 }}>
-                <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                  {iWin && <Check />}
-                  <span style={{ fontSize: 15, fontWeight: iWin ? 800 : 600,
-                    color: iWin ? TEAL : INK55 }}>{r.mine}{r.suffix ?? ""}</span>
-                </span>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
-                  textTransform: "uppercase", color: INK40 }}>{r.label}</span>
-                <span style={{ display: "flex", alignItems: "baseline", gap: 5,
-                  justifyContent: "flex-end" }}>
-                  <span style={{ fontSize: 15, fontWeight: theyWin ? 800 : 600,
-                    color: theyWin ? TEAL : INK55 }}>{r.theirs}{r.suffix ?? ""}</span>
-                  {theyWin && <Check />}
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                <div style={{ display: "flex", justifyContent: "flex-end", height: 10,
-                  background: OFF, borderRadius: 5, overflow: "hidden" }}>
-                  <div style={{ width: `${(r.mine / max) * 100}%`,
-                    background: iWin ? TEAL : INK40 }} />
-                </div>
-                <div style={{ height: 10, background: OFF, borderRadius: 5, overflow: "hidden" }}>
-                  <div style={{ height: 10, width: `${(r.theirs / max) * 100}%`,
-                    background: theyWin ? TEAL : INK40 }} />
-                </div>
-              </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <span style={caps}>
+          This week · {fmt(r.current.week_start, { day: "numeric", month: "short" })}
+        </span>
+        {r.rows.map((row) => (
+          <div key={row.label} style={{ background: PAPER, border: `1px solid ${LINE}`,
+            borderRadius: "var(--r-card)", padding: "13px 14px",
+            display: "flex", flexDirection: "column", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+              <span style={{ flex: 1, display: "flex", alignItems: "center", gap: 5 }}>
+                {row.i_win && <Tick />}
+                <span style={{ fontSize: 17, fontWeight: 700,
+                  color: row.i_win ? TEAL : "var(--ink)" }}>{pct(row.mine)}</span>
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".04em",
+                textTransform: "uppercase", color: INK55 }}>{row.label}</span>
+              <span style={{ flex: 1, display: "flex", alignItems: "center",
+                justifyContent: "flex-end", gap: 5 }}>
+                <span style={{ fontSize: 17, fontWeight: 700,
+                  color: row.they_win ? TEAL : "var(--ink)" }}>{pct(row.theirs)}</span>
+                {row.they_win && <Tick />}
+              </span>
             </div>
-          );
-        })}
-      </div>
-
-      <div style={{ display: "flex", gap: 8 }}>
-        <div style={{ flex: 1, background: PAPER, border: `1px solid ${LINE}`,
-          borderRadius: "var(--r-card)", padding: 14 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
-            textTransform: "uppercase", color: INK55 }}>Season record</div>
-          <div style={{ fontFamily: "var(--display)", fontSize: 26, fontWeight: 700, marginTop: 4 }}>
-            {d.record.won}–{d.record.lost}
+            <div style={{ display: "flex", gap: 4 }}>
+              <Bar value={row.mine} mine />
+              <Bar value={row.theirs} />
+            </div>
+            {/* The raw numbers, deliberately smaller and deliberately second. */}
+            <div style={{ display: "flex", justifyContent: "space-between",
+              fontSize: 10, color: INK40 }}>
+              <span>{row.mineAbs}</span>
+              <span>{row.theirAbs}</span>
+            </div>
           </div>
-          <div style={{ fontSize: 10, color: INK40, marginTop: 3, lineHeight: 1.4 }}>
-            {d.history.length === 0 ? "from next Sunday"
-              : `${d.history.length} finished week${d.history.length > 1 ? "s" : ""}${d.record.drawn ? `, ${d.record.drawn} drawn` : ""}`}
-          </div>
-        </div>
-        <div style={{ flex: 1, background: CREAM, border: `1px solid ${LINE}`,
-          borderRadius: "var(--r-card)", padding: 14 }}>
-          <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
-            textTransform: "uppercase", color: TEAL }}>This week</div>
-          <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-70)", marginTop: 6 }}>
-            Scored on {d.week.label.toLowerCase()}. The metric rotates weekly, so a week lost
-            on distance can be won on effort.
-          </div>
-        </div>
+        ))}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-          textTransform: "uppercase", color: INK55 }}>Send a nudge</span>
+        <span style={caps}>{sent ? "Sent" : "Say something"}</span>
         {NUDGES.map((n) => (
           <button key={n} onClick={() => setSent(n)} style={{
-            textAlign: "left", background: sent === n ? "var(--teal-tint)" : PAPER,
+            width: "100%", textAlign: "left", background: sent === n ? CREAM : PAPER,
             border: `1px solid ${sent === n ? TEAL : LINE}`, borderRadius: "var(--r-pill)",
-            padding: "11px 15px", fontSize: 12, fontWeight: 600,
-            color: sent === n ? TEAL : "var(--ink)",
+            padding: "11px 14px", fontSize: 12, color: "var(--ink)",
           }}>{n}</button>
         ))}
-        {sent && (
-          <p className="empty">
-            Nudges aren&apos;t wired to notifications yet — this only marks which one you picked.
-          </p>
-        )}
       </div>
+
+      <span style={{ fontSize: 11, lineHeight: 1.55, color: INK55 }}>{r.scoring_note}</span>
     </div>
   );
 }
 
-const Check = () => (
-  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke={TEAL}
-    strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+function Tally({ initial, weeks, label }: { initial: string; weeks: number; label: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <span style={{ width: 32, height: 32, borderRadius: "50%",
+        background: "rgba(255,255,255,.14)", color: "#fff", fontSize: 12, fontWeight: 800,
+        display: "flex", alignItems: "center", justifyContent: "center" }}>{initial}</span>
+      <span style={{ fontFamily: "var(--display)", fontSize: 30, fontWeight: 700,
+        color: "#fff", lineHeight: 1 }}>{weeks}</span>
+      <span style={{ fontSize: 10, color: "rgba(255,255,255,.6)" }}>{label}</span>
+    </div>
+  );
+}
+
+/** Capped at full: over-delivery is not a longer bar, it is still 100% done. */
+function Bar({ value, mine = false }: { value: number | null; mine?: boolean }) {
+  return (
+    <div style={{ flex: 1, height: 6, borderRadius: 3, background: OFF, overflow: "hidden" }}>
+      <div style={{ height: "100%", borderRadius: 3,
+        width: `${Math.min(100, Math.round((value ?? 0) * 100))}%`,
+        background: mine ? TEAL : "var(--ink-40)" }} />
+    </div>
+  );
+}
+
+const Tick = () => (
+  <svg viewBox="0 0 24 24" width={13} height={13} fill="none" stroke={TEAL}
+    strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d="M4 13l5 5L20 7" />
   </svg>
 );
+
+const caps: React.CSSProperties = {
+  fontSize: 11, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase",
+  color: INK55,
+};

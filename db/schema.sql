@@ -776,7 +776,10 @@ create table if not exists rivalry_weeks (
   primary key (rivalry_id, iso_week)
 );
 
--- Exact-match lookup only, and the one endpoint that leaks who exists.
-alter table users add column if not exists username text;
-create unique index if not exists users_username on users (lower(username))
-  where username is not null;
+-- Usernames were specified for exact-match connection requests and are dropped
+-- on instruction. Invite codes do the same job without the lookup, and removing
+-- the lookup removes the account-enumeration oracle entirely rather than
+-- rate-limiting it — there is no endpoint left that answers "does this person
+-- exist". A single-use code that expires is strictly less to defend.
+drop index if exists users_username;
+alter table users drop column if exists username;

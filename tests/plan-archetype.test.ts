@@ -145,33 +145,28 @@ test("no two types describe the same set of plan changes", () => {
   }
 });
 
-test("KNOWN DEFECT: an evenly fading athlete always reads as fast_start", () => {
+test("an evenly fading athlete is a thin engine, not a fast start", () => {
   /*
-   * Fade and front-loading are not independent. Front-loading is measured as
-   * round 1 against the mean of the rest, and for any monotonic decay that
-   * quantity is positive by construction — a perfectly even fade of 5% already
-   * bands as "front-loaded".
+   * This used to be the other way round, and it was the defect the archetype
+   * exposed. Front-loading was measured as round 1 against the mean of the
+   * rounds after it, which is positive for any decay at all — so a perfectly
+   * even fade banded as "went out quick", precedence handed it fast_start, and
+   * thin_engine and both_ends were effectively unreachable.
    *
-   * So with fade >= 1.12 the fast_start condition is satisfied too, and
-   * precedence gives it the label. thin_engine and both_ends are only reachable
-   * on a negative-split-then-collapse shape, which is not what either is meant
-   * to describe.
-   *
-   * This test pins the behaviour rather than asserting it is right. Fixing it
-   * means measuring round 1 against the trend rather than against the mean of
-   * the rest, which changes findings.ts and therefore the plan — outside this
-   * brief's "no generator changes".
+   * It is now measured against the trend of the later rounds, so fading evenly
+   * and going out too hard are different findings, which is what they are.
    */
   for (const fade of [1.12, 1.20, 1.30]) {
     const runs = [0, 1, 2, 3].map((k) => Math.round(240 * (1 + (k / 3) * (fade - 1))));
     const a = of(capture({ runs, stations: [220, 222, 224, 226] }))!;
-    assert.equal(a.type, "fast_start", `fade ${fade} is labelled fast_start`);
+    assert.notEqual(a.type, "fast_start", `an even fade of ${fade} is not a fast start`);
   }
-  // and the aerobic limiter it also has is still visible in the dimensions,
-  // so nothing is lost — only the headline word is arguable
-  const a = of(capture({ runs: [240, 256, 272, 288], stations: [220, 222, 224, 226] }))!;
-  assert.equal(a.dimensions.limiter!.value, "aerobic");
-  assert.equal(a.dimensions.durability!.value, "heavy");
+  // heavy even fade against steady stations is exactly a thin engine
+  assert.equal(of(capture({ runs: [240, 256, 272, 288], stations: [220, 222, 224, 226] }))!.type,
+    "thin_engine");
+  // and a genuine fast start still is one
+  assert.equal(of(capture({ runs: [200, 250, 265, 275], stations: [220, 222, 224, 226] }))!.type,
+    "fast_start");
 });
 
 test("the order is precedence, not a ranking", () => {

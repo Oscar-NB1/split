@@ -65,7 +65,14 @@ const DURABILITY = [
   { under: Infinity, band: "severe", severity: "attention", tail: "the session fell apart in the back half", priority: 90 },
 ] as const;
 
-/** How much quicker round 1 was than the rest of them. */
+/**
+ * How much quicker round 1 was than the decay trend predicts it should be.
+ *
+ * Not against the mean of the later rounds, which is what this used to be. That
+ * quantity is positive for any fade at all — a perfectly even 5% decay read as
+ * "went out quick" — so it conflated going out too hard with simply fading, and
+ * every fading athlete was labelled a front-runner.
+ */
 const PACING = [
   { over: 8, band: "positive splitter", severity: "attention", priority: 95 },
   { over: 3, band: "front-loaded", severity: "neutral", priority: 55 },
@@ -120,9 +127,8 @@ export function read(capture: Capture, previous?: Capture): Reading[] {
     });
   }
 
-  if (!capture.submaximal) {
-    const rest = mean(runs.slice(1));
-    const front = pct1((rest - runs[0]) / rest);
+  const front = frontLoading(runs);
+  if (!capture.submaximal && front !== null) {
     const p = PACING.find((b) => front > b.over)!;
     out.push({
       dim: "Pacing", band: p.band, severity: p.severity, priority: p.priority,
@@ -131,7 +137,7 @@ export function read(capture: Capture, previous?: Capture): Reading[] {
         ? "That is the pattern that costs a race: the opening round is bought with the closing two. Pace targets are written to be held, not opened with."
         : front > 3
           ? "Slightly quick out, then settled. Worth noting rather than fixing."
-          : `Round 1 and the average of the rest sit within ${Math.abs(front)}%, which is what a rehearsed race looks like.`,
+          : `Round 1 sits within ${Math.abs(front)}% of where the rest of the session says it should have been, which is what a rehearsed race looks like.`,
       effect: front > 8 ? "Key sessions get a capped opening rep." : "No change.",
     });
   }
@@ -301,4 +307,36 @@ export function changes(
     });
   }
   return out;
+}
+
+/**
+ * Front-loading: round 1 against the trend of the rounds after it.
+ *
+ * A straight line is fitted through rounds 2..n and extrapolated back to round
+ * 1. If the athlete actually ran round 1 faster than that line predicts, they
+ * went out quicker than their own decay accounts for — which is the thing worth
+ * knowing, and is independent of how much they faded.
+ *
+ * Returns null below three rounds: two points define the line exactly, leaving
+ * nothing for round 1 to be compared against.
+ */
+export function frontLoading(runs: number[]): number | null {
+  const later = runs.slice(1);
+  if (later.length < 2) return null;
+
+  // least squares over (index, duration), indices 2..n
+  const xs = later.map((_, i) => i + 2);
+  const mx = mean(xs), my = mean(later);
+  let sxy = 0, sxx = 0;
+  for (let i = 0; i < later.length; i++) {
+    sxy += (xs[i] - mx) * (later[i] - my);
+    sxx += (xs[i] - mx) ** 2;
+  }
+  if (sxx === 0) return null;
+  const slope = sxy / sxx;
+  const predicted = my + slope * (1 - mx);
+  // A trend implying a non-positive round 1 is not a trend worth extrapolating.
+  if (predicted <= 0) return null;
+
+  return pct1((predicted - runs[0]) / predicted);
 }

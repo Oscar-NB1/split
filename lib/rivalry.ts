@@ -141,5 +141,12 @@ export const pairKey = (a: string, b: string): [string, string] =>
 /** How many rivalries one person may have running. Keeps the job bounded. */
 export const MAX_ACTIVE = 10;
 
-/** An invite is single-use and dies after a week. */
+/**
+ * An invite is single-use and dies after a week.
+ *
+ * The only way into a connection. Username lookup was specified and then
+ * dropped: an endpoint that answers "is this person registered" is an
+ * account-enumeration oracle, and rate-limiting one is strictly worse than not
+ * having one. A code the athlete shares out of band leaks nothing.
+ */
 export const INVITE_TTL_DAYS = 7;

@@ -3,87 +3,122 @@ import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { route } from "@/lib/http";
 import { addDays, mondayOf, today } from "@/lib/dates";
-import { challengeScores, METRICS, metricForWeek, streakFor, weekStart } from "@/lib/scoring";
+import { consistency, shareable, type Winner } from "@/lib/rivalry";
+import { weekFor } from "@/lib/rivalry-db";
 
 /**
- * The head-to-head, including the weeks-won history.
+ * The head-to-head.
  *
- * The history is *computed*, not stored. `challenges` holds one row per week and
- * is written as weeks resolve, so it is empty until the block has run — but the
- * result of any past week is derivable: the metric that week rotated to, scored
- * against what both athletes actually did. So the strip shows real results from
- * the first week rather than an empty rail, and it never shows a week that has
- * not happened.
+ * Rewritten from absolute output to a share of each athlete's own plan. The
+ * previous version scored sessions completed, effort points, zone-2 minutes and
+ * longest session — raw totals, on which two people on different plans are not
+ * comparable. Eleven kilometres against a twelve-kilometre week is a better week
+ * than nine against thirty-four, and lost on every one of those metrics.
  *
- * Weeks with no training on either side are skipped entirely. A 0–0 "draw" is
- * not a result, it is an absence, and putting it on the rail as a square implies
- * a contest nobody entered.
+ * Absolutes are still returned, on their own line, because they are worth
+ * seeing. They decide nothing.
  */
-const WEEKS_BACK = 12;
+
+const WEEKS_BACK = 11;
+/** A week is settled 24 hours after it closes, so late logs still land. */
+const SETTLE_HOURS = 24;
+
+const isFinalised = (weekStart: string, now = new Date()) =>
+  now.getTime() >= Date.parse(`${addDays(weekStart, 7)}T00:00:00Z`) + SETTLE_HOURS * 3_600_000;
 
 export const GET = route(async () => {
   const me = await requireUser();
+
+  /*
+   * Rivalries come from accepted connections. Until the connection endpoints
+   * exist there is at most one, inferred from the coaching relationship, which
+   * is how the two accounts here are already paired — the shape below is the
+   * multi-rivalry one either way, so the screen does not change when they land.
+   */
   const [other] = await sql<{ id: string; display_name: string }[]>`
-    select id, display_name from users where id <> ${me.id} order by created_at limit 1
+    select u.id, u.display_name from users u
+     where u.id <> ${me.id}
+       and (exists (select 1 from coaching c
+                     where (c.coach_id = ${me.id} and c.athlete_id = u.id)
+                        or (c.athlete_id = ${me.id} and c.coach_id = u.id)))
+     order by u.created_at limit 1
   `;
 
-  const thisWeek = weekStart();
-  const history: {
-    week: string; metric: string; label: string; mine: number; theirs: number;
-    result: "W" | "L" | "D";
-  }[] = [];
-
-  for (let i = WEEKS_BACK; i >= 1; i--) {
-    const ws = mondayOf(addDays(thisWeek, -7 * i));
-    const metric = metricForWeek(ws);
-    const scores = await challengeScores(ws, metric);
-    const mine = scores.find((s) => s.user_id === me.id)?.score ?? 0;
-    const theirs = other ? scores.find((s) => s.user_id === other.id)?.score ?? 0 : 0;
-    if (mine === 0 && theirs === 0) continue; // nobody trained: not a result
-    history.push({
-      week: ws, metric, label: METRICS[metric],
-      mine, theirs,
-      result: mine > theirs ? "W" : theirs > mine ? "L" : "D",
+  if (!other) {
+    return NextResponse.json({
+      rivalries: [],
+      // The client renders the connect prompt off this, rather than an empty
+      // scoreboard that implies a contest nobody entered.
+      empty: true,
     });
   }
 
-  // this week, live
-  const metric = metricForWeek(thisWeek);
-  const live = await challengeScores(thisWeek, metric);
-  const end = addDays(thisWeek, 7);
+  const thisWeek = mondayOf(today());
+  const weeks: {
+    week_start: string; winner: Winner;
+    mine: ReturnType<typeof shareable>; theirs: ReturnType<typeof shareable>;
+  }[] = [];
 
-  const totals = async (uid: string) => {
-    const [r] = await sql<{ km: string | null; mins: string | null; sessions: number }[]>`
-      select sum(a.distance_m)/1000 as km, sum(a.moving_seconds)/60 as mins,
-             count(*)::int as sessions
-        from activities a
-       where a.user_id = ${uid} and a.local_date >= ${thisWeek} and a.local_date < ${end}
-    `;
-    return { km: Number(r?.km ?? 0), mins: Number(r?.mins ?? 0), sessions: r?.sessions ?? 0 };
-  };
+  for (let i = WEEKS_BACK - 1; i >= 0; i--) {
+    const ws = addDays(thisWeek, -7 * i);
+    const w = await weekFor(me.id, other.id, ws, isFinalised(ws));
+    weeks.push({
+      week_start: ws,
+      winner: w.winner,
+      mine: shareable(w.requester as unknown as Record<string, unknown>),
+      theirs: shareable(w.addressee as unknown as Record<string, unknown>),
+    });
+  }
+
+  const current = await weekFor(me.id, other.id, thisWeek, false);
+  const decided = weeks.filter((w) => w.winner !== "undecided");
+  const myWeeks = decided.filter((w) => w.winner === "requester").length;
+  const theirWeeks = decided.filter((w) => w.winner === "addressee").length;
 
   return NextResponse.json({
-    me: { id: me.id, name: me.display_name },
-    other: other ? { id: other.id, name: other.display_name } : null,
-    week: {
-      start: thisWeek, metric, label: METRICS[metric],
-      mine: live.find((s) => s.user_id === me.id)?.score ?? 0,
-      theirs: other ? live.find((s) => s.user_id === other.id)?.score ?? 0 : 0,
-    },
-    rows: other
-      ? [
-          { label: "Sessions", mine: (await totals(me.id)).sessions, theirs: (await totals(other.id)).sessions },
-          { label: "Distance", suffix: " km", mine: +(await totals(me.id)).km.toFixed(1), theirs: +(await totals(other.id)).km.toFixed(1) },
-          { label: "Minutes", mine: Math.round((await totals(me.id)).mins), theirs: Math.round((await totals(other.id)).mins) },
-          { label: "Streak", suffix: " wks", mine: await streakFor(me.id), theirs: await streakFor(other.id) },
-        ]
-      : [],
-    history,
-    record: {
-      won: history.filter((h) => h.result === "W").length,
-      lost: history.filter((h) => h.result === "L").length,
-      drawn: history.filter((h) => h.result === "D").length,
-    },
-    today: today(),
+    empty: false,
+    rivalries: [{
+      id: `${me.id}:${other.id}`,
+      rival: { id: other.id, display_name: other.display_name },
+      /** null on either side means the rivalry has not started */
+      one_sided: !current.requester.has_plan || !current.addressee.has_plan,
+      weeks_won: { mine: myWeeks, theirs: theirWeeks },
+      consistency: {
+        mine: consistency(weeks.map((w) => w.mine as { adherence_pct: number | null })),
+        theirs: consistency(weeks.map((w) => w.theirs as { adherence_pct: number | null })),
+      },
+      /** the four rows the screen compares, relative first, absolute beside */
+      rows: [
+        row("Plan completed", current.requester.adherence_pct, current.addressee.adherence_pct,
+          `${current.requester.sessions_done}/${current.requester.sessions_planned}`,
+          `${current.addressee.sessions_done}/${current.addressee.sessions_planned}`),
+        row("Volume", current.requester.volume_pct, current.addressee.volume_pct,
+          `${current.requester.km_done} km`, `${current.addressee.km_done} km`),
+        row("Station work", current.requester.station_pct, current.addressee.station_pct,
+          `${current.requester.sessions_done}`, `${current.addressee.sessions_done}`),
+      ],
+      current: {
+        week_start: thisWeek,
+        winner: current.winner,
+        mine: shareable(current.requester as unknown as Record<string, unknown>),
+        theirs: shareable(current.addressee as unknown as Record<string, unknown>),
+      },
+      history: weeks,
+      scoring_note:
+        "Every row is your share of your own plan, so a smaller week done properly beats a bigger one half-finished. Weeks settle a day after they close.",
+    }],
   });
 });
+
+/** One comparison. The percentage decides it; the absolute is context. */
+function row(
+  label: string, mine: number | null, theirs: number | null,
+  mineAbs: string, theirAbs: string,
+) {
+  return {
+    label,
+    mine, theirs, mineAbs, theirAbs,
+    i_win: mine !== null && theirs !== null && mine > theirs,
+    they_win: mine !== null && theirs !== null && theirs > mine,
+  };
+}
