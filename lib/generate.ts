@@ -59,7 +59,19 @@ export const DIFFICULTY_SHAPE: Record<string, { quality: number; longRunPace: bo
 
 // ------------------------------------------------------------------ resolving
 
-export type Correction = { title: string; body: string };
+export type Correction = {
+  /**
+   * Which decision this is, where the number in it belongs to the plan.
+   *
+   * The corrections come from this generator; the plan the athlete trains comes
+   * from lib/plan/. Where the two resolve a number slightly differently, the plan
+   * is the authority and the sentence has to be re-written against it — hence an
+   * id rather than matching on the wording.
+   */
+  id?: "week1_cap" | "ramp_cut";
+  title: string;
+  body: string;
+};
 
 export type Resolved = {
   weeks: number;
@@ -193,12 +205,14 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
   }
   if (baseKm > ceil) {
     corrections.push({
+      id: "week1_cap",
       title: `Week 1 volume capped at ${startKm} km`,
       body: `Your training base points at ${baseKm} km, but "${x.runningSelf.toLowerCase()}" caps the first week at ${ceil} km. Aerobic fitness runs ahead of connective tissue, which is exactly how people get hurt in week 3. The cap wins.`,
     });
   }
   if (runRamp < baseRamp) {
     corrections.push({
+      id: "ramp_cut",
       title: `Ramp reduced to ${ramp}% a week`,
       body: `Same reason: the engine is trained, the running tissue is not. ${baseRamp}% would be right for your training history and wrong for your legs.`,
     });
@@ -654,4 +668,31 @@ export function generate(x: Intake, from: string = todayish()): GeneratedPlan {
     corrections: r.corrections,
     flags: flagsFor(x, r),
   };
+}
+
+/**
+ * Re-state the two volume decisions with the numbers the plan actually contains.
+ *
+ * This generator still writes the corrections panel; the weeks come from lib/plan/,
+ * and the two resolve start volume and ramp along slightly different paths. Left
+ * alone, the panel said "week 1 capped at 34 km" above a plan whose first week was
+ * 32 — the same class of mistake as the phantom 15% haircut, and just as
+ * undermining: every number on the screen has to be one the block contains.
+ */
+export function alignCorrections(
+  corrections: Correction[], week1Km: number, rampPct: number,
+): Correction[] {
+  return corrections.map((c) => {
+    if (c.id === "week1_cap") {
+      return {
+        ...c,
+        title: `Week 1 volume capped at ${Math.round(week1Km * 10) / 10} km`,
+        body: c.body,
+      };
+    }
+    if (c.id === "ramp_cut") {
+      return { ...c, title: `Ramp reduced to ${Math.round(rampPct * 10) / 10}% a week` };
+    }
+    return c;
+  });
 }

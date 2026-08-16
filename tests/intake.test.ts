@@ -7,7 +7,8 @@ import {
   setClock, standardsFor, validate,
 } from "../lib/intake";
 import {
-  generate, phaseSplit, placeWeek, resolve, strengthFor, volumeFor,
+  alignCorrections, generate, phaseSplit, placeWeek, resolve, strengthFor,
+  volumeFor,
 } from "../lib/generate";
 
 setClock(() => "2026-08-10");
@@ -531,4 +532,24 @@ test("the pace-estimate note only appears where a test is actually scheduled", (
   assert.equal(note("skipped"), false);
   assert.equal(note("offered"), false);
   assert.equal(note("logged"), false, "nothing to firm up: it is already measured");
+});
+
+test("the corrections quote the numbers the plan actually contains", () => {
+  // The panel comes from this generator; the weeks come from lib/plan/. Left alone
+  // it said "week 1 capped at 34 km" above a block whose first week was 32 — the
+  // same class of mistake as the phantom 15% haircut it replaced.
+  const p = resolve({ ...HER, runningSelf: "Runs with walk breaks" });
+  const cap = p.corrections.find((c) => c.id === "week1_cap");
+  assert.ok(cap, "the cap is one of the decisions");
+
+  const aligned = alignCorrections(p.corrections, 32, 9.5);
+  assert.match(aligned.find((c) => c.id === "week1_cap")!.title, /32 km/);
+  const ramp = aligned.find((c) => c.id === "ramp_cut");
+  if (ramp) assert.match(ramp.title, /9\.5% a week/);
+
+  // Anything without an id is left exactly as written.
+  const others = p.corrections.filter((c) => !c.id);
+  for (const c of others) {
+    assert.ok(aligned.some((x) => x.title === c.title && x.body === c.body), c.title);
+  }
 });

@@ -9,7 +9,7 @@ import {
   DIVISION, RACE_DISTANCE, ROLE, RUNNING_SELF, RUN_CEIL, SLED, VOLUME_PREF,
   type Day, type Intake, liveQuestions, validate,
 } from "@/lib/intake";
-import { generate as legacyGenerate, resolve } from "@/lib/generate";
+import { alignCorrections, generate as legacyGenerate, resolve } from "@/lib/generate";
 import { generate as buildPlan } from "@/lib/plan/generate";
 import { paramsFrom } from "@/lib/plan/from-intake";
 import { toTemplate } from "@/lib/plan/to-template";
@@ -314,6 +314,21 @@ export const PUT = route(async (req: NextRequest) => {
   // readable afterwards, with the answers that broke it.
   const r = await guard("PUT /api/intake", me.id, body, () => resolve(intake));
   const plan = await guard("PUT /api/intake", me.id, body, () => legacyGenerate(intake));
+  /*
+   * The real generator runs here as well, unwritten.
+   *
+   * Only for its numbers: the review screen quotes week 1 and the ramp, and quoting
+   * the older generator's version of them promised a block the athlete would not
+   * get. Pure and cheap — no I/O, no clock.
+   */
+  const built = await guard("PUT /api/intake", me.id, body, () =>
+    buildPlan(paramsFrom(intake, {
+      recent: null, absences: [], max_hr: null,
+      measured: intake.benchmark === "logged",
+      hyrox_races: intake.pastRaces?.length ?? 0,
+    })));
+  const corrections = alignCorrections(
+    r.corrections, built.weeks[0]?.km ?? r.startKm, built.resolved.ramp_rate * 100);
   return NextResponse.json({
     resolved: {
       weeks: r.weeks, start: r.start, race_date: r.raceDate,
@@ -323,7 +338,7 @@ export const PUT = route(async (req: NextRequest) => {
       pace_known: r.paceKnown, goal_seconds: r.goalSeconds,
       plan_state: r.planState, phase_split: r.phaseSplit,
     },
-    corrections: r.corrections,
+    corrections,
     offer: {
       // the offer is suppressed rather than hidden: the screen says why
       suppressed: r.offerSuppressed,
@@ -546,7 +561,8 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
       generator: built.version,
       guardrails: plan.guardrails, benchmark: plan.benchmark,
     },
-    corrections: plan.corrections,
+    corrections: alignCorrections(
+      plan.corrections, built.weeks[0]?.km ?? 0, built.resolved.ramp_rate * 100),
     /** the new generator's own flags, which name what it had to compromise */
     flags: [...plan.flags, ...built.flags.map((f) => f.message)],
     violations: built.violations,
