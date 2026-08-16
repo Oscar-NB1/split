@@ -125,7 +125,7 @@ export default function Away({ onChange }: { onChange?: (n: number) => void }) {
           borderRadius: "var(--r-pill)", padding: 12, fontSize: 11, fontWeight: 800,
           letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink)",
           opacity: from && to ? 1 : .5,
-        }}>Add a trip</button>
+        }}>Add this trip</button>
 
       {error && <span style={{ fontSize: 11, color: "#C07A3E" }}>{error}</span>}
 

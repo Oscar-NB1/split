@@ -6,6 +6,7 @@ import IntakeGoal from "./IntakeGoal";
 import IntakeStart from "./IntakeStart";
 import IntakeRaces, { type PastRace } from "./IntakeRaces";
 import IntakeBRaces, { type BRace } from "./IntakeBRaces";
+import IntakeGear from "./IntakeGear";
 import { GEAR_ASSUMED, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
@@ -61,6 +62,7 @@ type Answers = {
   longestRunUnknown: boolean; peakWeekUnknown: boolean;
   volumeSource: "strava" | "self" | null;
   hyroxExp: string | null; targetSessions: string;
+  gymAccess: string | null; runStationLink: string | null;
   allowDoubles: string | null; wantRestDay: string | null; sessionPref: string | null;
   runDelta: string | null; stationDelta: string | null;
   goal: string | null; goalMin: number; startDate: string | null;
@@ -79,6 +81,7 @@ const EMPTY: Answers = {
   longestRun: 0, peakWeek: 0, longestRunUnknown: false, peakWeekUnknown: false,
   volumeSource: null,
   hyroxExp: null, targetSessions: "", allowDoubles: null, wantRestDay: null,
+  gymAccess: "Open floor, any time", runStationLink: "Yes, with a walk between",
   sessionPref: null, runDelta: null, stationDelta: null,
   goal: null, goalMin: 60, startDate: null, pastRaces: [], bRaces: [],
 };
@@ -282,7 +285,7 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   const i = Math.min(step, live.length - 1);
   const s = live[i];
   const id = s.id;
-  const q = { kind: s.kind === "gear" ? "chips" : s.kind, q: s.q, sub: subFor(s, a as unknown as StepAnswers), skip: s.skip };
+  const q = { kind: s.kind, q: s.q, sub: subFor(s, a as unknown as StepAnswers), skip: s.skip };
 
   /**
    * Options come from the step spec, which is the same list the design shows.
@@ -625,6 +628,15 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
       {q.kind === "goal" && (
         <IntakeGoal goal={a.goal} minutes={a.goalMin}
           onGoal={(g) => set("goal", g)} onMinutes={(m) => set("goalMin", m)} />
+      )}
+
+      {q.kind === "gear" && (
+        <IntakeGear kit={a.equipment} options={optionsFor()}
+          access={a.gymAccess} runLink={a.runStationLink}
+          answers={a as unknown as StepAnswers}
+          onKit={(k) => set("equipment", k)}
+          onAccess={(v) => set("gymAccess", v)}
+          onRunLink={(v) => set("runStationLink", v)} />
       )}
 
       {q.kind === "bRaces" && (

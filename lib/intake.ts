@@ -144,6 +144,13 @@ export type Intake = {
   /** how freely the kit can be used, which gates compromised running */
   gymAccess: string | null;
   /**
+   * Whether a run can follow a station without a drive.
+   *
+   * Feeds run_attachment in deriveVariant. It was never asked and defaulted for
+   * everyone, which handed every athlete the most permissive variant the app has.
+   */
+  runStationLink: string | null;
+  /**
    * Races already run, typed in.
    *
    * Kept as answers rather than normalised: they are what the athlete told us,

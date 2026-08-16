@@ -30,7 +30,7 @@ export default function IntakeStart({
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
-          textTransform: "uppercase", color: INK55 }}>First day</span>
+          textTransform: "uppercase", color: INK55 }}>First week starts</span>
         <input type="date" value={from} min={today()}
           onChange={(e) => e.target.value && onStart(e.target.value)}
           style={{

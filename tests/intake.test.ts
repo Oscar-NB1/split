@@ -31,6 +31,7 @@ const HER: Intake = {
   goal: null, goalMin: null, startDate: null, targetSessions: null,
   allowDoubles: null, wantRestDay: null, sessionPref: null, hyroxExp: null,
   runDelta: null, stationDelta: null, gymAccess: null,
+  runStationLink: null,
   pastRaces: [],
   bRaces: [],
   days: ["Tue", "Wed", "Thu", "Fri", "Sat"],
@@ -78,13 +79,19 @@ test("the ramp is the lower of the base allowance and the running allowance", ()
 
 // -------------------------------------------------- the conservatism differential
 
-test("without a benchmark, week 1 is held 15% below the ceiling and the ramp capped", () => {
-  const r = resolve(HER);
-  assert.ok(r.estimated);
-  assert.equal(r.startKm, Math.round(15 * 0.85), "85% of the ceiling");
-  assert.ok(r.ramp <= 8, "capped at 8%");
-  assert.equal(r.planState, "estimated");
-  assert.ok(r.corrections.some((c) => /15% below your ceiling/.test(c.title)));
+test("no benchmark does not discount the volume", () => {
+  /*
+   * Removed twice from the generator and a third time from here: this file's
+   * corrections panel was still describing a 15% cut that the plan no longer
+   * contained, so the athlete was told week 1 was held at 32 km while the block
+   * started at 38.
+   */
+  const measured = resolve({ ...HER, benchmark: "logged" });
+  const guessed = resolve({ ...HER, benchmark: "offered" });
+  assert.equal(guessed.startKm, measured.startKm);
+  assert.ok(!guessed.corrections.some((c) => /15%|below your ceiling/.test(c.title)));
+  // What it says instead is about paces, which is the part a test actually fixes.
+  assert.ok(guessed.corrections.some((c) => /paces are estimates/i.test(c.title)));
 });
 
 test("a logged benchmark restores the full ceiling and lifts the ramp cap", () => {
@@ -111,8 +118,10 @@ test("the ramp is still the lowest of the three, whichever binds", () => {
   const runBound = resolve({ ...HER, benchmark: "logged", base: "Several years" });
   assert.equal(runBound.baseRamp, 12);
   assert.equal(runBound.ramp, 8, "her running still binds at 8");
-  const capBound = resolve({ ...HER, runningSelf: "Competitive", base: "Several years" });
-  assert.equal(capBound.ramp, 8, "and without a benchmark the 8% cap binds");
+  // The 12% cap is no longer tiered by whether a benchmark exists, so an athlete
+  // whose training and running both allow 12 gets 12 either way.
+  const unbound = resolve({ ...HER, runningSelf: "Competitive", base: "Several years" });
+  assert.equal(unbound.ramp, 12, "nothing else binds, so the cap does");
 });
 
 // ------------------------------------------------------------ the safety gate

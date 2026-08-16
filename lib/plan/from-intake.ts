@@ -128,8 +128,10 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
   const kit = (x.equipment ?? []).map((e) => KIT[e]).filter(Boolean) as Kit[];
   const access: Access = x.gymAccess === "Classes only" ? "classes_only"
     : x.gymAccess === "Busy — expect to queue" ? "queue" : "open_floor";
-  const run_attachment: RunAttachment = kit.includes("treadmill")
-    || kit.includes("running_track") ? "attached" : "short_walk";
+  // Asked now, rather than guessed from whether a treadmill happens to be listed.
+  const run_attachment: RunAttachment =
+    x.runStationLink === "Yes, running is right there" ? "attached"
+    : x.runStationLink === "No, separate places" ? "separate" : "short_walk";
 
   return {
     // ------- resolve inputs

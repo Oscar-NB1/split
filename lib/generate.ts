@@ -133,16 +133,23 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
 
   const baseKm = BASE_KM[x.base] ?? 20;
   const ceil = RUN_CEIL[x.runningSelf] ?? 999;
+  /*
+   * No haircut. This file no longer builds the plan — lib/plan/ does, and it was
+   * told twice to stop discounting week 1 for the absence of a benchmark. Leaving
+   * the 0.85 here meant the corrections panel described a cut that the plan being
+   * written did not contain: the athlete was told week 1 was held at 32 km while
+   * the block actually started at 38.
+   */
   const rawStart = Math.min(baseKm, ceil);
-  // The conservatism differential: not knowing has a cost, and it is stated.
-  const startKm = estimated ? Math.round(rawStart * 0.85) : rawStart;
+  const startKm = rawStart;
 
   // Several years of training is what the 12% cap exists for. Without this the
   // cap was unreachable — the base allowance topped out at 10 for every answer,
   // so "measured plans ramp up to 12%" was true of the ceiling and of nothing else.
   const baseRamp = x.base === "Several years" ? 12 : x.base === "Over a year" ? 10 : 8;
   const runRamp = RUN_RAMP[x.runningSelf] ?? 10;
-  const cap = estimated ? 8 : 12;
+  // Not tiered by measurement either, for the same reason.
+  const cap = 12;
   const resolvedRamp = Math.min(cap, baseRamp, runRamp);
   // a preference may lower the ramp freely, and raise it only to the cap
   const want = VOLUME_PREF_RAMP[x.volume];
@@ -163,10 +170,16 @@ export function resolve(x: Intake, from: string = todayish()): Resolved {
     : riegel(RACE_M[x.raceDistance ?? "Half marathon"] ?? 21097);
 
   const corrections: Correction[] = [];
+  /*
+   * The "held 15% below your ceiling" correction is gone with the haircut it
+   * described. What replaces it is not a smaller version of the same claim: an
+   * unmeasured plan has honest volume and uncalibrated *paces*, and that is what
+   * the athlete should be told.
+   */
   if (estimated) {
     corrections.push({
-      title: `Week 1 held 15% below your ceiling`,
-      body: `Without a benchmark I am working from what you told me, so the first week starts at ${startKm} km rather than ${rawStart} km and the ramp is capped at 8%. I also assume you are a positive splitter until measured — it costs a disciplined athlete almost nothing and saves an undisciplined one from blowing up. Run the benchmark and this comes back up.`,
+      title: "Your paces are estimates until you test",
+      body: "Volume comes from what you told me about your training and your running, and it is not discounted for the absence of a test. Paces are the part a benchmark fixes: until then every target is a heart-rate zone or an effort rather than a number, and it says so on the session.",
     });
   }
   if (baseKm > ceil) {

@@ -182,6 +182,7 @@ function parse(body: Record<string, unknown>): Intake {
     runDelta: str(body.runDelta),
     stationDelta: str(body.stationDelta),
     gymAccess: str(body.gymAccess),
+    runStationLink: str(body.runStationLink),
     /*
      * Times are validated, not trusted. A race result reaches the capability
      * hierarchy, so a mistyped roxzone would move every pace in the plan — the
@@ -470,7 +471,7 @@ const EXTRA_KEYS = [
   "wantRestDay", "sessionPref", "hyroxExp", "runDelta", "stationDelta", "gymAccess",
   // Typed-in race results. The only source of a roxzone in the whole app, so
   // they travel with the answers rather than being derived from anything.
-  "pastRaces", "bRaces",
+  "pastRaces", "bRaces", "runStationLink",
 ] as const;
 
 const extraOf = (i: Intake) =>

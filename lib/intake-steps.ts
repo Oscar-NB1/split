@@ -218,8 +218,12 @@ export function filled(s: Step, a: Answers): boolean {
       return true;
     case "km":
       return Number(a[s.id]) > 0 || a[`${s.id}Unknown`] === true;
-    case "chips": case "gear":
+    case "chips":
       return arr(a, s.id).length > 0 || String(a.otherCommit ?? "").trim().length > 0;
+    // Kit alone is not access, and neither answers whether a run can follow a
+    // station — all three decide the variant, so all three are required.
+    case "gear":
+      return arr(a, s.id).length > 0 && !!a.gymAccess && !!a.runStationLink;
     case "prefs":
       return !!a.volume && !!a.difficulty;
     case "start":
