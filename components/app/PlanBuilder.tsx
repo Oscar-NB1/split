@@ -1,5 +1,14 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import IntakeConnect from "./IntakeConnect";
+import IntakeKm from "./IntakeKm";
+import { filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
+
+/**
+ * Steps whose controls are not built yet: a goal picker, a past-race lookup and
+ * a start-date-plus-absences calendar. Filtered out rather than rendered blank.
+ */
+const PENDING = new Set(["goal", "pastRaces", "startDate"]);
 
 const TEAL = "var(--teal)", LIME = "var(--lime)", NAVY = "var(--navy)";
 const INK = "var(--ink)", INK40 = "var(--ink-40)", INK55 = "var(--ink-55)", INK70 = "var(--ink-70)";
@@ -38,6 +47,13 @@ type Answers = {
   freq: Record<string, number>; commitDay: Record<string, string[]>;
   equipment: string[]; sled: string | null; injuries: string;
   volume: string; difficulty: string; benchmark: string;
+  /** the two recent-volume answers, and where they came from */
+  longestRun: number; peakWeek: number;
+  longestRunUnknown: boolean; peakWeekUnknown: boolean;
+  volumeSource: "strava" | "self" | null;
+  hyroxExp: string | null; targetSessions: string;
+  allowDoubles: string | null; wantRestDay: string | null; sessionPref: string | null;
+  runDelta: string | null; stationDelta: string | null;
 };
 
 const EMPTY: Answers = {
@@ -47,6 +63,10 @@ const EMPTY: Answers = {
   days: [], commitments: [], freq: {}, commitDay: {},
   equipment: [], sled: null, injuries: "",
   volume: "Progressive", difficulty: "Challenging", benchmark: "offered",
+  longestRun: 0, peakWeek: 0, longestRunUnknown: false, peakWeekUnknown: false,
+  volumeSource: null,
+  hyroxExp: null, targetSessions: "", allowDoubles: null, wantRestDay: null,
+  sessionPref: null, runDelta: null, stationDelta: null,
 };
 
 /** The questions, in order, with the copy from the design. */
@@ -164,6 +184,14 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   const [opts, setOpts] = useState<Options | null>(null);
   const [a, setA] = useState<Answers>(EMPTY);
   const [step, setStep] = useState(0);
+  /**
+   * Whether Strava is connected, and what it says about their recent running.
+   *
+   * Read once when the flow opens and again on return from the OAuth round
+   * trip, which lands back on this screen. Prefilling the two distance
+   * questions is the whole reason the connect step sits before them.
+   */
+  const [connected, setConnected] = useState(false);
   const [stage, setStage] = useState<Stage>("questions");
   const [calMonth, setCalMonth] = useState<string | null>(null);
   const [resolved, setResolved] = useState<Resolved | null>(null);
@@ -172,6 +200,20 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    fetch("/api/intake/recent").then(async (r) => {
+      if (!r.ok) return;
+      const j = await r.json();
+      setConnected(!!j.connected);
+      if (!j.recent) return;
+      // Prefilled, not answered: the athlete still sees and confirms them, and
+      // an edit replaces the source so the number stops claiming to be measured.
+      setA((p) => ({
+        ...p,
+        volumeSource: "strava",
+        peakWeek: j.recent.peak_week_km ?? p.peakWeek,
+        longestRun: j.recent.long_run_km ?? p.longestRun,
+      }));
+    });
     fetch("/api/intake").then(async (r) => {
       if (r.status === 401) { location.href = "/"; return; }
       const j = await r.json();
@@ -179,7 +221,10 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
       // retaking it starts from the last answers rather than from blank
       if (j.intake) {
         const i = j.intake;
-        setA({
+        // Merged over EMPTY rather than replacing it, so a field the stored
+        // intake predates arrives as its default instead of undefined.
+        setA((p) => ({
+          ...p,
           hasRace: i.has_race, discipline: i.discipline, raceDistance: i.race_distance,
           raceDate: i.race_date, role: i.role, division: i.division, base: i.base,
           runningSelf: i.running_self, paceMin: i.pace_min ?? 32, paceSec: i.pace_sec ?? 0,
@@ -187,45 +232,54 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           freq: i.freq ?? {}, commitDay: i.commit_day ?? {}, equipment: i.equipment ?? [],
           sled: i.sled, injuries: i.injuries ?? "", volume: i.volume,
           difficulty: i.difficulty, benchmark: "offered",
-        });
+          // stored answers win over a Strava prefill: they were confirmed once
+          peakWeek: i.peak_week_km ?? p.peakWeek,
+          longestRun: i.longest_run_km ?? p.longestRun,
+          volumeSource: i.volume_source ?? p.volumeSource,
+        }));
       }
     });
   }, []);
 
   const set = <K extends keyof Answers>(k: K, v: Answers[K]) => setA((p) => ({ ...p, [k]: v }));
 
-  /** Doubles-only questions drop out for the other disciplines. */
-  const live = useMemo(() => {
-    const all = ["hasRace", "discipline", "raceDistance", "raceDate", "role", "division",
-      "base", "runningSelf", "pace", "days", "commitments", "equipment", "sled", "injuries", "prefs"];
-    const doubles = a.discipline.includes("doubles");
-    const hyrox = a.discipline.startsWith("Hyrox");
-    return all.filter((id) => {
-      if (id === "role") return doubles;
-      if (id === "raceDistance") return a.discipline === "Running race";
-      if (id === "division" || id === "sled") return hyrox;
-      if (id === "raceDate") return a.hasRace === "Yes";
-      return true;
-    });
-  }, [a.discipline, a.hasRace]);
+  /**
+   * The steps this athlete is actually asked, from lib/intake-steps.ts.
+   *
+   * Three of the form's steps are composite controls that do not exist yet — a
+   * goal picker, a past-race lookup and a start-date-plus-absences calendar.
+   * They are filtered out rather than rendered blank: a step that shows nothing
+   * is worse than a step that is not there.
+   */
+  const live = useMemo(
+    () => liveSteps(a as unknown as StepAnswers, connected)
+      .filter((s2) => !PENDING.has(s2.id)),
+    [a, connected],
+  );
 
   if (!opts) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
   const i = Math.min(step, live.length - 1);
-  const id = live[i];
-  const q = Q[id];
+  const s = live[i];
+  const id = s.id;
+  const q = { kind: s.kind === "gear" ? "chips" : s.kind, q: s.q, sub: subFor(s, a as unknown as StepAnswers), skip: s.skip };
 
+  /**
+   * Options come from the step spec, which is the same list the design shows.
+   * Equipment is the exception: what is worth offering depends on the
+   * discipline, and only the server knows the running-only variant.
+   */
   const optionsFor = (): string[] => {
-    if (id === "division") return a.discipline.includes("doubles") ? opts.division.doubles : opts.division.solo;
-    if (id === "equipment") return a.discipline === "Running race" ? opts.equipment.running : opts.equipment.default;
-    return (opts as unknown as Record<string, string[]>)[id] ?? [];
+    if (id === "equipment") {
+      return a.discipline === "Running race" ? opts.equipment.running : opts.equipment.default;
+    }
+    if (s.opts) return s.opts.map(([label]) => label);
+    return s.chips ?? [];
   };
+  const subOf = (label: string) => s.opts?.find(([l]) => l === label)?.[1] ?? SUBS[id]?.[label];
 
   const value = (id === "pace" ? null : (a as unknown as Record<string, unknown>)[id]);
-  const filled = q.kind === "chips" ? ((value as string[]) ?? []).length > 0
-    : q.kind === "prefs" ? !!(a.volume && a.difficulty)
-    : q.kind === "text" || q.kind === "time" ? true
-    : !!value;
+  const ready = filled(s, a as unknown as StepAnswers);
 
   /** "Nothing fixed" is not additive — it is the absence of everything else. */
   const toggle = (k: "days" | "commitments" | "equipment", v: string) => {
@@ -339,7 +393,7 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {optionsFor().map((o) => {
             const on = value === o;
-            const sub = SUBS[id]?.[o];
+            const sub = subOf(o);
             return (
               <button key={o} onClick={() => pick(o)} style={{
                 width: "100%", textAlign: "left", display: "flex", alignItems: "center",
@@ -477,6 +531,27 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
+      {q.kind === "connect" && (
+        <IntakeConnect connected={connected}
+          onConnect={() => {
+            // Strava's callback redirects to a URL and cannot know it was
+            // reached from inside the plan builder, so the intent is left here
+            // for the shell to pick up on the way back.
+            sessionStorage.setItem("split-after-strava", "build");
+            location.href = "/api/strava/connect";
+          }}
+          skipLabel={s.skip ?? ""} onSkip={() => setStep(step + 1)} />
+      )}
+
+      {q.kind === "km" && (
+        <IntakeKm step={s}
+          value={Number((a as unknown as Record<string, unknown>)[id]) || 0}
+          unknown={(a as unknown as Record<string, unknown>)[`${id}Unknown`] === true}
+          pulled={a.volumeSource === "strava" && Number((a as unknown as Record<string, unknown>)[id]) > 0}
+          onChange={(v) => set(id as keyof Answers, v as never)}
+          onUnknown={(v) => set(`${id}Unknown` as keyof Answers, v as never)} />
+      )}
+
       {q.kind === "text" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           <textarea rows={5} value={a.injuries} onChange={(e) => set("injuries", e.target.value)}
@@ -533,12 +608,12 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
 
       <button
         onClick={() => (i === live.length - 1 ? resolveAnswers() : setStep(i + 1))}
-        disabled={!filled || busy}
+        disabled={!ready || busy}
         style={{
           width: "100%", borderRadius: "var(--r-pill)", padding: 17, fontSize: 12, fontWeight: 800,
           letterSpacing: ".06em", textTransform: "uppercase", border: 0,
-          background: !filled || busy ? OFF : LIME,
-          color: !filled || busy ? INK40 : "var(--on-lime)",
+          background: !ready || busy ? OFF : LIME,
+          color: !ready || busy ? INK40 : "var(--on-lime)",
         }}>
         {busy ? "Resolving…" : i === live.length - 1 ? "See my plan" : "Continue"}
       </button>

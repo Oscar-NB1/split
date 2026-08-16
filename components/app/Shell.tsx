@@ -106,7 +106,13 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   // outcome arrives as a query parameter. Opening the connections view is what
   // makes the round trip feel like it happened inside the app.
   useEffect(() => {
-    if (new URLSearchParams(location.search).get("strava")) setView("connect");
+    if (!new URLSearchParams(location.search).get("strava")) return;
+    // Connecting from inside the plan builder returns to the plan builder. The
+    // connections screen is the right landing place for every other route in,
+    // and the wrong one for someone three questions from the end of a form.
+    const back = sessionStorage.getItem("split-after-strava");
+    sessionStorage.removeItem("split-after-strava");
+    setView(back === "build" ? "build" : "connect");
   }, []);
   const [monday, setMonday] = useState(() => mondayOf());
   const [openId, setOpenId] = useState<string | null>(null);
