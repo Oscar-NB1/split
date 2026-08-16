@@ -829,3 +829,16 @@ create table if not exists race_checklist (
 alter table race_targets add column if not exists venue      text;
 alter table race_targets add column if not exists start_time text;
 alter table race_targets add column if not exists wave       text;
+
+-- Email is no longer identity (2026-08-16).
+--
+-- Registration creates a new athlete for any provider subject the app has not
+-- seen, and never matches onto an existing account by address — so two accounts
+-- may legitimately carry the same email: a Google sign-in and a Strava sign-in
+-- by the same person are two athletes until they are deliberately linked.
+--
+-- The unique constraint made that a crash. Uniqueness lives on
+-- identities (provider, subject), which is issued by the provider and is the
+-- thing that actually identifies someone.
+drop index if exists users_email_lower;
+alter table users drop constraint if exists users_email_key;

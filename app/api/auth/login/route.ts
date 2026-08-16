@@ -36,12 +36,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "That code doesn't match." }, { status: 401 });
   }
 
-  const [user] = await sql<{ id: string }[]>`
+  /*
+   * Look up, then insert. This used to upsert on the email unique constraint,
+   * which no longer exists — email stopped being identity when registration
+   * started creating a new athlete per provider subject, and two accounts may
+   * now share an address.
+   */
+  const [found] = await sql<{ id: string }[]>`
+    select id from users where lower(email) = ${match.email!.toLowerCase()}
+     order by created_at limit 1
+  `;
+  const user = found ?? (await sql<{ id: string }[]>`
     insert into users (email, display_name)
     values (${match.email!.toLowerCase()}, ${match.name!})
-    on conflict (email) do update set display_name = excluded.display_name
     returning id
-  `;
+  `)[0];
 
   if ((await identitiesFor(user.id)).length > 0) {
     return NextResponse.json({
