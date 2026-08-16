@@ -1,5 +1,4 @@
 "use client";
-import { weeklyLoad, type Answers } from "@/lib/intake-steps";
 
 const TEAL = "#0A8FB0", TEAL_T = "var(--teal-tint)";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
@@ -28,23 +27,22 @@ export const RUN_LINK: [string, string][] = [
  * All three feed deriveVariant, and until now only the first was being asked. The
  * other two were defaulting to "open floor" and "short walk" for everyone, which
  * quietly gave every athlete the most permissive variant the app has.
+ *
+ * The week's load summary is deliberately not here. It belongs on the steps that
+ * change it — days, sessions, commitments — and nothing this step asks about
+ * moves the number.
  */
 export default function IntakeGear({
-  kit, options, access, runLink, answers, onKit, onAccess, onRunLink,
+  kit, options, access, runLink, onKit, onAccess, onRunLink,
 }: {
   kit: string[];
   options: string[];
   access: string | null;
   runLink: string | null;
-  answers: Answers;
   onKit: (k: string[]) => void;
   onAccess: (v: string) => void;
   onRunLink: (v: string) => void;
 }) {
-  const load = weeklyLoad(answers);
-  const asked = Number(String(answers.targetSessions ?? "")) || 0;
-  const extra = load - asked;
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -72,24 +70,6 @@ export default function IntakeGear({
         value={runLink} onPick={onRunLink}
         note="Compromised running — a station straight into a run — is the session that decides a Hyrox. This is what tells me whether you can train it." />
 
-      {/* The arithmetic, before it becomes a surprise. Someone asking for six
-          sessions with two commitments is asking for eight. */}
-      {asked > 0 && (
-        <div style={{ background: PAPER, border: `1px solid ${LINE}`,
-          borderRadius: "var(--r-card)", padding: "14px 15px",
-          display: "flex", flexDirection: "column", gap: 7 }}>
-          <Row label="Training sessions" value={String(asked)} />
-          {extra > 0 && <Row label="Your commitments" value={`+${extra} on top`} />}
-          <div style={{ height: 1, background: LINE }} />
-          <Row label="Total per week" value={`${load}`} bold
-            aside={`~${(load * 1.075).toFixed(1)} h`} />
-          <span style={{ fontSize: 10, lineHeight: 1.5, color: INK40 }}>
-            {load > 7
-              ? "More than seven a week means doubles. Sessions get shorter to fit."
-              : "That fits inside a week without doubling up."}
-          </span>
-        </div>
-      )}
     </div>
   );
 }

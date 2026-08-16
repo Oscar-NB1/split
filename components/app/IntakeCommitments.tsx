@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 
 const TEAL = "#0A8FB0", TEAL_T = "var(--teal-tint)";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
@@ -26,7 +27,7 @@ const MODES: [Mode, string, string][] = [
  * can be placed away from it.
  */
 export default function IntakeCommitments({
-  chips, picked, freq, days, modes, onToggle, onFreq, onDay, onMode,
+  chips, picked, freq, days, modes, onToggle, onFreq, onDay, onMode, onAddOther,
 }: {
   chips: string[];
   picked: string[];
@@ -37,7 +38,10 @@ export default function IntakeCommitments({
   onFreq: (c: string, n: number) => void;
   onDay: (c: string, d: string[]) => void;
   onMode: (c: string, m: Mode) => void;
+  /** anything not on the list — "Something else, name it" */
+  onAddOther: (name: string) => void;
 }) {
+  const [other, setOther] = useState("");
   const live = picked.filter((c) => c !== "Nothing fixed");
 
   return (
@@ -53,6 +57,31 @@ export default function IntakeCommitments({
             }}>{c}</button>
           );
         })}
+      </div>
+
+      {/*
+        * Anything not on the list.
+        *
+        * The chips cover the common cases and will never cover all of them —
+        * someone doing jiu-jitsu twice a week has a commitment that costs exactly
+        * as much as kickboxing, and a form that cannot hear it forces them to
+        * either lie or leave it out.
+        */}
+      <div style={{ display: "flex", gap: 7 }}>
+        <input value={other} onChange={(e) => setOther(e.target.value)}
+          placeholder="Something else — name it" aria-label="Another commitment"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && other.trim()) {
+              e.preventDefault(); onAddOther(other.trim()); setOther("");
+            }
+          }}
+          style={{ flex: 1, background: PAPER, border: `1px solid ${LINE}`,
+            borderRadius: "var(--r-pill)", padding: "10px 14px", fontSize: 12 }} />
+        <button onClick={() => { if (other.trim()) { onAddOther(other.trim()); setOther(""); } }}
+          disabled={!other.trim()}
+          style={{ padding: "0 18px", borderRadius: "var(--r-pill)",
+            border: `1px solid ${LINE}`, background: "var(--off)", fontSize: 12,
+            fontWeight: 700, color: other.trim() ? TEAL : INK40 }}>Add</button>
       </div>
 
       {live.map((c) => {

@@ -8,6 +8,7 @@ import IntakeRaces, { type PastRace } from "./IntakeRaces";
 import IntakeBRaces, { type BRace } from "./IntakeBRaces";
 import IntakeGear from "./IntakeGear";
 import IntakeCommitments, { type Mode } from "./IntakeCommitments";
+import IntakeLoad, { SHOWS_LOAD } from "./IntakeLoad";
 import { GEAR_ASSUMED, dependentsOf, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
@@ -658,13 +659,18 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           onToggle={(c) => toggle("commitments", c)}
           onFreq={(c, n) => set("freq", { ...a.freq, [c]: n })}
           onDay={(c, d) => set("commitDay", { ...a.commitDay, [c]: d })}
-          onMode={(c, m) => set("commitMode", { ...a.commitMode, [c]: m })} />
+          onMode={(c, m) => set("commitMode", { ...a.commitMode, [c]: m })}
+          onAddOther={(name) => {
+            if (a.commitments.includes(name)) return;
+            set("commitments", [...a.commitments.filter((c) => c !== "Nothing fixed"), name]);
+            set("freq", { ...a.freq, [name]: 1 });
+            set("commitMode", { ...a.commitMode, [name]: "add" });
+          }} />
       )}
 
       {q.kind === "gear" && (
         <IntakeGear kit={a.equipment} options={optionsFor()}
           access={a.gymAccess} runLink={a.runStationLink}
-          answers={a as unknown as StepAnswers}
           onKit={(k) => set("equipment", k)}
           onAccess={(v) => set("gymAccess", v)}
           onRunLink={(v) => set("runStationLink", v)} />
@@ -733,6 +739,8 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           </div>
         </div>
       )}
+
+      {SHOWS_LOAD.includes(id) && <IntakeLoad answers={a as unknown as StepAnswers} />}
 
       {/* Only the problems for the step being looked at. A message about the
           division shown under the volume dials is noise, and it was what made

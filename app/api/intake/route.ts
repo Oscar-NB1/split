@@ -143,7 +143,20 @@ function parse(body: Record<string, unknown>): Intake {
   const list = <T,>(v: unknown, allowed: readonly T[]): T[] =>
     Array.isArray(v) ? [...new Set(v.filter((x): x is T => allowed.includes(x as T)))] : [];
 
-  const commitments = list(body.commitments, COMMITMENTS);
+  /*
+   * Known chips plus anything the athlete typed.
+   *
+   * This allowlisted against COMMITMENTS, so a commitment named on the step —
+   * jiu-jitsu, netball, whatever — was accepted by the screen and dropped here.
+   * Silently, which is the worst version: the plan was then built as though the
+   * athlete had nothing on that day. Sanitised rather than rejected, because the
+   * name is only ever displayed and counted, never matched against a table.
+   */
+  const commitments = [...new Set(
+    (Array.isArray(body.commitments) ? body.commitments : [])
+      .map((c: unknown) => String(c ?? "").trim().slice(0, 40))
+      .filter(Boolean),
+  )].slice(0, 8) as Intake["commitments"];
   const freq: Record<string, number> = {};
   const commitDay: Record<string, Day[]> = {};
   for (const c of commitments) {
