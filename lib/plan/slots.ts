@@ -171,12 +171,19 @@ export function allocateSlots(x: SlotInput): SlotPlan {
    * size.
    */
   const wantQuality = Math.max(1, x.quality_target ?? 1);
+  const easyFloor = slots >= 7 ? 2 : slots >= 5 ? 1 : 0;
   while (counts.quality_run < wantQuality) {
-    // Easy running first, then the second Hyrox session, then a second strength
-    // day. Never the long run, and never the last of anything.
-    const from: SlotKind | null = counts.easy_run > 0 ? "easy_run"
-      : counts.hyrox > 1 ? "hyrox"
+    /*
+     * A second quality run may not cost the last easy run.
+     *
+     * It did: an athlete on Hard with six sessions lost the one aerobic run in the
+     * week to the difficulty dial, which is the same fault as the week having none
+     * to begin with. The spare Hyrox session goes first, then a second strength
+     * day, then easy running down to the floor — never through it.
+     */
+    const from: SlotKind | null = counts.hyrox > 1 ? "hyrox"
       : counts.strength > 1 ? "strength"
+      : counts.easy_run > easyFloor ? "easy_run"
       : null;
     if (!from) break;
     counts[from]--; counts.quality_run++;
