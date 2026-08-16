@@ -701,3 +701,25 @@ create table if not exists absences (
 create index if not exists absences_user on absences (user_id, from_date);
 
 alter table users add column if not exists gender text;
+
+-- Athlete archetype (2026-08-16). A label for findings already computed from a
+-- benchmark. Read-only: it derives nothing and prescribes nothing, and if it
+-- vanished no plan would change.
+--
+-- History is kept rather than overwritten, because a change of type is the most
+-- useful output the feature has — "you used to fade and now you do not" says
+-- more than either reading alone. derivation_version sits alongside
+-- protocol_version: if the protocol changes, the bands may not hold.
+create table if not exists archetypes (
+  id                  uuid primary key default gen_random_uuid(),
+  athlete_id          uuid not null references users(id) on delete cascade,
+  type                text not null,
+  confidence          text not null check (confidence in ('high', 'low')),
+  derivation_version  int  not null,
+  source_benchmark_id uuid references benchmark_results(id) on delete cascade,
+  contributing        jsonb not null default '[]',
+  dimensions          jsonb not null default '{}',
+  derived_at          timestamptz not null default now()
+);
+create index if not exists archetypes_athlete
+  on archetypes (athlete_id, derived_at desc);
