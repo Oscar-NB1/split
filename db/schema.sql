@@ -842,3 +842,48 @@ alter table race_targets add column if not exists wave       text;
 -- thing that actually identifies someone.
 drop index if exists users_email_lower;
 alter table users drop constraint if exists users_email_key;
+
+-- Secondary races (2026-08-16). A plan has many races; exactly one is the target.
+--
+-- The target's intent is null rather than 'compete': it is not a choice, and a
+-- column that can hold a value nobody may set is a column that will eventually
+-- hold it.
+create table if not exists plan_races (
+  id            uuid primary key default gen_random_uuid(),
+  plan_id       uuid not null references plan_templates(id) on delete cascade,
+  race_date     date not null,
+  venue         text,
+  role          text not null check (role in ('target', 'secondary')),
+  discipline    text,
+  division      text,
+  sex_category  text,
+  partner_name  text,
+  intent        text check (intent in ('training', 'sharpen', 'compete')),
+  -- true once inside seven days: reshaping the weeks around a race you are about
+  -- to run is not a decision anyone makes well
+  intent_locked boolean not null default false,
+  created_at    timestamptz not null default now(),
+  check ((role = 'target') = (intent is null))
+);
+
+-- One target per plan, enforced rather than intended.
+create unique index if not exists plan_races_one_target
+  on plan_races (plan_id) where role = 'target';
+create index if not exists plan_races_plan on plan_races (plan_id, race_date);
+
+-- A result, with the per-field usability that decides what may reach the
+-- capability hierarchy. Stored alongside the numbers so a later change to the
+-- rules cannot retroactively promote a distorted field.
+create table if not exists race_results (
+  id             uuid primary key default gen_random_uuid(),
+  race_id        uuid not null unique references plan_races(id) on delete cascade,
+  athlete_id     uuid not null references users(id) on delete cascade,
+  finish_s       int,
+  run_avg_s      int,
+  stations_s     int,
+  rox_s          int,
+  my_share       numeric,
+  partner_slower boolean,
+  field_usability jsonb not null default '{}',
+  captured_at    timestamptz not null default now()
+);
