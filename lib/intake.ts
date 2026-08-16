@@ -120,6 +120,20 @@ export type Intake = {
    */
   peakWeekKm: number | null;
   longestRunKm: number | null;
+  /** The steps the reworked form added. All nullable: an intake saved before
+   *  they existed is still a valid intake, and the generator has defaults. */
+  goal: string | null;
+  goalMin: number | null;
+  startDate: string | null;
+  targetSessions: string | null;
+  allowDoubles: string | null;
+  wantRestDay: string | null;
+  sessionPref: string | null;
+  hyroxExp: string | null;
+  runDelta: string | null;
+  stationDelta: string | null;
+  /** how freely the kit can be used, which gates compromised running */
+  gymAccess: string | null;
   /** where those two came from — "strava" halves the unmeasured haircut */
   volumeSource: "strava" | "self" | null;
   days: Day[];

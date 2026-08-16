@@ -783,3 +783,8 @@ create table if not exists rivalry_weeks (
 -- exist". A single-use code that expires is strictly less to defend.
 drop index if exists users_username;
 alter table users drop column if exists username;
+
+-- The reworked intake's extra steps (2026-08-16), in one jsonb column rather
+-- than eleven columns: they are answers, not relations, and nothing queries
+-- across them. An intake saved before they existed reads them back as null.
+alter table athlete_intake add column if not exists answers jsonb not null default '{}';

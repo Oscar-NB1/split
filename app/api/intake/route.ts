@@ -23,12 +23,15 @@ import { generate, resolve } from "@/lib/generate";
 
 type Row = Omit<Intake, "hasRace" | "raceDistance" | "raceDate" | "runningSelf"
   | "paceMin" | "paceSec" | "paceUnknown" | "commitDay"
-  | "peakWeekKm" | "longestRunKm" | "volumeSource"> & {
+  | "peakWeekKm" | "longestRunKm" | "volumeSource"
+  | "goal" | "goalMin" | "startDate" | "targetSessions" | "allowDoubles"
+  | "wantRestDay" | "sessionPref" | "hyroxExp" | "runDelta" | "stationDelta"
+  | "gymAccess"> & {
   has_race: string; race_distance: string | null; race_date: string | null;
   running_self: string; pace_min: number | null; pace_sec: number | null;
   pace_unknown: boolean; commit_day: Record<string, Day[]>;
   peak_week_km: number | null; longest_run_km: number | null;
-  volume_source: string | null;
+  volume_source: string | null; answers: Record<string, unknown> | null;
   completed_at: string;
 };
 
@@ -44,6 +47,9 @@ const toIntake = (r: Row): Intake => ({
   paceMin: r.pace_min, paceSec: r.pace_sec, paceUnknown: r.pace_unknown,
   peakWeekKm: r.peak_week_km, longestRunKm: r.longest_run_km,
   volumeSource: r.volume_source as Intake["volumeSource"],
+  // The reworked form's steps live in one jsonb column rather than eleven
+  // columns: they are answers, not relations, and nothing queries across them.
+  ...(extraAnswers(r.answers)),
   days: r.days, commitments: r.commitments, freq: r.freq, commitDay: r.commit_day,
   equipment: r.equipment, sled: r.sled,
   injuries: r.injuries, volume: r.volume, difficulty: r.difficulty,
@@ -54,7 +60,7 @@ const load = async (userId: string) => {
   const [row] = await sql<Row[]>`
     select has_race, discipline, race_distance, race_date::text as race_date, role,
            division, base, running_self, pace_min, pace_sec, pace_unknown,
-           peak_week_km, longest_run_km, volume_source,
+           peak_week_km, longest_run_km, volume_source, answers, answers,
            days, commitments, freq, commit_day, equipment, sled, injuries,
            volume, difficulty, benchmark, completed_at::text as completed_at
       from athlete_intake where user_id = ${userId}
@@ -159,6 +165,17 @@ function parse(body: Record<string, unknown>): Intake {
     longestRunKm: km(body.longestRunKm),
     volumeSource: body.volumeSource === "strava" ? "strava"
       : body.volumeSource === "self" ? "self" : null,
+    goal: str(body.goal),
+    goalMin: int(body.goalMin),
+    startDate: str(body.startDate),
+    targetSessions: str(body.targetSessions),
+    allowDoubles: str(body.allowDoubles),
+    wantRestDay: str(body.wantRestDay),
+    sessionPref: str(body.sessionPref),
+    hyroxExp: str(body.hyroxExp),
+    runDelta: str(body.runDelta),
+    stationDelta: str(body.stationDelta),
+    gymAccess: str(body.gymAccess),
     days: list(body.days, DAYS),
     commitments,
     freq,
@@ -230,14 +247,15 @@ export const POST = route(async (req: NextRequest) => {
     insert into athlete_intake (
       user_id, has_race, discipline, race_distance, race_date, role, division,
       base, running_self, pace_min, pace_sec, pace_unknown,
-      peak_week_km, longest_run_km, volume_source,
+      peak_week_km, longest_run_km, volume_source, answers,
       days, commitments, freq, commit_day, equipment, sled,
       injuries, volume, difficulty, benchmark, updated_at
     ) values (
       ${me.id}, ${intake.hasRace}, ${intake.discipline}, ${intake.raceDistance},
       ${intake.raceDate}, ${intake.role}, ${intake.division},
       ${intake.base}, ${intake.runningSelf}, ${intake.paceMin}, ${intake.paceSec},
-      ${intake.paceUnknown}, ${intake.peakWeekKm}, ${intake.longestRunKm}, ${intake.volumeSource},
+      ${intake.paceUnknown}, ${intake.peakWeekKm}, ${intake.longestRunKm},
+      ${intake.volumeSource}, ${sql.json(extraOf(intake) as never)},
       ${intake.days}, ${intake.commitments},
       ${sql.json(intake.freq as never)}, ${sql.json(intake.commitDay as never)},
       ${intake.equipment}, ${intake.sled}, ${intake.injuries},
@@ -251,7 +269,7 @@ export const POST = route(async (req: NextRequest) => {
       pace_sec = excluded.pace_sec, pace_unknown = excluded.pace_unknown,
       peak_week_km = excluded.peak_week_km,
       longest_run_km = excluded.longest_run_km,
-      volume_source = excluded.volume_source,
+      volume_source = excluded.volume_source, answers = excluded.answers,
       days = excluded.days, commitments = excluded.commitments, freq = excluded.freq,
       commit_day = excluded.commit_day, equipment = excluded.equipment,
       sled = excluded.sled, injuries = excluded.injuries, volume = excluded.volume,
@@ -317,3 +335,19 @@ export const POST = route(async (req: NextRequest) => {
     sessions_created: created,
   });
 });
+
+/** The reworked form's steps, stored together. */
+const EXTRA_KEYS = [
+  "goal", "goalMin", "startDate", "targetSessions", "allowDoubles",
+  "wantRestDay", "sessionPref", "hyroxExp", "runDelta", "stationDelta", "gymAccess",
+] as const;
+
+const extraOf = (i: Intake) =>
+  Object.fromEntries(EXTRA_KEYS.map((k) => [k, i[k] ?? null]));
+
+/** Read back with a null for anything an older intake never had. */
+function extraAnswers(a: Record<string, unknown> | null) {
+  const out: Record<string, unknown> = {};
+  for (const k of EXTRA_KEYS) out[k] = a?.[k] ?? null;
+  return out as Pick<Intake, (typeof EXTRA_KEYS)[number]>;
+}
