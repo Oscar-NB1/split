@@ -93,9 +93,22 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
           lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 7 }}>{a.name ?? "Activity"}</div>
       </div>
 
+      {/*
+        * Two payloads, an hour apart.
+        *
+        * Connecting pulls the summary — distance, time, pace, average heart rate
+        * — because fetching per-activity detail for eight weeks inline would
+        * exhaust Strava's rate limit and the function timeout. Laps, kilometre
+        * splits and the heart-rate trace arrive on the hourly sweep. Saying so
+        * is the difference between waiting and assuming it is broken.
+        */}
       {d.detail_pending && (
         <div style={band}>
-          <p className="muted">Splits and graphs for this one haven&apos;t imported yet.</p>
+          <p className="muted">
+            Still importing this one. Distance, pace and average heart rate are in;
+            the splits and the heart-rate trace arrive within the hour, and the
+            breakdown fills in on its own — there is nothing to do.
+          </p>
         </div>
       )}
 

@@ -44,6 +44,18 @@ export const GET = route(async () => {
     granted: conn?.scope?.split(",").map((s) => s.trim()).filter(Boolean) ?? [],
     scopes: SCOPE_ROWS,
     total,
+    /**
+     * How many imported activities are still waiting on their detail.
+     *
+     * The connect flow pulls summaries; laps, splits and the heart-rate stream
+     * come from the hourly sweep. Without this the screen shows a count of
+     * activities whose breakdowns are all empty, and looks broken rather than
+     * busy.
+     */
+    detail_pending: (await sql<{ n: number }[]>`
+      select count(*)::int as n from activities
+       where user_id = ${me.id} and detail_fetched_at is null
+    `)[0]?.n ?? 0,
     recent: recent.map((r) => ({
       what: r.name ?? "Activity",
       when: r.local_date,

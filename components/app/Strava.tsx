@@ -23,6 +23,8 @@ const LINE2 = "var(--line-2)", CREAM = "var(--cream)";
 
 type Row = { key: string; label: string; sub: string; required: boolean };
 type State = {
+  /** imported, but still waiting on laps, splits and the HR stream */
+  detail_pending?: number;
   connected: boolean; since: string | null; granted: string[];
   scopes: Row[]; total: number;
   recent: { what: string; when: string; matched: boolean; state: string }[];
@@ -171,7 +173,14 @@ export default function Strava({ onDone }: { onDone?: () => void }) {
             <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
               textTransform: "uppercase", color: TEAL }}>Auto-import on</span>
             <span style={{ fontSize: 13, lineHeight: 1.55, color: INK70 }}>
-              New activities arrive within a few minutes of upload and are matched to the planned
+              {(s.detail_pending ?? 0) > 0 && (
+              <span style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>
+                Still importing {s.detail_pending} of them. Distance and pace are
+                already in; the splits and heart-rate traces arrive within the
+                hour, on their own.
+              </span>
+            )}
+            New activities arrive within a few minutes of upload and are matched to the planned
               session by day and sport.
             </span>
           </div>
