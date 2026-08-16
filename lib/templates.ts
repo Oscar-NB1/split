@@ -110,13 +110,24 @@ export async function materialise(templateId: string) {
   if (!Array.isArray(tpl.weeks) || tpl.weeks.length === 0) return { created: 0 };
 
   const rules = { ...DEFAULTS, ...(tpl.rules ?? {}) };
-  const planStart = mondayOf(tpl.start_date);
-  const thisMonday = mondayOf();
+  /*
+   * Weeks run from the plan's own start day, not from a Monday.
+   *
+   * This used to snap both ends with mondayOf(), which quietly moved a plan that
+   * began on a Wednesday back to the Monday before it — and then placed every
+   * session by an offset from that Monday, so a "day 0" session landed two days
+   * before the athlete had started. Weeks are seven days from wherever the block
+   * begins.
+   */
+  const planStart = tpl.start_date;
   const now = today();
+  // How many whole weeks of the block are already behind us: materialising starts
+  // from the current week rather than from week 1 of a plan begun in the past.
+  const elapsedWeeks = Math.max(0, diffWeeks(mondayOf(now), mondayOf(planStart)));
   let created = 0;
 
   for (let w = 0; w < tpl.horizon; w++) {
-    const weekStart = addDays(thisMonday, w * 7);
+    const weekStart = addDays(planStart, elapsedWeeks * 7 + w * 7);
 
     // which week of the plan is this? counted in days, so a DST weekend
     // can't round 4 weeks down to 3

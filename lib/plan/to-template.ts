@@ -1,0 +1,127 @@
+import type { Generated, GeneratedWeek, Session } from "./generate";
+import type { TemplateDay } from "../templates";
+
+/**
+ * The generator's output, in the shape the app stores and materialises.
+ *
+ * A translation and nothing more: no decisions are taken here. Anything that
+ * looks like a judgement in this file is a bug — the generator has already made
+ * every one of them, and a second opinion at the storage boundary is how two
+ * versions of a plan start to exist.
+ */
+
+/** Minutes to allow for a session, when the plan thinks in kilometres. */
+const MINUTES_PER_KM = 6;
+const FLAT_MINUTES: Record<string, number> = {
+  strength: 45, hyrox: 60, rest: 0, benchmark: 50, race: 75, commitment: 60,
+};
+
+const TITLES: Record<string, string> = {
+  easy_run: "Easy run", quality_run: "Key session", long_run: "Long run",
+  strength: "Strength", hyrox: "Hyrox session", rest: "Rest",
+  benchmark: "Benchmark test", race: "Race",
+};
+
+/** null | key | benchmark | race — what makes a day worth arriving fresh for. */
+function significance(s: Session): string | undefined {
+  const k = String(s.kind);
+  if (k === "benchmark") return "benchmark";
+  if (k === "race") return "race";
+  return s.hard && !s.commitment ? "key" : undefined;
+}
+
+function minutes(s: Session): number {
+  const k = String(s.kind);
+  if (s.commitment) return FLAT_MINUTES.commitment;
+  if (k in FLAT_MINUTES) return FLAT_MINUTES[k];
+  return Math.max(20, Math.round((s.km ?? 5) * MINUTES_PER_KM));
+}
+
+/**
+ * The target line: what to actually do, in the plan's own words.
+ *
+ * A pace comes back as a pace; without an anchor the prescription is a heart-rate
+ * ceiling or an RPE, and it says so rather than inventing a number. That is the
+ * whole point of the UNCALIBRATED flag upstream and it must survive the trip.
+ */
+function target(s: Session): string | undefined {
+  const km = s.km ? `${s.km} km` : null;
+  const p = s.prescription;
+  if (!p) return km ?? undefined;
+
+  const pace = p.kind === "pace"
+    ? `${Math.floor(p.seconds_per_km / 60)}:${String(p.seconds_per_km % 60).padStart(2, "0")} /km`
+    : p.kind === "hr" ? p.label
+    : p.kind === "rpe" ? p.label
+    : null;
+
+  return [km, pace].filter(Boolean).join(" @ ") || undefined;
+}
+
+/**
+ * Why this session exists. Shown to the athlete, never parsed.
+ *
+ * Carries the flags the prescription arrived with, because an uncalibrated pace
+ * that looks like a measured one is worse than no pace at all.
+ */
+function note(s: Session, w: GeneratedWeek): string | undefined {
+  const bits: string[] = [];
+  if (String(s.kind) === "benchmark") {
+    bits.push("The baseline test. Every pace after this is written from it.");
+  }
+  if (s.commitment) bits.push("Yours, not prescribed — the week is built around it.");
+  if (w.deload) bits.push("Down week: the point is to arrive fresh, not to be tired.");
+  // Only a pace carries flags; the fallbacks are self-describing by construction.
+  const p = s.prescription;
+  if (p?.kind === "pace") for (const f of p.flags) bits.push(f.message);
+  return bits.length ? bits.join(" ") : undefined;
+}
+
+/** One week of the plan, as days. */
+const weekToDays = (w: GeneratedWeek): TemplateDay[] =>
+  (w.sessions as Session[])
+    .filter((s) => String(s.kind) !== "rest")
+    .sort((a, b) => a.day - b.day)
+    .map((s) => ({
+      day: s.day,
+      kind: String(s.kind),
+      title: s.commitment ? s.label : (TITLES[String(s.kind)] ?? s.label),
+      minutes: minutes(s),
+      target: target(s),
+      coach_note: note(s, w),
+      significance: significance(s),
+      // Two sessions on one day: the second is the evening one. Ordering is by
+      // day already, so the first keeps AM.
+      slot: undefined as string | undefined,
+    }))
+    .map((d, i, all) => {
+      const sameDay = all.filter((x) => x.day === d.day);
+      if (sameDay.length < 2) return d;
+      return { ...d, slot: sameDay.indexOf(d) === 0 ? "AM" : "PM" };
+    });
+
+export type Template = {
+  weeks: TemplateDay[][];
+  volume: { n: number; km: number; note: string }[];
+  intents: { n: number; phase: string; note: string }[];
+  rules: Record<string, unknown>;
+};
+
+export function toTemplate(g: Generated): Template {
+  return {
+    weeks: g.weeks.map(weekToDays),
+    volume: g.weeks.map((w) => ({ n: w.n, km: w.km, note: w.note ?? "" })),
+    intents: g.weeks.map((w) => ({
+      n: w.n,
+      phase: w.phase,
+      note: w.deload ? "Down week" : w.taper ? "Taper" : w.benchmark ? "Benchmark" : "",
+    })),
+    /*
+     * Empty on purpose. `rules` exists so the old template could progress a long
+     * run week to week without storing every week; this generator writes all of
+     * them explicitly, so there is nothing left to extrapolate — and a rule that
+     * also moved the numbers would fight the weeks it was applied to.
+     */
+    rules: {},
+  };
+}

@@ -9,7 +9,12 @@ import {
   RACE_DISTANCE, ROLE, RUNNING_SELF, RUN_CEIL, SLED, VOLUME_PREF,
   type Day, type Intake, liveQuestions, validate,
 } from "@/lib/intake";
-import { generate, resolve } from "@/lib/generate";
+import { generate as legacyGenerate, resolve } from "@/lib/generate";
+import { generate as buildPlan } from "@/lib/plan/generate";
+import { paramsFrom } from "@/lib/plan/from-intake";
+import { toTemplate } from "@/lib/plan/to-template";
+import { recentFor } from "@/lib/recent";
+import { measuredRecent } from "@/lib/recent";
 
 /**
  * The intake: what the athlete says about themselves, and the block it builds.
@@ -235,7 +240,7 @@ export const PUT = route(async (req: NextRequest) => {
   if (problems.length > 0) return NextResponse.json({ problems }, { status: 400 });
 
   const r = resolve(intake);
-  const plan = generate(intake);
+  const plan = legacyGenerate(intake);
   return NextResponse.json({
     resolved: {
       weeks: r.weeks, start: r.start, race_date: r.raceDate,
@@ -272,8 +277,52 @@ export const POST = route(async (req: NextRequest) => {
     return NextResponse.json({ problems }, { status: 400 });
   }
 
-  const plan = generate(intake);
+  const plan = legacyGenerate(intake);
   if (plan.weeks < 2) throw badRequest("That leaves too little time to build a block.");
+
+  /*
+   * The plan the athlete trains is built by lib/plan/, not lib/generate.ts.
+   *
+   * The old generator still runs above: it resolves the corrections panel and the
+   * benchmark offer, which have no equivalent yet. But the weeks that get written
+   * and materialised now come from the tested generator. Two of them writing the
+   * same table would be the worst of both.
+   */
+  const [urow] = await sql<{ hr_max: number | null }[]>`
+    select hr_max from users where id = ${me.id}
+  `;
+  const [conn] = await sql<{ ok: boolean }[]>`
+    select exists (select 1 from oauth_accounts
+                    where user_id = ${me.id} and provider = 'strava') as ok
+  `;
+  const [{ races }] = await sql<{ races: number }[]>`
+    select count(*)::int as races from races where user_id = ${me.id}
+  `;
+  const { recent } = await recentFor(me.id, conn?.ok ?? false);
+  const absences = (await sql<{ from_date: string; to_date: string; kind: string }[]>`
+    select from_date::text as from_date, to_date::text as to_date, kind
+      from absences where user_id = ${me.id}
+  `).map((a) => ({
+    from_date: a.from_date, to_date: a.to_date,
+    type: a.kind as "no_training" | "some_access" | "normal",
+  }));
+
+  const params = paramsFrom(intake, {
+    recent, absences, max_hr: urow?.hr_max ?? null,
+    measured: intake.benchmark === "logged",
+    // A race on file and a race typed into the intake are the same race.
+    hyrox_races: races + (intake.pastRaces?.length ?? 0),
+  });
+  const built = buildPlan(params);
+  const tpl0 = toTemplate(built);
+  /*
+   * The start date the generator actually planned from.
+   *
+   * The legacy generator snapped it to a Monday; this one does not, and
+   * materialise now lays weeks out from whatever it is given. Storing the legacy
+   * value would place every session two days from where the plan intended it.
+   */
+  const startDate = params.week_start(1);
 
   await sql`
     insert into athlete_intake (
@@ -333,10 +382,10 @@ export const POST = route(async (req: NextRequest) => {
       race_date, race_name, goal_label, goal_seconds, volume, intents,
       plan_state, benchmark, guardrails, easy_pace, corrections
     ) values (
-      ${me.id}, ${me.id}, ${plan.name}, ${plan.start},
-      ${sql.json(plan.shapes as never)}, ${sql.json(plan.rules as never)}, 3, true,
+      ${me.id}, ${me.id}, ${plan.name}, ${startDate},
+      ${sql.json(tpl0.weeks as never)}, ${sql.json(tpl0.rules as never)}, 3, true,
       ${plan.race_date}, ${plan.race_name}, ${plan.goal_label}, ${plan.goal_seconds},
-      ${sql.json(plan.volume as never)}, ${sql.json(plan.intents as never)},
+      ${sql.json(tpl0.volume as never)}, ${sql.json(tpl0.intents as never)},
       ${plan.plan_state}, ${sql.json(plan.benchmark as never)},
       ${sql.json(plan.guardrails as never)}, ${plan.easy_pace},
       ${sql.json(plan.corrections as never)}
@@ -356,14 +405,18 @@ export const POST = route(async (req: NextRequest) => {
   return NextResponse.json({
     ok: true,
     plan: {
-      id: tpl.id, name: plan.name, weeks: plan.weeks, start: plan.start,
+      id: tpl.id, name: plan.name, weeks: built.weeks.length, start: startDate,
       race_date: plan.race_date, plan_state: plan.plan_state,
-      total_km: plan.volume.reduce((n, v) => n + v.km, 0),
-      volume: plan.volume, intents: plan.intents,
+      total_km: tpl0.volume.reduce((n, v) => n + v.km, 0),
+      volume: tpl0.volume, intents: tpl0.intents,
+      weeks_generated: built.weeks.length, role: built.role,
+      generator: built.version,
       guardrails: plan.guardrails, benchmark: plan.benchmark,
     },
     corrections: plan.corrections,
-    flags: plan.flags,
+    /** the new generator's own flags, which name what it had to compromise */
+    flags: [...plan.flags, ...built.flags.map((f) => f.message)],
+    violations: built.violations,
     sessions_created: created,
   });
 });
