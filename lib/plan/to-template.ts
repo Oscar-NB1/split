@@ -79,6 +79,8 @@ function significance(s: Session): string | undefined {
 }
 
 function minutes(s: Session): number {
+  // What the prescription costs, where one was written.
+  if (s.minutes) return s.minutes;
   const k = String(s.kind);
   if (s.commitment) return FLAT_MINUTES.commitment;
   if (k in FLAT_MINUTES) return FLAT_MINUTES[k];
@@ -93,6 +95,13 @@ function minutes(s: Session): number {
  * whole point of the UNCALIBRATED flag upstream and it must survive the trip.
  */
 function target(s: Session): string | undefined {
+  /*
+   * The written prescription, where there is one.
+   *
+   * The screens and the watch both read this format; a session that arrived as
+   * "13.4 km @ Zone 4" rendered as a single line with nothing to do in it.
+   */
+  if (s.target_text) return s.target_text;
   const km = s.km ? `${s.km} km` : null;
   const p = s.prescription;
   if (!p) return km ?? undefined;

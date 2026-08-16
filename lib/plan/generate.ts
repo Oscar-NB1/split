@@ -2,6 +2,7 @@ import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, rungFor } from "./ladders";
+import { continuousRun, hyroxSession, qualityRun } from "./session";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
 import { type PhaseName, type Week, skeleton } from "./skeleton";
@@ -52,6 +53,10 @@ export type Params = ResolveInput & {
 export type Session = {
   day: number; kind: SlotKind | string; hard: boolean;
   label: string; km?: number;
+  /** the prescription, in the syntax the app parses and the watch understands */
+  target_text?: string;
+  /** how long it takes, from what is in it rather than from its distance */
+  minutes?: number;
   /** true when this is the athlete's own session, scheduled around rather than prescribed */
   commitment?: boolean;
   prescription: ReturnType<typeof prescribe> | null;
@@ -184,6 +189,66 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
           : null,
       };
     });
+
+    /*
+     * What is actually in each session, and what that costs.
+     *
+     * Until here a session was a name and a share of the week's kilometres, which
+     * is why "2 × 15 min" and "5 × 1000 m" both came out as 13.4 km and 80 minutes,
+     * and why the screen underneath either of them was empty. The prescription is
+     * written now — warm-up, the reps, the rest between them, the cool-down — and
+     * the distance and the time are read back off it.
+     *
+     * The easy runs absorb the difference, so the week still totals what the volume
+     * curve says: a quality session that costs less than its share gives the
+     * remainder back to the easy running rather than to nobody.
+     */
+    const cvPace = p.anchor?.cv_pace_s_per_km ?? 300;
+    // Easy is a fixed distance from the critical-velocity pace: there is no
+    // separate easy anchor, and inventing one here would be a second opinion.
+    const easyPace = Math.round(cvPace * 1.25);
+    /*
+     * The long run is paid first.
+     *
+     * It was paid last, out of whatever the quality sessions had not spent — which
+     * in a 54 km week left a "long run" of 4.4 km. It is the session the block is
+     * built from, so it takes its share of the week before anything else is sized,
+     * and the quality work fits around it.
+     */
+    const longRun = sessions.find((s) => String(s.kind) === "long_run");
+    if (longRun) {
+      const built = continuousRun(Math.max(5, Math.min(w.km * 0.30, runnable * 0.34)),
+        easyPace);
+      longRun.km = built.km;
+      longRun.target_text = built.target;
+      longRun.minutes = built.minutes;
+    }
+
+    let spent = longRun?.km ?? 0;
+    for (const s of sessions) {
+      const kind = String(s.kind);
+      if (kind === "long_run") continue;
+      if (kind === "quality_run" || kind === "benchmark") {
+        // No single session may exceed 40% of the week — the bound the plan asserts
+        // against itself, applied where the session is built rather than checked
+        // after the fact.
+        const built = qualityRun(s.label, cvPace, easyPace, w.km * 0.38);
+        s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+        if (built.title && kind === "quality_run") s.label = built.title;
+      } else if (kind === "hyrox") {
+        const built = hyroxSession(s.label, easyPace);
+        s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+      }
+      spent += s.km ?? 0;
+    }
+    const easies = sessions.filter((s) => String(s.kind) === "easy_run");
+    // Whatever the week has left over goes to the easy running, which is what easy
+    // running is for: the volume that makes the hard days possible.
+    const left = Math.max(easies.length * 3, runnable - spent);
+    for (const s of easies) {
+      const built = continuousRun(Math.max(3, left / easies.length), easyPace);
+      s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+    }
 
     return {
       ...w, allocation, benchmark: benchmarks.has(w.n), sessions,
