@@ -18,6 +18,7 @@ setClock(() => "2026-08-10");
  * a spin class fixed to Wednesday.
  */
 const HER: Intake = {
+  commitMode: {},
   hasRace: "Yes",
   discipline: "Hyrox doubles",
   raceDistance: null,

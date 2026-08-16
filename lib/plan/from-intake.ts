@@ -202,7 +202,8 @@ function commitmentsOf(x: Intake): Commitment[] {
       per_week: x.freq?.[c] ?? 1,
       fixed_days: (x.commitDay?.[c] ?? []).map((d) => DAY_INDEX[d]).filter((n) => n !== undefined),
       intensity: INTENSITY[c] ?? "medium",
-      mode: "add" as const,
+      // Asked now. It decides whether the commitment costs a slot or only load.
+      mode: (x.commitMode?.[c] === "replace" ? "replace" : "add") as "add" | "replace",
       locked: (x.commitDay?.[c] ?? []).length > 0,
     }));
 }

@@ -7,6 +7,7 @@ import IntakeStart from "./IntakeStart";
 import IntakeRaces, { type PastRace } from "./IntakeRaces";
 import IntakeBRaces, { type BRace } from "./IntakeBRaces";
 import IntakeGear from "./IntakeGear";
+import IntakeCommitments, { type Mode } from "./IntakeCommitments";
 import { GEAR_ASSUMED, dependentsOf, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
@@ -55,6 +56,8 @@ type Answers = {
   paceMin: number; paceSec: number; paceUnknown: boolean;
   days: string[]; commitments: string[];
   freq: Record<string, number>; commitDay: Record<string, string[]>;
+  /** whether each commitment sits on top of the plan or takes a slot */
+  commitMode: Record<string, Mode>;
   equipment: string[]; sled: string | null; injuries: string;
   volume: string; difficulty: string; benchmark: string;
   /** the two recent-volume answers, and where they came from */
@@ -74,7 +77,7 @@ const EMPTY: Answers = {
   hasRace: "", discipline: "", raceDistance: null, raceDate: null,
   role: null, division: null, base: "", runningSelf: "",
   paceMin: 32, paceSec: 0, paceUnknown: false,
-  days: [], commitments: [], freq: {}, commitDay: {},
+  days: [], commitments: [], freq: {}, commitDay: {}, commitMode: {},
   // Pre-ticked: see GEAR_ASSUMED. Deselectable like anything else.
   equipment: [...GEAR_ASSUMED], sled: null, injuries: "",
   volume: "Progressive", difficulty: "Challenging", benchmark: "offered",
@@ -495,7 +498,7 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      {q.kind === "chips" && (
+      {q.kind === "chips" && id !== "commitments" && (
         <>
           <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
             {optionsFor().map((o) => {
@@ -647,6 +650,15 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
       {q.kind === "goal" && (
         <IntakeGoal goal={a.goal} minutes={a.goalMin}
           onGoal={(g) => set("goal", g)} onMinutes={(m) => set("goalMin", m)} />
+      )}
+
+      {id === "commitments" && (
+        <IntakeCommitments chips={s.chips ?? []} picked={a.commitments}
+          freq={a.freq} days={a.commitDay} modes={a.commitMode}
+          onToggle={(c) => toggle("commitments", c)}
+          onFreq={(c, n) => set("freq", { ...a.freq, [c]: n })}
+          onDay={(c, d) => set("commitDay", { ...a.commitDay, [c]: d })}
+          onMode={(c, m) => set("commitMode", { ...a.commitMode, [c]: m })} />
       )}
 
       {q.kind === "gear" && (

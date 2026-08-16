@@ -21,7 +21,7 @@ const base = (o: Partial<Intake> = {}): Intake => ({
   pastRaces: [],
   bRaces: [],
   days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
-  commitments: [], freq: {}, commitDay: {},
+  commitments: [], freq: {}, commitDay: {}, commitMode: {},
   equipment: ["Sled — race weight", "SkiErg", "Rower", "Wall balls", "Treadmill"],
   sled: "Race weight and distance", injuries: null,
   volume: "Progressive", difficulty: "Challenging", benchmark: "offered",

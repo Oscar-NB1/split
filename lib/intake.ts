@@ -171,6 +171,14 @@ export type Intake = {
   freq: Record<string, number>;
   /** the days it is fixed to, if any */
   commitDay: Record<string, Day[]>;
+  /**
+   * Whether each commitment sits on top of the plan or takes a session's slot.
+   *
+   * Never asked before, so everything was assumed additive — for someone doing
+   * kickboxing twice a week that is two hard days the plan did not know it was
+   * adding. slots.ts has always read this distinction; nothing was setting it.
+   */
+  commitMode: Record<string, "add" | "replace">;
   equipment: Equipment[];
   sled: Sled | null;
   injuries: string | null;

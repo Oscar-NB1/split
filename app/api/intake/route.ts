@@ -57,6 +57,7 @@ const toIntake = (r: Row): Intake => ({
   // columns: they are answers, not relations, and nothing queries across them.
   ...(extraAnswers(r.answers)),
   days: r.days, commitments: r.commitments, freq: r.freq, commitDay: r.commit_day,
+  commitMode: (r.answers?.commitMode as Intake["commitMode"]) ?? {},
   equipment: r.equipment, sled: r.sled,
   injuries: r.injuries, volume: r.volume, difficulty: r.difficulty,
   benchmark: r.benchmark,
@@ -219,6 +220,8 @@ function parse(body: Record<string, unknown>): Intake {
     commitments,
     freq,
     commitDay,
+    commitMode: Object.fromEntries(commitments.map((c) => [c,
+      (body.commitMode as Record<string, unknown>)?.[c] === "replace" ? "replace" : "add"])),
     equipment: list(body.equipment, equipmentAllowed as readonly Intake["equipment"][number][]),
     sled: (str(body.sled) as Intake["sled"]) ?? null,
     injuries: str(body.injuries),
