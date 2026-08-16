@@ -723,3 +723,60 @@ create table if not exists archetypes (
 );
 create index if not exists archetypes_athlete
   on archetypes (athlete_id, derived_at desc);
+
+-- Connections and head-to-head (2026-08-16).
+--
+-- One row per pair, canonically ordered by user id so (A,B) and (B,A) cannot
+-- both exist — enforced, not merely intended. The direction still matters for
+-- who asked, so requester_id is kept alongside rather than lost to the ordering.
+create table if not exists connections (
+  id            uuid primary key default gen_random_uuid(),
+  low_id        uuid not null references users(id) on delete cascade,
+  high_id       uuid not null references users(id) on delete cascade,
+  requester_id  uuid not null references users(id) on delete cascade,
+  addressee_id  uuid not null references users(id) on delete cascade,
+  status        text not null default 'pending'
+    check (status in ('pending', 'accepted', 'declined', 'disconnected')),
+  -- single-use, seven days
+  invite_code   text unique,
+  invite_expires_at timestamptz,
+  scope         text not null default 'adherence',
+  created_at    timestamptz not null default now(),
+  responded_at  timestamptz,
+  check (low_id < high_id),
+  check (requester_id <> addressee_id)
+);
+create unique index if not exists connections_pair on connections (low_id, high_id);
+
+create table if not exists rivalries (
+  id            uuid primary key default gen_random_uuid(),
+  connection_id uuid not null unique references connections(id) on delete cascade,
+  started_at    timestamptz not null default now(),
+  -- fixed at creation from the requester's, so both sides agree when a week
+  -- ended. Without it they score different weeks and both are right.
+  timezone      text not null default 'Europe/Berlin',
+  requester_wins int not null default 0,
+  addressee_wins int not null default 0
+);
+
+-- One row per rivalry per ISO week. The prescription is snapshotted at week
+-- start: adaptation moves prescriptions, and rescoring a week retroactively
+-- because the plan changed would let someone lose a week they had already won.
+create table if not exists rivalry_weeks (
+  rivalry_id  uuid not null references rivalries(id) on delete cascade,
+  iso_week    text not null,              -- '2026-W34'
+  week_start  date not null,
+  requester   jsonb not null default '{}',
+  addressee   jsonb not null default '{}',
+  winner      text not null default 'undecided'
+    check (winner in ('requester', 'addressee', 'tie', 'undecided')),
+  points_requester int not null default 0,
+  points_addressee int not null default 0,
+  finalised_at timestamptz,
+  primary key (rivalry_id, iso_week)
+);
+
+-- Exact-match lookup only, and the one endpoint that leaks who exists.
+alter table users add column if not exists username text;
+create unique index if not exists users_username on users (lower(username))
+  where username is not null;
