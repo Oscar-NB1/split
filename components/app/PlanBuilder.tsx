@@ -7,7 +7,7 @@ import IntakeStart from "./IntakeStart";
 import IntakeRaces, { type PastRace } from "./IntakeRaces";
 import IntakeBRaces, { type BRace } from "./IntakeBRaces";
 import IntakeGear from "./IntakeGear";
-import { GEAR_ASSUMED, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
+import { GEAR_ASSUMED, dependentsOf, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
 /**
@@ -260,10 +260,29 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   }, []);
 
   const set = <K extends keyof Answers>(k: K, v: Answers[K]) => {
-    setA((p) => ({ ...p, [k]: v }));
+    setA((p) => {
+      const next = { ...p, [k]: v } as unknown as Record<string, unknown>;
+      if (p[k] === v) return next as unknown as Answers;
+      /*
+       * Forget what this answer decided.
+       *
+       * Answers determine the questions that follow, so nothing later should be
+       * able to invalidate something earlier. Going back and changing a parent is
+       * the one case that looks like it does — a division picked for doubles is
+       * meaningless once the discipline is singles. Clearing it here means the
+       * question is asked again with the right options, rather than the athlete
+       * being told at step 26 that step 9 is wrong.
+       */
+      const blank = EMPTY as unknown as Record<string, unknown>;
+      for (const dep of dependentsOf(String(k))) {
+        if (dep in blank) next[dep] = blank[dep];
+      }
+      return next as unknown as Answers;
+    });
     // Changing an answer clears the complaint about it: a message that outlives
     // the thing it described is worse than no message.
-    setProblems((ps) => ps.filter((p) => p.field !== k));
+    setProblems((ps) => ps.filter((p) => p.field !== k
+      && !dependentsOf(String(k)).includes(p.field)));
   };
 
   /**

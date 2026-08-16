@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  STEPS, filled, liveSteps, subFor, weeklyLoad, type Answers, type Step,
+  DEPENDENTS, STEPS, dependentsOf, filled, liveSteps, subFor, weeklyLoad,
+  type Answers, type Step,
 } from "../lib/intake-steps";
 
 const ids = (a: Answers, strava = false) => liveSteps(a, strava).map((s) => s.id);
@@ -128,4 +129,40 @@ test("secondary races are only asked about when there is a target", () => {
   assert.equal(has("No"), false);
   // and it never blocks the flow — most people have no second race
   assert.equal(filled(step("bRaces"), {}), true);
+});
+
+test("changing an answer forgets what that answer decided", () => {
+  /*
+   * The principle: answers determine the questions that follow, so nothing later
+   * can invalidate something earlier. Going back is the one case that looks like
+   * it does — a division chosen for doubles is meaningless once the discipline is
+   * singles — so the dependent answer is cleared rather than left to fail
+   * validation twenty steps later.
+   */
+  assert.ok(dependentsOf("discipline").includes("division"),
+    "the division lists differ per discipline");
+  assert.ok(dependentsOf("discipline").includes("runDelta"),
+    "and the partner questions only exist for doubles");
+  assert.ok(dependentsOf("hasRace").includes("raceDate"));
+  assert.ok(dependentsOf("hasRace").includes("bRaces"),
+    "no target means nothing to gate a secondary race against");
+  assert.ok(dependentsOf("raceDate").includes("bRaces"),
+    "moving the target changes what each B-race intent can afford");
+  assert.ok(dependentsOf("runningSelf").includes("paceUnknown"));
+  // Nothing depends on the last few answers, and claiming otherwise would clear
+  // things for no reason.
+  assert.deepEqual(dependentsOf("injuries"), []);
+  assert.deepEqual(dependentsOf("prefs"), []);
+});
+
+test("every dependent names a real step or an answer a step writes", () => {
+  const ids = new Set(STEPS.map((s) => s.id));
+  // fields written by composite steps rather than being steps themselves
+  const written = new Set(["goalMin", "paceMin", "paceSec", "paceUnknown", "equipment"]);
+  for (const [parent, deps] of Object.entries(DEPENDENTS)) {
+    assert.ok(ids.has(parent), `${parent} is a step`);
+    for (const d of deps) {
+      assert.ok(ids.has(d) || written.has(d), `${d} is a step or a written field`);
+    }
+  }
 });

@@ -141,6 +141,39 @@ export const STEPS: Step[] = [
  */
 export const GEAR_ASSUMED = ["Burpee floor space", "Run from the door"];
 
+/**
+ * Which answers stop being meaningful when an earlier one changes.
+ *
+ * Answers determine the questions that follow, so no later question should ever
+ * be able to invalidate an earlier answer. The one case where that appears to
+ * happen is going back: choose doubles, pick "Mixed doubles", return to step 2
+ * and choose singles — and the division you picked belongs to a list that is no
+ * longer on offer.
+ *
+ * That was surfacing as a complaint at the end of the flow, which is the wrong
+ * place and the wrong framing: the answer was not wrong when it was given, it
+ * stopped applying. So it is cleared when its parent changes, and the question is
+ * simply asked again with the right options.
+ */
+export const DEPENDENTS: Record<string, string[]> = {
+  // The division lists differ per discipline, and the partner questions only
+  // exist for doubles at all.
+  discipline: ["division", "runDelta", "stationDelta", "hyroxExp", "sled",
+    "pastRaces", "raceDistance", "equipment"],
+  // No race, no date, no goal, and nothing to gate a secondary race against.
+  hasRace: ["raceDate", "goal", "goalMin", "bRaces"],
+  // A target date moving changes what intent each secondary race can afford.
+  raceDate: ["bRaces"],
+  // The 5 km question is not asked of someone who does not run 5 km.
+  runningSelf: ["paceMin", "paceSec", "paceUnknown"],
+  // Both of these only exist when the week does not fit the days.
+  days: ["wantRestDay", "allowDoubles"],
+  targetSessions: ["wantRestDay", "allowDoubles"],
+};
+
+/** Everything that should be forgotten when `field` changes. */
+export const dependentsOf = (field: string): string[] => DEPENDENTS[field] ?? [];
+
 export type Answers = Record<string, unknown>;
 
 const str = (a: Answers, k: string) => String(a[k] ?? "");
