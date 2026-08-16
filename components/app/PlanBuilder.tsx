@@ -5,6 +5,7 @@ import IntakeKm from "./IntakeKm";
 import IntakeGoal from "./IntakeGoal";
 import IntakeStart from "./IntakeStart";
 import IntakeRaces, { type PastRace } from "./IntakeRaces";
+import IntakeBRaces, { type BRace } from "./IntakeBRaces";
 import { filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
@@ -64,6 +65,7 @@ type Answers = {
   runDelta: string | null; stationDelta: string | null;
   goal: string | null; goalMin: number; startDate: string | null;
   pastRaces: PastRace[];
+  bRaces: BRace[];
 };
 
 const EMPTY: Answers = {
@@ -77,7 +79,7 @@ const EMPTY: Answers = {
   volumeSource: null,
   hyroxExp: null, targetSessions: "", allowDoubles: null, wantRestDay: null,
   sessionPref: null, runDelta: null, stationDelta: null,
-  goal: null, goalMin: 60, startDate: null, pastRaces: [],
+  goal: null, goalMin: 60, startDate: null, pastRaces: [], bRaces: [],
 };
 
 /** The questions, in order, with the copy from the design. */
@@ -621,6 +623,12 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
       {q.kind === "goal" && (
         <IntakeGoal goal={a.goal} minutes={a.goalMin}
           onGoal={(g) => set("goal", g)} onMinutes={(m) => set("goalMin", m)} />
+      )}
+
+      {q.kind === "bRaces" && (
+        <IntakeBRaces races={a.bRaces} targetDate={a.raceDate}
+          onChange={(r) => set("bRaces", r)}
+          skipLabel={s.skip ?? ""} onSkip={() => setStep(step + 1)} />
       )}
 
       {q.kind === "races" && (

@@ -119,3 +119,13 @@ test("a 5 km time is not asked of someone who does not run 5 km", () => {
   assert.equal(asks("5 km nonstop"), true);
   assert.equal(asks("Half marathon fit"), true);
 });
+
+test("secondary races are only asked about when there is a target", () => {
+  // without a target there is no gap, and the gap is what gates the intent
+  const has = (hasRace: string) =>
+    liveSteps({ ...doubles, hasRace }, true).some((s) => s.id === "bRaces");
+  assert.equal(has("Yes"), true);
+  assert.equal(has("No"), false);
+  // and it never blocks the flow — most people have no second race
+  assert.equal(filled(step("bRaces"), {}), true);
+});

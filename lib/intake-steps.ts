@@ -13,7 +13,7 @@
 
 export type StepKind =
   | "choice" | "chips" | "date" | "time" | "text" | "prefs"
-  | "connect" | "km" | "goal" | "races" | "start" | "gear";
+  | "connect" | "km" | "goal" | "races" | "start" | "gear" | "bRaces";
 
 export type Step = {
   id: string;
@@ -46,6 +46,9 @@ export const STEPS: Step[] = [
     opts: c(["5 km"], ["10 km"], ["Half marathon"], ["Marathon"]) },
   { id: "raceDate", kind: "date", q: "When is race day?",
     sub: "The plan is built backwards from here." },
+  { id: "bRaces", kind: "bRaces", q: "Any other races before then?",
+    sub: "Anything you have entered. Each one costs training time, and how much depends on what you want from it.",
+    skip: "No other races" },
   { id: "goal", kind: "goal", q: "What do you want from race day?",
     sub: "This decides how hard the plan pushes, and whether it projects a time at all." },
   { id: "runDelta", kind: "choice", q: "Over 8 km, who is faster?",
@@ -170,7 +173,8 @@ export function liveSteps(a: Answers, stravaConnected: boolean): Step[] {
         return str(a, "discipline") === "Running race";
       case "division": case "sled": case "hyroxExp": case "pastRaces":
         return isHyrox(a);
-      case "raceDate": case "goal":
+      // Without a target there is no gap to gate a secondary race against.
+      case "raceDate": case "goal": case "bRaces":
         return str(a, "hasRace") === "Yes";
       /*
        * A 5 km time is not a question you can ask someone who does not run 5 km.
@@ -198,7 +202,8 @@ export function liveSteps(a: Answers, stravaConnected: boolean): Step[] {
 export function filled(s: Step, a: Answers): boolean {
   switch (s.kind) {
     // Nothing to fill in: connecting is optional and the rest are skippable.
-    case "connect": case "races": case "text": case "time":
+    // Nothing to fill in: connecting is optional and the rest are skippable.
+    case "connect": case "races": case "text": case "time": case "bRaces":
       return true;
     case "km":
       return Number(a[s.id]) > 0 || a[`${s.id}Unknown`] === true;

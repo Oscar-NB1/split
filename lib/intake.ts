@@ -154,6 +154,8 @@ export type Intake = {
     event: string; division: string | null; finish: string;
     run_avg: string; stations: string; rox: string;
   }[];
+  /** races entered between now and the target, each with its intent */
+  bRaces: { date: string; venue: string; intent: string }[];
   /** where those two came from — "strava" halves the unmeasured haircut */
   volumeSource: "strava" | "self" | null;
   days: Day[];

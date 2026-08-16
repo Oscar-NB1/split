@@ -195,6 +195,19 @@ function parse(body: Record<string, unknown>): Intake {
         && [r.finish, r.run_avg, r.stations, r.rox]
           .every((t) => /^\d{1,2}:[0-5]\d(:[0-5]\d)?$/.test(t)))
       .slice(0, 10),
+    /*
+     * Secondary races. The intent is re-checked server-side at /plans/:id/races
+     * against the gap — this is the athlete's answer, not the authority.
+     */
+    bRaces: (Array.isArray(body.bRaces) ? body.bRaces : [])
+      .map((r: Record<string, unknown>) => ({
+        date: String(r.date ?? ""),
+        venue: String(r.venue ?? "").trim().slice(0, 120),
+        intent: ["training", "sharpen", "compete"].includes(String(r.intent))
+          ? String(r.intent) : "training",
+      }))
+      .filter((r: { date: string }) => /^\d{4}-\d{2}-\d{2}$/.test(r.date))
+      .slice(0, 6),
     days: list(body.days, DAYS),
     commitments,
     freq,
@@ -361,7 +374,7 @@ const EXTRA_KEYS = [
   "wantRestDay", "sessionPref", "hyroxExp", "runDelta", "stationDelta", "gymAccess",
   // Typed-in race results. The only source of a roxzone in the whole app, so
   // they travel with the answers rather than being derived from anything.
-  "pastRaces",
+  "pastRaces", "bRaces",
 ] as const;
 
 const extraOf = (i: Intake) =>
