@@ -4,6 +4,7 @@ import { fmt } from "@/lib/dates";
 import type { Zone } from "@/lib/zones";
 import Mark from "./Mark";
 import Notifications from "./Notifications";
+import Away from "./Away";
 import type { User } from "./Shell";
 
 const TEAL = "#0A8FB0", NAVY = "#12314D";
@@ -107,6 +108,18 @@ export default function Profile({
           </button>
         </div>
       </div>
+
+      {/*
+        * Injuries and trips live here rather than behind Edit profile.
+        *
+        * Both are things an athlete changes when something happens — a niggle, a
+        * holiday booked — not when they are editing their name and weight. Two
+        * taps deep is where they were, and a trip nobody records is a trip the
+        * plan trains straight through.
+        */}
+      <Injuries notes={p?.injury_notes ?? ""} />
+
+      <Away />
 
       <Zones />
 
@@ -255,6 +268,43 @@ const planRow: React.CSSProperties = {
   borderRadius: "var(--r-card)", padding: "15px 16px", color: "var(--ink)",
   fontSize: 13, fontWeight: 600,
 };
+
+/**
+ * Anything to train around.
+ *
+ * Saved on blur rather than behind a button: it sits among sections that each
+ * save themselves, and one form control with its own Save would be the odd one
+ * out. Nothing parses it — the note under it says so, because an athlete who
+ * writes down an injury will otherwise assume the plan has taken it in.
+ */
+function Injuries({ notes }: { notes: string }) {
+  const [saved, setSaved] = useState<string | null>(null);
+
+  async function save(v: string) {
+    if (v.trim() === notes.trim()) return;
+    const r = await fetch("/api/profile", {
+      method: "PATCH", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ injury_notes: v }),
+    });
+    setSaved(r.ok ? "Saved." : "That did not save.");
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <span style={caps}>Injury history</span>
+      <textarea rows={4} defaultValue={notes}
+        onChange={() => setSaved(null)}
+        onBlur={(e) => save(e.target.value)}
+        placeholder="Anything that should stop a session…"
+        style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: 12,
+          padding: "13px 14px", fontSize: 14, lineHeight: 1.5, resize: "vertical",
+          color: "var(--ink)" }} />
+      <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
+        {saved ?? "Read by whoever writes your week. Nothing parses it automatically, so an injury that should stop a session still needs saying out loud."}
+      </span>
+    </div>
+  );
+}
 
 /**
  * Heart-rate zones, editable two ways.

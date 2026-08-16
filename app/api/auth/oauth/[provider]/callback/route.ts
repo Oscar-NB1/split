@@ -2,9 +2,27 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { issueSession } from "@/lib/session";
 import { saveTokens } from "@/lib/strava";
+import { ONBOARD_DAYS, discoverFor } from "@/lib/discover";
 import {
   PROVIDERS, type Provider, exchange, fillProfileGaps, link, readState, resolveIdentity,
 } from "@/lib/oauth";
+
+/**
+ * Eight weeks of history, before the athlete lands.
+ *
+ * Signing up with Strava and arriving at an empty app is the worst possible
+ * first impression, and the window is what week 1 of the plan is built from.
+ * Failures are swallowed: a rate limit must not undo a sign-in that worked, and
+ * the hourly sweep collects whatever is missing.
+ */
+async function importWindow(userId: string) {
+  try {
+    const got = await discoverFor(userId, ONBOARD_DAYS);
+    console.log("strava onboard import", userId, got.inserted, "of", got.seen);
+  } catch (e) {
+    console.error("strava onboard import failed", userId, e);
+  }
+}
 
 /** Coming back from Google or Strava. */
 const back = (to: string, outcome: string) =>
@@ -50,6 +68,8 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
         expires_at: profile.strava.expires_at,
         athlete: { id: Number(profile.strava.athleteId) },
       });
+      // After the tokens, because the import needs them.
+      await importWindow(outcome.userId);
       if (linkTo) return back("/", "linked");
       await issueSession(outcome.userId);
       return back("/", outcome.kind === "created" ? "created" : "signed-in");

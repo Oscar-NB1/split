@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import { zonesFor } from "@/lib/coach";
 import type { Prof } from "./Profile";
-import Away from "./Away";
 
 const LIME = "#C6FF5B", NAVY_D = "#0E2740", TEAL = "#0A8FB0";
 const TEAL_T = "var(--teal-tint)";
@@ -38,7 +37,7 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify({
         display_name: p!.display_name, hr_max: p!.hr_max,
-        weight_kg: p!.weight_kg, dob: p!.dob, injury_notes: p!.injury_notes,
+        weight_kg: p!.weight_kg, dob: p!.dob,
         gender: p!.gender,
       }),
     });
@@ -122,26 +121,8 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
           </div>
         </div>
 
-        <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
-            textTransform: "uppercase", color: INK55 }}>Injury history</span>
-          <textarea rows={4} value={p.injury_notes ?? ""}
-            onChange={(e) => set("injury_notes", e.target.value)}
-            style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: 12,
-              padding: "13px 14px", fontSize: 14, lineHeight: 1.5, resize: "vertical" }} />
-          {/* The design says the coach engine reads this before proposing a
-              volume increase. It does not: the generator takes structured
-              exclusion codes, and nothing turns this prose into them. Saying
-              otherwise would be the worst kind of false — someone would write
-              down an injury and trust it had been handled. */}
-          <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
-            Read by whoever writes your week. Nothing parses it automatically, so
-            an injury that should stop a session still needs saying out loud.
-          </span>
-        </label>
       </div>
 
-      <Away />
 
       {msg && <div className="errbox">{msg}</div>}
 

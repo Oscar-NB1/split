@@ -27,7 +27,7 @@ import RestTimer, { type Rest } from "./RestTimer";
 import Record from "./Record";
 import EditProfile from "./EditProfile";
 
-export type User = { id: string; display_name: string };
+export type User = { id: string; display_name: string; avatar_url?: string | null };
 export type Session = {
   id: string; user_id: string; planned_date: string; title: string; kind: string;
   planned_minutes: number | null; target: string | null; coach_note: string | null;
@@ -243,7 +243,15 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           ) : (
             <button className="whoami" onClick={() => setView("profile")} aria-label="Profile">
               <span className="nm">{me.display_name}</span>
-              <span className="avatar">{me.display_name.slice(0, 1).toUpperCase()}</span>
+              {/* The picture their provider already has, falling back to an
+                  initial rather than to a placeholder silhouette. */}
+              <span className="avatar">
+                {me.avatar_url
+                  ? <img src={me.avatar_url} alt="" width={28} height={28}
+                      style={{ width: "100%", height: "100%", objectFit: "cover",
+                        borderRadius: "50%" }} />
+                  : me.display_name.slice(0, 1).toUpperCase()}
+              </span>
             </button>
           )}
         </span>

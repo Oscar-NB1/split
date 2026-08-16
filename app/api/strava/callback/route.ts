@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { exchangeCode, readOauthState, saveTokens } from "@/lib/strava";
+import { ONBOARD_DAYS, discoverFor } from "@/lib/discover";
 
 /**
  * Coming back from Strava.
@@ -31,6 +32,25 @@ export async function GET(req: NextRequest) {
 
   try {
     await saveTokens(userId, await exchangeCode(code));
+
+    /*
+     * Pull eight weeks before returning, rather than leaving it to the hourly
+     * sweep. Connecting and then being shown "0 activities" is an app that
+     * looks broken at the exact moment it should look like magic — and the
+     * window matters beyond first impressions: the peak week and longest run
+     * that week 1 is built from both come out of it.
+     *
+     * Awaited on purpose. Serverless kills unawaited work, so fire-and-forget
+     * here would import nothing at all.
+     */
+    try {
+      const got = await discoverFor(userId, ONBOARD_DAYS);
+      console.log("strava onboard import", userId, got.inserted, "of", got.seen);
+    } catch (e) {
+      // A rate limit or a slow page must not undo a connection that worked.
+      // The hourly sweep picks up whatever is missing.
+      console.error("strava onboard import failed", e);
+    }
     return back("connected");
   } catch (e) {
     console.error("strava callback", e);

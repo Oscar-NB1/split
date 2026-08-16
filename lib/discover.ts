@@ -25,6 +25,20 @@ const LOOKBACK_DAYS = 14;
 /** Strava's page limit here; more than enough for two weeks of one athlete. */
 const PER_PAGE = 50;
 
+/**
+ * What to pull the moment Strava is connected.
+ *
+ * Eight weeks, because that is the window the plan actually reads: the peak week
+ * and the longest run that week 1 is built from both come from it, and an
+ * athlete who connects and sees nothing has been shown an app that does not
+ * work. The hourly sweep's fortnight is for catching new uploads, not for
+ * arriving.
+ */
+export const ONBOARD_DAYS = 56;
+
+/** Enough pages to cover eight weeks of a high-volume athlete. */
+const MAX_PAGES = 6;
+
 export type Discovered = {
   /** how many the summary list contained */
   seen: number;
@@ -46,12 +60,25 @@ export type Discovered = {
  */
 export async function discoverFor(userId: string, days = LOOKBACK_DAYS): Promise<Discovered> {
   const after = Math.floor(Date.now() / 1000) - days * 86_400;
-  const list = await stravaGet<StravaActivity[]>(
-    userId,
-    `/athlete/activities?after=${after}&per_page=${PER_PAGE}`,
-  );
-  const seen = Array.isArray(list) ? list : [];
-  if (seen.length === 0) return { seen: 0, inserted: 0, ids: [], requests: 1 };
+
+  /*
+   * Paginated, because a single page of fifty covers a fortnight and not eight
+   * weeks. Stops as soon as a page comes back short, so the fortnightly sweep
+   * still costs exactly one request.
+   */
+  const seen: StravaActivity[] = [];
+  let requests = 0;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const list = await stravaGet<StravaActivity[]>(
+      userId,
+      `/athlete/activities?after=${after}&per_page=${PER_PAGE}&page=${page}`,
+    );
+    requests++;
+    const batch = Array.isArray(list) ? list : [];
+    seen.push(...batch);
+    if (batch.length < PER_PAGE) break;
+  }
+  if (seen.length === 0) return { seen: 0, inserted: 0, ids: [], requests };
 
   // one query rather than one per activity: a fortnight is up to ~30 of them
   const known = await sql<{ provider_activity_id: string }[]>`
@@ -69,7 +96,7 @@ export async function discoverFor(userId: string, days = LOOKBACK_DAYS): Promise
     await upsertActivity(userId, a);
     ids.push(String(a.id));
   }
-  return { seen: seen.length, inserted: ids.length, ids, requests: 1 };
+  return { seen: seen.length, inserted: ids.length, ids, requests };
 }
 
 /**

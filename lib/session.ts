@@ -25,7 +25,8 @@ export async function currentUser(): Promise<User | null> {
   try {
     const { payload } = await jwtVerify(token, secret());
     const rows = await sql<User[]>`
-      select id, email, display_name from users where id = ${payload.sub as string}
+      select id, email, display_name, avatar_url
+        from users where id = ${payload.sub as string}
     `;
     return rows[0] ?? null;
   } catch {

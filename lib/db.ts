@@ -37,4 +37,6 @@ export type User = {
   id: string;
   email: string;
   display_name: string;
+  /** from whichever provider they signed in with; null until one supplies it */
+  avatar_url: string | null;
 };
