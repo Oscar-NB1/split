@@ -25,7 +25,7 @@ type Row = {
 };
 
 type Round = {
-  run_s: number; distance_m?: number; station_s?: number; transition_s?: number;
+  run_s: number; distance_m?: number; station_s?: number;
 };
 
 async function athleteOf(req: NextRequest, meId: string) {
@@ -57,11 +57,6 @@ function toCapture(r: Row, athlete: string): Capture {
       segments.push({ index: i++, type: "station", offset_s: t,
         duration_s: round.station_s, source: "derived_from_laps" });
       t += round.station_s;
-    }
-    if (round.transition_s) {
-      segments.push({ index: i++, type: "transition", offset_s: t,
-        duration_s: round.transition_s, source: "derived_from_laps" });
-      t += round.transition_s;
     }
   }
   return {

@@ -51,18 +51,8 @@ const solo = { doubles: false, intent: "compete" as const };
 
 test("a raced solo B-race is usable throughout", () => {
   const f = fieldUsability(solo);
-  assert.deepEqual(usableFields(f), ["roxzone", "run_paces", "station_times"]);
+  assert.deepEqual(usableFields(f), ["run_paces", "station_times"]);
   assert.equal(f.reason, undefined);
-});
-
-test("roxzone is always usable — a transition is a transition", () => {
-  // the only in-plan source of one now that benchmark retests are gone
-  for (const c of [
-    { doubles: true, partner_slower: true, my_share: 0.9, intent: "training" as const },
-    { doubles: false, intent: "training" as const },
-  ]) {
-    assert.equal(fieldUsability(c).roxzone, "usable");
-  }
 });
 
 test("a partner-paced run does not enter the anchor hierarchy", () => {
@@ -93,7 +83,7 @@ test("several distortions are all reported, not just the first", () => {
   const f = fieldUsability({
     doubles: true, partner_slower: true, my_share: 0.85, intent: "training",
   });
-  assert.equal(usableFields(f).join(), "roxzone");
+  assert.equal(usableFields(f).join(), "", "nothing survives all three");
   assert.match(f.reason!, /partner's pace/);
   assert.match(f.reason!, /rather than raced/);
   assert.match(f.reason!, /85%/);

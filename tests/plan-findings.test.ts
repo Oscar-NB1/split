@@ -8,7 +8,7 @@ const seg = (i: number, type: Segment["type"], d: number, off = 0): Segment =>
 
 /** Runs, stations and transitions laid end to end, with offsets that add up. */
 function capture(o: {
-  runs: number[]; stations?: number[]; transitions?: number[];
+  runs: number[]; stations?: number[];
   hr?: { t_offset_s: number; bpm: number }[];
   aborted?: boolean; submaximal?: boolean;
 } ): Capture {
@@ -17,7 +17,6 @@ function capture(o: {
   o.runs.forEach((r, n) => {
     segments.push(seg(i++, "run", r, t)); t += r;
     if (o.stations?.[n] !== undefined) { segments.push(seg(i++, "station", o.stations[n], t)); t += o.stations[n]; }
-    if (o.transitions?.[n] !== undefined) { segments.push(seg(i++, "transition", o.transitions[n], t)); t += o.transitions[n]; }
   });
   return {
     athlete_id: "a", protocol_version: 1, variant: "full",
@@ -77,39 +76,8 @@ test("a submaximal test says nothing about pacing", () => {
   assert.equal(find(read(capture({ runs: [200, 240, 244, 248], submaximal: true })), "Pacing"), undefined);
 });
 
-test("no heart-rate stream means no recovery reading", () => {
-  assert.equal(find(read(capture({ runs: [240, 250, 260, 270], transitions: [30, 30, 30] })), "Recovery"), undefined);
-});
-
-test("an inferred transition is never read as roxzone", () => {
-  // only a pressed lap measures a transition; a derived one is a guess at where
-  // a gap was, and roxzone is the thing it would corrupt
-  const c = capture({ runs: [240, 250, 260, 270], transitions: [60, 60, 60] });
-  for (const s of c.segments) if (s.type === "transition") s.low_confidence = true;
-  assert.equal(find(read(c), "Transitions"), undefined);
-});
-
 test("too few runs to say anything yields nothing at all", () => {
   assert.deepEqual(read(capture({ runs: [240] })), []);
-});
-
-// ---------------------------------------------------------------- recovery
-
-test("heart-rate fall across transitions bands the recovery", () => {
-  const c = capture({
-    runs: [240, 250, 260, 270], transitions: [30, 30, 30],
-    hr: Array.from({ length: 1300 }, (_, t) => ({ t_offset_s: t, bpm: 170 })),
-  });
-  // make each transition end 15 bpm below where it started
-  for (const s of c.segments.filter((x) => x.type === "transition")) {
-    for (const p of c.hr.series!) {
-      if (p.t_offset_s > s.offset_s && p.t_offset_s <= s.offset_s + s.duration_s) p.bpm = 155;
-    }
-  }
-  const r = find(read(c), "Recovery")!;
-  assert.equal(r.band, "fast");
-  assert.match(r.headline, /15 bpm per transition/);
-  assert.match(r.body, /across 3 transitions/);
 });
 
 // ------------------------------------------------- from the test to the plan

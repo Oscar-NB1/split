@@ -3,6 +3,17 @@ import { type Capture, type Segment } from "./capture";
 /**
  * Reading a benchmark.
  *
+ * Roxzone is deliberately absent, and Recovery with it — heart-rate clearance was
+ * only ever measured across the transitions the protocol no longer records, and
+ * a substitute derived from the gaps between runs would have been a different
+ * measurement wearing the same name.
+ *
+ * On roxzone: Time between stations was modelled as its own
+ * dimension and its own plan line, which meant every prescription depended on a
+ * number the app could only ever get by asking — and asking for it in four
+ * places produced four chances to disagree. Where inter-station time matters it
+ * is now a figure the athlete enters, not one the engine reasons about.
+ *
  * `capture.ts` records what happened; this says what it means. The split
  * matters because the numbers are facts and the reading is a judgement — the
  * capture can be replayed years later against a changed interpretation, which
@@ -80,20 +91,6 @@ const PACING = [
   { over: -Infinity, band: "conservative", severity: "neutral", priority: 30 },
 ] as const;
 
-/** Heart-rate fall per transition, in bpm. */
-const RECOVERY = [
-  { over: 12, band: "fast", severity: "good", note: "You clear work quickly, so short recoveries are usable." },
-  { over: 8, band: "moderate", severity: "neutral", note: "Normal clearance. Recoveries stay as written." },
-  { over: -Infinity, band: "slow", severity: "attention", note: "Slow clearance — easy days need to be genuinely easy." },
-] as const;
-
-/** Mean transition, in seconds. */
-const TRANSITIONS = [
-  { under: 30, band: "sharp", severity: "good" },
-  { under: 45.001, band: "average", severity: "neutral" },
-  { under: Infinity, band: "slow", severity: "attention" },
-] as const;
-
 /** How far apart the two sides have to fade before one is called the limiter. */
 const LIMITER_MARGIN = 0.03;
 
@@ -162,35 +159,6 @@ export function read(capture: Capture, previous?: Capture): Reading[] {
     });
   }
 
-  const drops = hrDrops(capture);
-  if (drops.length > 0) {
-    const drop = mean(drops);
-    const r = RECOVERY.find((b) => drop > b.over)!;
-    out.push({
-      dim: "Recovery", band: r.band, severity: r.severity, priority: 35,
-      headline: `Heart rate drops ${Math.round(drop)} bpm per transition`,
-      body: `Measured across ${drops.length} transitions. ${r.note}`,
-      effect: r.band === "slow" ? "Easy-run heart-rate ceiling lowered." : "Recovery intervals unchanged.",
-    });
-  }
-
-  // A derived transition is a guess at where a gap was, so it is never read as
-  // a measurement of roxzone — the one thing that only a pressed lap can say.
-  const transitions = capture.segments
-    .filter((s) => s.type === "transition" && !s.low_confidence && s.duration_s > 0)
-    .map((s) => s.duration_s);
-  if (transitions.length > 0) {
-    const t = mean(transitions);
-    const b = TRANSITIONS.find((x) => t < x.under)!;
-    out.push({
-      dim: "Transitions", band: b.band, severity: b.severity, priority: 45,
-      headline: `Transitions averaged ${Math.round(t)} seconds`,
-      body: b.band === "sharp" ? "Nothing to find here."
-        : `Across eight transitions on race day that is ${mmss(t * 8)} standing still.`,
-      effect: b.band === "sharp" ? "Roxzone target held." : "Every station session times its transitions.",
-    });
-  }
-
   const pace = mean(runs);
   const as = paceOf(capture.segments);
   const prevRuns = previous ? durationsOf(previous.segments, "run") : [];
@@ -217,21 +185,6 @@ export function read(capture: Capture, previous?: Capture): Reading[] {
   return out.sort((a, b) => b.priority - a.priority);
 }
 
-/** Fall in heart rate across each recorded transition. */
-function hrDrops(capture: Capture): number[] {
-  const series = capture.hr.series;
-  if (!series?.length) return [];
-  const at = (t: number) => {
-    let best = series[0];
-    for (const s of series) if (Math.abs(s.t_offset_s - t) < Math.abs(best.t_offset_s - t)) best = s;
-    return best.bpm;
-  };
-  return capture.segments
-    .filter((s) => s.type === "transition" && s.duration_s > 0)
-    .map((s) => at(s.offset_s) - at(s.offset_s + s.duration_s))
-    .filter((d) => d > 0);
-}
-
 // ------------------------------------------------- from the test to the plan
 
 /**
@@ -249,7 +202,7 @@ export const RULES: Record<string, { dim: string; rule: string; feel: string }> 
     feel: "Tuesday reps should feel repeatable — the last one at the same pace as the first.",
   },
   "Easy run pace": {
-    dim: "Recovery",
+    dim: "Durability",
     rule: "Easy pace sits 90 seconds slower than measured race pace, capped by your heart-rate ceiling.",
     feel: "Slower than you think it should be. That is the point of it.",
   },
@@ -263,20 +216,10 @@ export const RULES: Record<string, { dim: string; rule: string; feel: string }> 
     rule: "Whichever side degraded faster in the test takes points from the other.",
     feel: "One more station block a week, or one fewer, depending on which way it moved.",
   },
-  "Roxzone target": {
-    dim: "Transitions",
-    rule: "Eight transitions at 20% under your measured average — arithmetic, not a round number.",
-    feel: "Every station session now runs a clock between stations.",
-  },
   "Week 1 volume": {
     dim: "Durability",
     rule: "Volume only rises when fade improves; a heavy fade holds it where it is.",
     feel: "The week looks similar, but the quality inside it changes.",
-  },
-  "Quality sessions": {
-    dim: "Recovery",
-    rule: "A third quality session unlocks when heart rate clears fast between efforts.",
-    feel: "A hard day is added only if recovery says you can absorb it.",
   },
 };
 

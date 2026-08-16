@@ -10,7 +10,12 @@
  * other way to record one.
  */
 
-export type SegmentType = "run" | "station" | "transition";
+/**
+ * No transition type. A pressed lap between a station and the next run was only
+ * ever recorded to derive a roxzone, and roxzone is no longer modelled — so the
+ * protocol is runs and stations, and nothing infers a segment nobody asked for.
+ */
+export type SegmentType = "run" | "station";
 export type CaptureSource = "app_timer" | "manual" | "derived_from_laps";
 
 export type Segment = {
@@ -136,35 +141,6 @@ export function mapLaps(laps: Lap[], protocolDurationS: number): Mapping {
  * simulations, so anything found here is marked low-confidence and never
  * promoted to a capability.
  */
-export function inferTransitions(
-  segments: Segment[], velocity: { t: number; v: number }[] | null,
-): Segment[] {
-  if (!velocity || velocity.length === 0) return segments;
-  const STILL = 0.5; // m/s
-  const out: Segment[] = [];
-
-  for (const seg of segments) {
-    out.push(seg);
-    const end = seg.offset_s + seg.duration_s;
-    let gap = 0;
-    for (const p of velocity) {
-      if (p.t < end || p.t > end + 90) continue;
-      if (p.v <= STILL) gap++; else break;
-    }
-    if (gap >= 3) {
-      out.push({
-        index: seg.index + 0.5,
-        type: "transition",
-        offset_s: end,
-        duration_s: gap,
-        source: "derived_from_laps",
-        low_confidence: true,
-      });
-    }
-  }
-  return out;
-}
-
 // -------------------------------------------------------- progressive results
 
 export type Finding = {

@@ -105,7 +105,6 @@ export type ResultContext = {
 };
 
 export type FieldUsability = {
-  roxzone: Usability;
   run_paces: Usability;
   station_times: Usability;
   reason?: string;
@@ -142,10 +141,6 @@ export function fieldUsability(c: ResultContext): FieldUsability {
   }
 
   return {
-    // Transitions are transitions. Crossing a venue and queueing for a sled is
-    // the same job whatever the intent or the split, which is why this is the
-    // one field a B-race always measures.
-    roxzone: "usable",
     run_paces: run,
     station_times: stations,
     ...(reasons.length ? { reason: reasons.join("; ") } : {}),
@@ -154,7 +149,7 @@ export function fieldUsability(c: ResultContext): FieldUsability {
 
 /** Only what is usable writes a capability row, and it enters at rank 1. */
 export const usableFields = (f: FieldUsability): string[] =>
-  (["roxzone", "run_paces", "station_times"] as const).filter((k) => f[k] === "usable");
+  (["run_paces", "station_times"] as const).filter((k) => f[k] === "usable");
 
 // ------------------------------------------------------------------ hard limits
 

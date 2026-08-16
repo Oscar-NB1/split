@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DURATION_TOLERANCE, EXPECTED_LAPS, hrFindings, inferTransitions, isRunLap,
+  DURATION_TOLERANCE, EXPECTED_LAPS, hrFindings, isRunLap,
   mapLaps, timeFindings, type Lap,
 } from "../lib/plan/capture";
 
@@ -59,24 +59,6 @@ test("even a failed mapping still returns the segments to show the athlete", () 
   const m = mapLaps(clean.slice(0, 6), PROTOCOL_S);
   assert.equal(m.needsConfirmation, true);
   assert.equal(m.segments.length, 6, "there is something to confirm against");
-});
-
-test("an inferred transition is marked low confidence and never pressed for", () => {
-  // a benchmark transition is walking five metres in a gym; it says almost
-  // nothing about race roxzone, so it is never promoted
-  const segs = mapLaps(clean, PROTOCOL_S).segments;
-  const velocity = Array.from({ length: 400 }, (_, t) => ({
-    t, v: t >= 90 && t < 96 ? 0 : 3,
-  }));
-  const withGaps = inferTransitions(segs, velocity);
-  const t = withGaps.filter((s) => s.type === "transition");
-  assert.ok(t.length > 0);
-  assert.ok(t.every((s) => s.low_confidence), "always low confidence");
-});
-
-test("no velocity stream means no invented transitions", () => {
-  const segs = mapLaps(clean, PROTOCOL_S).segments;
-  assert.deepEqual(inferTransitions(segs, null), segs);
 });
 
 // ------------------------------------------------------ progressive results
