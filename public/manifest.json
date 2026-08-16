@@ -3,8 +3,8 @@
   "short_name": "Hyrox",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#11151A",
-  "theme_color": "#11151A",
+  "background_color": "#12314D",
+  "theme_color": "#12314D",
   "orientation": "portrait",
   "icons": [
     {

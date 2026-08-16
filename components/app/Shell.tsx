@@ -1,5 +1,6 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useEdgeBack } from "./useEdgeBack";
 import { mondayOf, today } from "@/lib/dates";
 import { type Block, daysToRace, weekOf } from "@/lib/block";
 import Week from "./Week";
@@ -151,6 +152,15 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     setView(s.kind === "strength" ? "strength" : "brief");
   };
   const back = BACK[view];
+  /**
+   * The same back action the arrow performs, reachable by swiping in from the
+   * left edge. A standalone PWA has no browser chrome, so without this the only
+   * way back is a control in the top corner — the one place a thumb cannot reach
+   * holding the phone one-handed. Null on the tab screens, where there is
+   * nowhere to go and the gesture should not be claimed at all.
+   */
+  const shell = useRef<HTMLDivElement>(null);
+  useEdgeBack(shell, back ? () => setView(back.to) : null);
   // The block belongs to whoever's plan it is. Without one, the header must not
   // count down to someone else's race.
   const block = data?.block ?? null;
@@ -195,7 +205,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions" : "Hyrox";
 
   return (
-    <div className="app">
+    <div className="app" ref={shell}>
       <header className="appbar">
         {back ? (
           <button className="backbtn" onClick={() => setView(back.to)}>
