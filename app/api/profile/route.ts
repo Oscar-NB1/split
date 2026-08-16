@@ -11,7 +11,8 @@ export const GET = route(async () => {
     hr_max: number | null; notify: Record<string, boolean>; display_name: string;
     email: string; dob: string | null; weight_kg: string | null; injury_notes: string | null;
   }[]>`
-    select hr_max, notify, display_name, email, dob::text as dob, weight_kg, injury_notes
+    select hr_max, notify, display_name, email, dob::text as dob, weight_kg, injury_notes,
+           avatar_url, gender
       from users where id = ${me.id}
   `;
   // both shapes: `connected` is the list the Profile screen's toggles read, and
@@ -40,6 +41,17 @@ export const GET = route(async () => {
     connections: conns,
     activities: counts?.activities ?? 0,
     since: counts?.since ?? null,
+    /**
+     * Which plan the app is reading, and when it was written.
+     *
+     * Shown at the foot of the profile. Worth nothing until a session looks
+     * wrong, and then the first thing anyone needs to know.
+     */
+    plan_source: (await sql<{ src: string }[]>`
+      select name || ' · updated ' || to_char(created_at, 'DD Mon YYYY') as src
+        from plan_templates where athlete_id = ${me.id} and active
+        order by created_at desc limit 1
+    `)[0]?.src ?? null,
   });
 });
 
@@ -61,6 +73,7 @@ export const PATCH = route(async (req: NextRequest) => {
       weight_kg = ${kg},
       dob = ${b.dob || null},
       injury_notes = ${b.injury_notes ?? null},
+      gender = ${typeof b.gender === "string" && b.gender.trim() ? b.gender.trim().slice(0, 40) : null},
       display_name = coalesce(${name}, display_name)
     where id = ${me.id}
   `;

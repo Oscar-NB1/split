@@ -17,6 +17,10 @@ export type Prof = {
   coachees?: { id: string; display_name: string; email: string }[];
   coached_by?: { id: string; display_name: string; email: string }[];
   has_plan?: boolean;
+  avatar_url?: string | null;
+  gender?: string | null;
+  /** which plan this screen is reading, for when something looks wrong */
+  plan_source?: string | null;
 };
 
 export default function Profile({
@@ -33,11 +37,14 @@ export default function Profile({
 }) {
   const [p, setP] = useState<Prof | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [units, setUnits] = useState("Metric");
+  const [cleared, setCleared] = useState(false);
 
   useEffect(() => {
     const t = localStorage.getItem("split-theme") === "dark" ? "dark" : "light";
     setTheme(t);
     document.documentElement.dataset.theme = t;
+    setUnits(localStorage.getItem("split-units") === "Imperial" ? "Imperial" : "Metric");
     fetch("/api/profile").then(async (r) => r.ok && setP(await r.json()));
   }, []);
 
@@ -58,9 +65,13 @@ export default function Profile({
         padding: 16, color: "var(--ink)",
       }}>
         <span style={{ width: 56, height: 56, flex: "none", borderRadius: "50%",
-          background: TEAL, color: "#fff", fontSize: 22, fontWeight: 800,
-          display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {(p?.display_name ?? me.display_name).slice(0, 1).toUpperCase()}
+          overflow: "hidden", background: TEAL, color: "#fff", fontSize: 22,
+          fontWeight: 800, display: "flex", alignItems: "center",
+          justifyContent: "center" }}>
+          {p?.avatar_url
+            ? <img src={p.avatar_url} alt="" width={56} height={56}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : (p?.display_name ?? me.display_name).slice(0, 1).toUpperCase()}
         </span>
         <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
           <span style={{ fontFamily: "var(--display)", fontSize: 19, fontWeight: 700 }}>
@@ -101,18 +112,16 @@ export default function Profile({
 
       <Notifications prefs={p?.notify ?? {}} />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-        <span style={caps}>Appearance</span>
-        <div style={{ display: "flex", gap: 3, background: OFF,
-          borderRadius: "var(--r-pill)", padding: 3 }}>
-          {(["light", "dark"] as const).map((t) => (
-            <button key={t} onClick={() => flip(t)} style={{
-              flex: 1, borderRadius: "var(--r-pill)", padding: "9px 12px", fontSize: 11,
-              fontWeight: 700, background: theme === t ? NAVY : "transparent",
-              color: theme === t ? "#fff" : INK55, textTransform: "capitalize",
-            }}>{t}</button>
-          ))}
-        </div>
+      {/* Both preferences are local to the device, not the account: which
+          units you read and whether the screen is dark are properties of the
+          phone in your hand, and syncing them across devices would be wrong. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <span style={caps}>Preferences</span>
+        <Group label="Units" options={["Metric", "Imperial"]} value={units}
+          onPick={(v) => { setUnits(v); localStorage.setItem("split-units", v); }} />
+        <Group label="Theme" options={["Light", "Dark"]}
+          value={theme === "dark" ? "Dark" : "Light"}
+          onPick={(v) => flip(v === "Dark" ? "dark" : "light")} />
       </div>
 
       {(p?.coachees ?? []).length > 0 && (
@@ -177,6 +186,22 @@ export default function Profile({
             The lap protocol, and what to do if you miss one
           </span>
         </button>
+        {/* Two taps, because it deletes a block. The confirm is the same button
+            saying what it is about to do rather than a dialog — there is nothing
+            here a dialog would add except a place to mis-tap. */}
+        {p?.has_plan && (
+          <button onClick={async () => {
+            if (!cleared) { setCleared(true); return; }
+            await fetch("/api/plan", { method: "DELETE" });
+            setCleared(false);
+            setP(await (await fetch("/api/profile")).json());
+          }} style={{
+            ...planRow, color: cleared ? "#C07A3E" : INK55,
+            borderColor: cleared ? "#C07A3E" : LINE,
+          }}>
+            {cleared ? "Tap again to delete every planned session" : "Clear current plan"}
+          </button>
+        )}
       </div>
 
       <a href="/api/auth/logout" style={{
@@ -185,6 +210,37 @@ export default function Profile({
         letterSpacing: ".06em", textTransform: "uppercase", color: INK55,
         textAlign: "center", display: "block",
       }}>Sign out</a>
+
+      {/* Which plan this screen is looking at. Invisible until something goes
+          wrong, and then the first thing worth knowing. */}
+      {p?.plan_source && (
+        <div style={{ fontSize: 10, color: INK40, textAlign: "center" }}>
+          {p.plan_source}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A segmented preference. Two or three options, one of them always on. */
+function Group({
+  label, options, value, onPick,
+}: {
+  label: string; options: string[]; value: string; onPick: (v: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink-70)" }}>{label}</span>
+      <div style={{ display: "flex", gap: 3, background: OFF,
+        borderRadius: "var(--r-pill)", padding: 3 }}>
+        {options.map((o) => (
+          <button key={o} onClick={() => onPick(o)} style={{
+            flex: 1, borderRadius: "var(--r-pill)", padding: "9px 12px", fontSize: 11,
+            fontWeight: 700, background: value === o ? NAVY : "transparent",
+            color: value === o ? "#fff" : INK55,
+          }}>{o}</button>
+        ))}
+      </div>
     </div>
   );
 }

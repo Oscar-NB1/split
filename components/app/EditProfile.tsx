@@ -2,8 +2,13 @@
 import { useEffect, useState } from "react";
 import { zonesFor } from "@/lib/coach";
 import type { Prof } from "./Profile";
+import Away from "./Away";
 
 const LIME = "#C6FF5B", NAVY_D = "#0E2740", TEAL = "#0A8FB0";
+const TEAL_T = "var(--teal-tint)";
+
+/** Offered rather than free text, and "prefer not to say" is a real answer. */
+const GENDERS = ["Male", "Female", "Other", "Prefer not to say"];
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
 const PAPER = "var(--paper)", LINE = "var(--line)";
 
@@ -34,6 +39,7 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
       body: JSON.stringify({
         display_name: p!.display_name, hr_max: p!.hr_max,
         weight_kg: p!.weight_kg, dob: p!.dob, injury_notes: p!.injury_notes,
+        gender: p!.gender,
       }),
     });
     setBusy(false);
@@ -48,8 +54,31 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
       <div style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
         lineHeight: 1.1, letterSpacing: "-.02em" }}>Edit profile</div>
 
+      {/* The photo is whatever the sign-in provider gave us. There is nowhere to
+          upload one yet, so this shows what we have rather than offering a
+          control that does nothing — the design's "drop a photo" copy is
+          deliberately not here until it is true. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ width: 72, height: 72, flex: "none", borderRadius: "50%",
+          overflow: "hidden", background: TEAL, color: "#fff", fontSize: 26,
+          fontWeight: 800, display: "flex", alignItems: "center",
+          justifyContent: "center" }}>
+          {p.avatar_url
+            ? <img src={p.avatar_url} alt="" width={72} height={72}
+                style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : (p.display_name ?? "?").slice(0, 1).toUpperCase()}
+        </span>
+        <span style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
+          {p.avatar_url
+            ? "From your Strava or Google account. Change it there and it follows."
+            : "No picture yet. Signing in with Google or Strava brings one across."}
+        </span>
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <Field label="Name" value={p.display_name ?? ""} onChange={(v) => set("display_name", v)} />
+        <Field label="Email" type="email" value={p.email ?? ""} onChange={() => {}} readOnly
+          note="Your sign-in identity. Changing it would change which account this is." />
         <Field label="Date of birth" type="date" value={p.dob ?? ""} onChange={(v) => set("dob", v)} />
         <Field label="Weight (kg)" type="number" value={p.weight_kg ?? ""} onChange={(v) => set("weight_kg", v)} />
         <Field label="Max heart rate (bpm)" type="number" value={p.hr_max ?? ""}
@@ -76,6 +105,23 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
           </span>
         </div>
 
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
+            textTransform: "uppercase", color: INK55 }}>Gender</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {GENDERS.map((g) => {
+              const on = p.gender === g;
+              return (
+                <button key={g} onClick={() => set("gender", on ? null : g)} style={{
+                  padding: "9px 14px", borderRadius: "var(--r-pill)", fontSize: 11,
+                  fontWeight: 600, border: `1px solid ${on ? TEAL : LINE}`,
+                  background: on ? TEAL_T : PAPER, color: on ? TEAL : INK55,
+                }}>{g}</button>
+              );
+            })}
+          </div>
+        </div>
+
         <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
             textTransform: "uppercase", color: INK55 }}>Injury history</span>
@@ -83,11 +129,19 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
             onChange={(e) => set("injury_notes", e.target.value)}
             style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: 12,
               padding: "13px 14px", fontSize: 14, lineHeight: 1.5, resize: "vertical" }} />
+          {/* The design says the coach engine reads this before proposing a
+              volume increase. It does not: the generator takes structured
+              exclusion codes, and nothing turns this prose into them. Saying
+              otherwise would be the worst kind of false — someone would write
+              down an injury and trust it had been handled. */}
           <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
-            Recorded for context. Nothing reads it automatically yet.
+            Read by whoever writes your week. Nothing parses it automatically, so
+            an injury that should stop a session still needs saying out loud.
           </span>
         </label>
       </div>
+
+      <Away />
 
       {msg && <div className="errbox">{msg}</div>}
 
@@ -101,15 +155,21 @@ export default function EditProfile({ onSaved }: { onSaved: () => void }) {
 }
 
 function Field({
-  label, value, onChange, type = "text",
-}: { label: string; value: string | number; onChange: (v: string) => void; type?: string }) {
+  label, value, onChange, type = "text", readOnly = false, note,
+}: {
+  label: string; value: string | number; onChange: (v: string) => void;
+  type?: string; readOnly?: boolean; note?: string;
+}) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".1em",
         textTransform: "uppercase", color: INK55 }}>{label}</span>
-      <input type={type} value={value} onChange={(e) => onChange(e.target.value)}
+      <input type={type} value={value} readOnly={readOnly}
+        onChange={(e) => onChange(e.target.value)}
         style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: 12,
-          padding: "13px 14px", fontSize: 14 }} />
+          padding: "13px 14px", fontSize: 14,
+          color: readOnly ? INK55 : "var(--ink)" }} />
+      {note && <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>{note}</span>}
     </label>
   );
 }

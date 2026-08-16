@@ -2,13 +2,19 @@
 import { useEffect, useMemo, useState } from "react";
 import IntakeConnect from "./IntakeConnect";
 import IntakeKm from "./IntakeKm";
+import IntakeGoal from "./IntakeGoal";
+import IntakeStart from "./IntakeStart";
 import { filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 
 /**
- * Steps whose controls are not built yet: a goal picker, a past-race lookup and
- * a start-date-plus-absences calendar. Filtered out rather than rendered blank.
+ * The past-race lookup is deliberately not here.
+ *
+ * It would read official Hyrox results — the most useful data in the form, and
+ * the only source of a real roxzone — but there is no sanctioned way to query
+ * them, and a screen that asks for an event name and then guesses at splits is
+ * worse than not asking. Dropped on instruction rather than left pending.
  */
-const PENDING = new Set(["goal", "pastRaces", "startDate"]);
+const PENDING = new Set(["pastRaces"]);
 
 const TEAL = "var(--teal)", LIME = "var(--lime)", NAVY = "var(--navy)";
 const INK = "var(--ink)", INK40 = "var(--ink-40)", INK55 = "var(--ink-55)", INK70 = "var(--ink-70)";
@@ -54,6 +60,7 @@ type Answers = {
   hyroxExp: string | null; targetSessions: string;
   allowDoubles: string | null; wantRestDay: string | null; sessionPref: string | null;
   runDelta: string | null; stationDelta: string | null;
+  goal: string | null; goalMin: number; startDate: string | null;
 };
 
 const EMPTY: Answers = {
@@ -67,6 +74,7 @@ const EMPTY: Answers = {
   volumeSource: null,
   hyroxExp: null, targetSessions: "", allowDoubles: null, wantRestDay: null,
   sessionPref: null, runDelta: null, stationDelta: null,
+  goal: null, goalMin: 60, startDate: null,
 };
 
 /** The questions, in order, with the copy from the design. */
@@ -550,6 +558,16 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           pulled={a.volumeSource === "strava" && Number((a as unknown as Record<string, unknown>)[id]) > 0}
           onChange={(v) => set(id as keyof Answers, v as never)}
           onUnknown={(v) => set(`${id}Unknown` as keyof Answers, v as never)} />
+      )}
+
+      {q.kind === "goal" && (
+        <IntakeGoal goal={a.goal} minutes={a.goalMin}
+          onGoal={(g) => set("goal", g)} onMinutes={(m) => set("goalMin", m)} />
+      )}
+
+      {q.kind === "start" && (
+        <IntakeStart startDate={a.startDate}
+          onStart={(d) => set("startDate", d)} />
       )}
 
       {q.kind === "text" && (

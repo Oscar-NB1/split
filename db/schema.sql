@@ -679,3 +679,25 @@ alter table athlete_intake add column if not exists recent_long_run_km numeric;
 alter table athlete_intake rename column recent_weekly_km   to peak_week_km;
 alter table athlete_intake rename column recent_long_run_km to longest_run_km;
 alter table athlete_intake add column if not exists volume_source text;
+
+-- Time away (2026-08-16). Kept against the athlete rather than the race target,
+-- because a trip is a fact about their life and outlives any one block — and
+-- because it is edited from two places: the intake, and the profile.
+--
+-- schedules.absences stays as the snapshot the plan was generated from. This is
+-- the living list; that is the record of what a given plan knew.
+create table if not exists absences (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid not null references users(id) on delete cascade,
+  from_date  date not null,
+  to_date    date not null,
+  -- no_training | some_access | normal
+  kind       text not null default 'some_access'
+    check (kind in ('no_training', 'some_access', 'normal')),
+  note       text,
+  created_at timestamptz not null default now(),
+  check (to_date >= from_date)
+);
+create index if not exists absences_user on absences (user_id, from_date);
+
+alter table users add column if not exists gender text;
