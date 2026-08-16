@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
+import { accessTokenFor } from "@/lib/strava";
 import { route } from "@/lib/http";
 import { SCOPE_ROWS } from "@/lib/strava";
 
@@ -74,6 +75,31 @@ export const GET = route(async () => {
  */
 export const DELETE = route(async (_req: NextRequest) => {
   const me = await requireUser();
+
+  /*
+   * Tell Strava, then forget the token.
+   *
+   * Deleting our row on its own left the authorisation standing on Strava's side:
+   * the token kept working, the athlete kept counting against the app's connected
+   * athlete quota, and "Disconnect" appeared to work while releasing nothing. On
+   * a one-athlete quota that is the difference between a second person being able
+   * to connect and not.
+   *
+   * Best effort on purpose. If Strava is down or the token has already expired,
+   * the athlete still gets disconnected here — an app that refuses to let go
+   * because a third party is unavailable is worse than one that lets go and
+   * leaves a stale grant behind.
+   */
+  try {
+    const token = await accessTokenFor(me.id);
+    await fetch("https://www.strava.com/oauth/deauthorize", {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+    });
+  } catch (e) {
+    console.error("strava deauthorize", me.id, e);
+  }
+
   await sql`delete from oauth_accounts where user_id = ${me.id} and provider = 'strava'`;
   return NextResponse.json({ ok: true, kept: "activities" });
 });
