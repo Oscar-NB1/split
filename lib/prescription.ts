@@ -146,6 +146,14 @@ export type Lift = {
   reps: number;
   /** kilograms, or null for bodyweight */
   load: number | null;
+  /**
+   * Seconds between sets, where the plan stated them.
+   *
+   * The rest timer was inferring it from the rep count, so it counted down a number
+   * nobody had chosen — three minutes after an accessory, the same three minutes
+   * after the heaviest set of the block. Where the prescription says, the prescription wins.
+   */
+  rest: number | null;
 };
 
 /**
@@ -163,10 +171,12 @@ export function parseStrength(target: string | null | undefined): Lift[] {
     const line = raw.replace(/^[-•*]\s*/, "").trim();
     if (!line) continue;
 
-    const m = line.match(/^(.+?)\s+(\d+)\s*[x×]\s*(\d+)\s*(?:@\s*([\d.]+)\s*(?:kg)?)?$/i);
+    const rest = /\brest\s+(\d+)\s*s\b/i.exec(line);
+    const body = line.replace(/\s*\brest\s+\d+\s*s\b/i, "").trim();
+    const m = body.match(/^(.+?)\s+(\d+)\s*[x×]\s*(\d+)\s*(?:@\s*([\d.]+)\s*(?:kg)?)?$/i);
     if (!m) {
       // unreadable, but not thrown away — a lift with no set scheme is still a lift
-      out.push({ name: line, sets: 0, reps: 0, load: null });
+      out.push({ name: body || line, sets: 0, reps: 0, load: null, rest: rest ? Number(rest[1]) : null });
       continue;
     }
     out.push({
@@ -174,6 +184,7 @@ export function parseStrength(target: string | null | undefined): Lift[] {
       sets: Number(m[2]),
       reps: Number(m[3]),
       load: m[4] === undefined ? null : Number(m[4]),
+      rest: rest ? Number(rest[1]) : null,
     });
   }
   return out;
@@ -233,7 +244,10 @@ export function paceCue(zone: string | null, prescribed: number | null): string 
  * prescription rather than stored, so changing "3x5" to "3x10" changes the rest
  * without anyone editing a second field.
  */
-export function restFor(reps: number | null | undefined): number {
+export function restFor(reps: number | null | undefined, prescribed?: number | null): number {
+  // What the plan said, where it said anything. The rep count is only a fallback
+  // for prescriptions written before rests were part of them.
+  if (prescribed && prescribed > 0) return prescribed;
   const r = reps ?? 8;
   return r <= 5 ? 180 : r <= 8 ? 120 : 90;
 }

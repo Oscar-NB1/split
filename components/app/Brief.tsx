@@ -16,7 +16,11 @@ export type SessionDetail = {
   };
   steps: StepGroup[];
   reps: number;
-  lifts: { name: string; sets: number; reps: number; load: number | null }[];
+  lifts: {
+    name: string; sets: number; reps: number; load: number | null;
+    /** seconds between sets, where the plan prescribed them */
+    rest: number | null;
+  }[];
   sets: SetRow[];
   feedback: { rpe: number | null; length_feel: string | null; note: string | null } | null;
   comments: { id: string; body: string; created_at: string; author_id: string; display_name: string }[];
@@ -426,7 +430,10 @@ export default function Brief({
           style={{ width: "100%", background: "var(--lime)", borderRadius: "var(--r-pill)",
             color: "var(--on-lime)", padding: 17, fontSize: 13, fontWeight: 800,
             letterSpacing: ".06em", textTransform: "uppercase" }}>
-          {done ? "Mark not done" : "Start session"}
+          {/* Not "start session": nothing in this app times a session live, and a
+              button that says start is a promise of a stopwatch that never arrives.
+              What it does is mark the session done. */}
+          {done ? "Mark not done" : "Mark it done"}
         </button>
         {groups.length > 0 && (
           <button disabled={busy} onClick={async () => {

@@ -31,6 +31,32 @@ const pc = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 
  * Planned and completed sessions say different things: before, the useful figures
  * are the prescription and the alarm; after, they are what actually happened.
  */
+/**
+ * The line under a session's name, on the card.
+ *
+ * It was the first line of the prescription, which is the warm-up: "2km Z2 warm up
+ * @ 5:26-5:52/km" over a session called 2 × 15 min. Nobody scanning their week
+ * needs the warm-up — they need the work, and the pace it is at.
+ */
+function workLine(target: string | null | undefined): string {
+  if (!target) return "";
+  const lines = target.split("\n").map((l) => l.replace(/^[-•*]\s*/, "").trim());
+  const reps = lines.findIndex((l) => /^\d+\s*x$/i.test(l));
+  if (reps > -1 && lines[reps + 1]) {
+    const n = lines[reps].replace(/x$/i, "").trim();
+    const work = lines[reps + 1]
+      .replace(/\bZ[1-5]\b/, "")
+      .replace(/@\s*/, "at ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return `${n} × ${work}`;
+  }
+  // A single-block session — an easy or long run — says itself.
+  const first = lines.find((l) => l && !/warm up/i.test(l));
+  return (first ?? "").replace(/\bZ[1-5]\b/, "").replace(/@\s*/, "at ")
+    .replace(/\s+/g, " ").trim();
+}
+
 function metrics(s: Session): [string, string, string] {
   const done = ["done", "adjusted", "unplanned"].includes(s.status);
   const pace = prescribedPace(s.title);
@@ -321,7 +347,7 @@ export default function Week({
                   lineHeight: 1.2, letterSpacing: "-.01em" }}>{s.title}</div>
                 {s.target && (
                   <div style={{ fontSize: 12, color: INK55, lineHeight: 1.45 }}>
-                    {s.target.split("\n")[0].replace(/^[-•*]\s*/, "")}
+                    {workLine(s.target)}
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 12, fontSize: 12, fontWeight: 600 }}>

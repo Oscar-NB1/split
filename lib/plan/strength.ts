@@ -23,7 +23,19 @@ import type { PhaseName } from "./skeleton";
  * than an instruction to work to a hard set.
  */
 
-export type Lift = { name: string; sets: number; reps: number; note?: string };
+export type Lift = {
+  name: string; sets: number; reps: number; note?: string;
+  /**
+   * Seconds between sets, prescribed rather than guessed.
+   *
+   * The rest is part of the prescription: five heavy singles with ninety seconds
+   * between them is a different session from the same five with three minutes. It
+   * was being inferred from the rep count, so the timer counted down a number the
+   * plan had never chosen — and an accessory got the same three minutes as the
+   * heaviest set of the block.
+   */
+  rest: number;
+};
 
 /** Only what the athlete said they can reach. */
 export type Kit = {
@@ -50,12 +62,17 @@ export function kitFrom(equipment: string[] = []): Kit {
  * where strength is actually made; specific stops chasing load and holds it while
  * the running turns race-shaped; the taper keeps the pattern and drops the work.
  */
-const SCHEME: Record<PhaseName, { sets: number; reps: number; note: string }> = {
-  base: { sets: 3, reps: 8, note: "Leave two in the tank on every set. The point of these weeks is to be able to lift, not to prove you can." },
-  build: { sets: 4, reps: 5, note: "Heaviest sets of the block. This is the phase that makes you stronger — everything after it maintains." },
-  specific: { sets: 3, reps: 6, note: "Hold the load, drop the volume. Nothing here should cost you Sunday." },
-  taper: { sets: 2, reps: 5, note: "Keep the pattern, drop the work. Nothing to prove this week." },
+const SCHEME: Record<PhaseName, {
+  sets: number; reps: number; rest: number; note: string;
+}> = {
+  base: { sets: 3, reps: 8, rest: 120, note: "Leave two in the tank on every set. The point of these weeks is to be able to lift, not to prove you can." },
+  build: { sets: 3, reps: 5, rest: 180, note: "Heaviest sets of the block. This is the phase that makes you stronger — everything after it maintains." },
+  specific: { sets: 3, reps: 6, rest: 150, note: "Hold the load, drop the volume. Nothing here should cost you Sunday." },
+  taper: { sets: 2, reps: 5, rest: 150, note: "Keep the pattern, drop the work. Nothing to prove this week." },
 };
+
+/** Accessories are not the session. Short rests, and out. */
+const ACCESSORY_REST = 60;
 
 /**
  * One session's lifts.
@@ -67,18 +84,22 @@ const SCHEME: Record<PhaseName, { sets: number; reps: number; note: string }> = 
 export function liftsFor(phase: PhaseName, week: number, kit: Kit): Lift[] {
   const s = SCHEME[phase] ?? SCHEME.base;
   const a = week % 2 === 1;
+  const heavy = { sets: s.sets, reps: s.reps, rest: s.rest };
 
   const hinge: Lift = kit.barbell
-    ? { name: a ? "Trap bar deadlift" : "Romanian deadlift", sets: s.sets, reps: s.reps }
+    ? { name: a ? "Trap bar deadlift" : "Romanian deadlift", ...heavy }
     : kit.kettlebells
-      ? { name: a ? "Kettlebell deadlift" : "Single-leg RDL", sets: s.sets, reps: s.reps + 2 }
-      : { name: "Single-leg hip thrust", sets: 3, reps: 12 };
+      ? { name: a ? "Kettlebell deadlift" : "Single-leg RDL", ...heavy, reps: s.reps + 2 }
+      : { name: "Single-leg hip thrust", sets: 3, reps: 12, rest: 90 };
 
   const squat: Lift = kit.barbell
-    ? { name: a ? "Front squat" : "Back squat", sets: s.sets, reps: s.reps }
+    ? { name: a ? "Front squat" : "Back squat", ...heavy }
     : kit.kettlebells
-      ? { name: "Goblet squat", sets: s.sets, reps: s.reps + 2 }
-      : { name: "Tempo squat", sets: 3, reps: 15, note: "Three seconds down, no pause, stand up fast." };
+      ? { name: "Goblet squat", ...heavy, reps: s.reps + 2 }
+      : {
+        name: "Tempo squat", sets: 3, reps: 15, rest: 90,
+        note: "Three seconds down, no pause, stand up fast.",
+      };
 
   /*
    * The single-leg lift is not optional.
@@ -90,49 +111,66 @@ export function liftsFor(phase: PhaseName, week: number, kit: Kit): Lift[] {
   const singleLeg: Lift = kit.barbell || kit.kettlebells
     ? {
       name: a ? "Rear-foot elevated split squat" : "Weighted step-up",
-      sets: 3, reps: 8, note: "Each leg. Slow down, drive up.",
+      sets: 3, reps: 8, rest: 120, note: "Each leg. Slow down, drive up.",
     }
-    : { name: "Reverse lunge", sets: 3, reps: 12, note: "Each leg." };
+    : { name: "Reverse lunge", sets: 3, reps: 12, rest: 90, note: "Each leg." };
+
+  const press: Lift = kit.barbell
+    ? { name: "Overhead press", sets: 3, reps: 8, rest: 120 }
+    : kit.kettlebells
+      ? { name: "Kettlebell push press", sets: 3, reps: 8, rest: 120, note: "Each arm." }
+      : { name: "Press-up", sets: 3, reps: 12, rest: 90 };
+
+  const pull: Lift = kit.rig
+    ? { name: "Pull-up", sets: 3, reps: 6, rest: 120 }
+    : kit.kettlebells
+      ? { name: "Bent-over row", sets: 3, reps: 10, rest: 120 }
+      : { name: "Inverted row", sets: 3, reps: 10, rest: 90 };
 
   /*
-   * Grip, deliberately last and deliberately heavy.
+   * Grip and core, on the end, at low effort.
    *
    * The farmers carry, the sled pull and the sandbag all end when the hands do, and
-   * grip is the one quality nobody trains until it costs them a race.
+   * grip is the one quality nobody trains until it costs them a race. It sits with
+   * the accessories because it does not need to be fresh — it needs to be done.
    */
   const grip: Lift = kit.kettlebells
     ? {
       name: a ? "Farmers carry" : "Suitcase carry",
-      sets: 4, reps: 40,
+      sets: 3, reps: 40, rest: ACCESSORY_REST,
       note: "Metres, not reps — 40 m a set, as heavy as you can hold without setting it down.",
     }
     : kit.rig
-      ? { name: "Dead hang", sets: 4, reps: 30, note: "Seconds, not reps. Stop before the grip fails." }
-      : { name: "Towel hang or heavy hold", sets: 4, reps: 30, note: "Seconds, not reps." };
+      ? { name: "Dead hang", sets: 3, reps: 30, rest: ACCESSORY_REST, note: "Seconds, not reps." }
+      : { name: "Towel hang or heavy hold", sets: 3, reps: 30, rest: ACCESSORY_REST, note: "Seconds, not reps." };
 
-  const press: Lift = kit.barbell
-    ? { name: "Overhead press", sets: 3, reps: 8 }
-    : kit.kettlebells
-      ? { name: "Kettlebell push press", sets: 3, reps: 8, note: "Each arm." }
-      : { name: "Press-up", sets: 3, reps: 12 };
+  const core: Lift = a
+    ? {
+      name: "Suitcase hold plank", sets: 3, reps: 40, rest: ACCESSORY_REST,
+      note: "Seconds. Anti-rotation — the sled is one-sided and so is the carry.",
+    }
+    : {
+      name: "Hanging or dead-bug hollow", sets: 3, reps: 12, rest: ACCESSORY_REST,
+      note: "Slow. It is the position you hold on the ski that this protects.",
+    };
 
-  const pull: Lift = kit.rig
-    ? { name: "Pull-up", sets: 3, reps: 6 }
-    : kit.kettlebells
-      ? { name: "Bent-over row", sets: 3, reps: 10 }
-      : { name: "Inverted row", sets: 3, reps: 10 };
-
-  // Four movements and grip: any more and it stops being a session anyone finishes
-  // on a day that also holds a run.
+  /*
+   * Four heavy movements, then two accessories.
+   *
+   * Both lower lifts every session, because the race is a leg event: the sled and
+   * the lunge take more out of an athlete than everything above the waist put
+   * together. Which upper lift alternates so the block is not the same six
+   * exercises for fifteen weeks.
+   */
   return a
-    ? [hinge, singleLeg, pull, grip]
-    : [squat, singleLeg, press, grip];
+    ? [hinge, singleLeg, pull, squat, grip, core]
+    : [squat, singleLeg, press, hinge, grip, core];
 }
 
 /** The lifts as the app's strength syntax, one per line. */
 export function strengthTarget(phase: PhaseName, week: number, kit: Kit): string {
   return liftsFor(phase, week, kit)
-    .map((l) => `${l.name} ${l.sets}x${l.reps}`)
+    .map((l) => `${l.name} ${l.sets}x${l.reps} rest ${l.rest}s`)
     .join("\n");
 }
 

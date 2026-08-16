@@ -41,16 +41,40 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
   const isStrength = s.kind === "strength";
   const lifts = isStrength ? parseStrength(s.target) : [];
 
+  /*
+   * What this athlete last lifted, per exercise.
+   *
+   * The plan does not prescribe loads — a number nobody has earned is worse than an
+   * instruction to work to a hard set — but an empty box every week is worse still:
+   * the athlete already knows what they squatted last Tuesday and the app is the
+   * thing that recorded it. Pre-filled from their own last logged set, so it starts
+   * where they left off and they only touch it when it changes.
+   */
+  const lastLoads = isStrength && lifts.length > 0
+    ? await sql<{ exercise: string; load_kg: number }[]>`
+        select distinct on (lower(st.exercise))
+               st.exercise, st.load_kg
+          from session_sets st
+          join planned_sessions p on p.id = st.session_id
+         where p.user_id = ${s.user_id} and st.load_kg is not null and st.done
+           and lower(st.exercise) = any(${lifts.map((l) => l.name.toLowerCase())})
+         order by lower(st.exercise), p.planned_date desc, st.set_no desc
+      `
+    : [];
+  const lastFor = (name: string) =>
+    lastLoads.find((r) => r.exercise.toLowerCase() === name.toLowerCase())?.load_kg ?? null;
+
   if (isStrength && lifts.length > 0) {
     // seed one row per prescribed set, once. `on conflict do nothing` is what
     // makes re-opening the screen harmless.
     for (const [ord, lift] of lifts.entries()) {
+      const seed = lift.load ?? lastFor(lift.name);
       for (let n = 1; n <= Math.max(1, lift.sets); n++) {
         await sql`
           insert into session_sets
             (session_id, exercise, ord, set_no, prescribed_load, prescribed_reps, load_kg, reps)
           values (${id}, ${lift.name}, ${ord}, ${n}, ${lift.load}, ${lift.reps || null},
-                  ${lift.load}, ${lift.reps || null})
+                  ${seed}, ${lift.reps || null})
           on conflict (session_id, ord, set_no) do nothing
         `;
       }

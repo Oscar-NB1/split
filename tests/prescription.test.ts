@@ -58,7 +58,22 @@ test("no target is no steps, not a crash", () => {
 
 test("a lift line parses into name, sets, reps and load", () => {
   const [l] = parseStrength("Trap bar deadlift 3x5 @ 130");
-  assert.deepEqual(l, { name: "Trap bar deadlift", sets: 3, reps: 5, load: 130 });
+  assert.deepEqual(l, { name: "Trap bar deadlift", sets: 3, reps: 5, load: 130, rest: null });
+});
+
+test("a rest between sets is part of the prescription", () => {
+  /*
+   * The rest timer was inferring it from the rep count, so it counted down a number
+   * nobody had chosen — three minutes after an accessory, the same three minutes
+   * after the heaviest set of the block.
+   */
+  const [heavy] = parseStrength("Back squat 3x5 rest 180s");
+  assert.equal(heavy.rest, 180);
+  assert.equal(heavy.name, "Back squat", "the rest is not part of the name");
+  const [accessory] = parseStrength("Farmers carry 3x40 rest 60s");
+  assert.equal(accessory.rest, 60);
+  // Written before rests existed: still parses, and the timer falls back.
+  assert.equal(parseStrength("Back squat 3x5")[0].rest, null);
 });
 
 test("the whole Strength A block parses", () => {

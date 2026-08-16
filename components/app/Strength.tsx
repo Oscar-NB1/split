@@ -51,7 +51,8 @@ export default function Strength({
    * next lift, or the end of the session.
    */
   function restAfter(row: SetRow): Rest {
-    const rest = restFor(row.prescribed_reps);
+    // The rest the plan prescribed for this lift, where it prescribed one.
+    const rest = restFor(row.prescribed_reps, d!.lifts[row.ord]?.rest ?? null);
     const sameLift = d!.sets.filter((x) => x.ord === row.ord).sort((a, b) => a.set_no - b.set_no);
     const nextInLift = sameLift.find((x) => x.set_no === row.set_no + 1);
     const load = (x: SetRow) => (x.load_kg != null ? `${x.load_kg} kg` : "BW");
