@@ -924,3 +924,18 @@ create table if not exists race_results (
   field_usability jsonb not null default '{}',
   captured_at    timestamptz not null default now()
 );
+
+-- Lap and split lookups by activity (2026-08-16).
+--
+-- Both are always read as "every row for this activity", and neither had an index
+-- for it — so the week screen's batched lap fetch planned a sequential scan over
+-- every lap ever recorded. Cheap now at a few thousand rows and wrong at the
+-- shape rather than the size.
+create index if not exists activity_laps_activity
+  on activity_laps (activity_id, lap_index);
+create index if not exists activity_splits_activity
+  on activity_splits (activity_id, split);
+
+-- The week screen's own query: one athlete, one date range, ordered by day.
+create index if not exists planned_sessions_user_date
+  on planned_sessions (user_id, planned_date);

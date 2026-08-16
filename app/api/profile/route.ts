@@ -7,36 +7,51 @@ import { route } from "@/lib/http";
 /** The athlete's own settings: zones come from hr_max, switches from notify. */
 export const GET = route(async () => {
   const me = await requireUser();
-  const [row] = await sql<{
-    hr_max: number | null; notify: Record<string, boolean>; display_name: string;
-    email: string; dob: string | null; weight_kg: string | null; injury_notes: string | null;
-  }[]>`
-    select hr_max, notify, display_name, email, dob::text as dob, weight_kg, injury_notes,
-           avatar_url, gender
-      from users where id = ${me.id}
-  `;
-  // both shapes: `connected` is the list the Profile screen's toggles read, and
-  // `connections` carries the date, which the connections screen shows so a
-  // connection made two years ago is distinguishable from one made this morning
-  const conns = await sql<{ provider: string; updated_at: string }[]>`
-    select provider, updated_at::text as updated_at
-      from oauth_accounts where user_id = ${me.id} order by provider
-  `;
-  const [counts] = await sql<{ activities: number; since: string | null }[]>`
-    select count(*)::int as activities, min(local_date)::text as since
-      from activities where user_id = ${me.id}
-  `;
+  /*
+   * Six independent reads, fired together.
+   *
+   * They ran in sequence, which cost six round trips to build one screen. None of
+   * them depends on another, so the only thing the ordering bought was latency.
+   */
+  const [[row], conns, [counts], [plan], mine, theirs, [src]] = await Promise.all([
+    sql<{
+      hr_max: number | null; notify: Record<string, boolean>; display_name: string;
+      email: string | null; dob: string | null; weight_kg: number | null;
+      injury_notes: string | null; avatar_url: string | null; gender: string | null;
+    }[]>`
+      select hr_max, notify, display_name, email, dob::text as dob, weight_kg,
+             injury_notes, avatar_url, gender
+        from users where id = ${me.id}
+    `,
+    sql<{ provider: string; updated_at: string }[]>`
+      select provider, updated_at::text as updated_at
+        from oauth_accounts where user_id = ${me.id}
+    `,
+    sql<{ activities: number; since: string | null }[]>`
+      select count(*)::int as activities, min(local_date)::text as since
+        from activities where user_id = ${me.id}
+    `,
+    sql<{ ok: boolean }[]>`
+      select exists (select 1 from plan_templates
+                      where athlete_id = ${me.id} and active) as ok
+    `,
+    coachees(me.id),
+    coachedBy(me.id),
+    sql<{ src: string }[]>`
+      select name || ' · updated ' || to_char(created_at, 'DD Mon YYYY') as src
+        from plan_templates where athlete_id = ${me.id} and active
+        order by created_at desc limit 1
+    `,
+  ]);
+
   return NextResponse.json({
     ...(row ?? { hr_max: null, notify: {} }),
     weight_kg: row?.weight_kg == null ? null : Number(row.weight_kg),
     // read from the coaching table rather than hardcoded, so a second athlete
     // appears here without a code change
-    has_plan: (await sql<{ ok: boolean }[]>`
-      select exists (select 1 from plan_templates
-                      where athlete_id = ${me.id} and active) as ok
-    `)[0]?.ok ?? false,
-    coachees: await coachees(me.id),
-    coached_by: await coachedBy(me.id),
+    has_plan: plan?.ok ?? false,
+    coachees: mine,
+    coached_by: theirs,
     connected: conns.map((c) => c.provider),
     connections: conns,
     activities: counts?.activities ?? 0,
@@ -47,11 +62,7 @@ export const GET = route(async () => {
      * Shown at the foot of the profile. Worth nothing until a session looks
      * wrong, and then the first thing anyone needs to know.
      */
-    plan_source: (await sql<{ src: string }[]>`
-      select name || ' · updated ' || to_char(created_at, 'DD Mon YYYY') as src
-        from plan_templates where athlete_id = ${me.id} and active
-        order by created_at desc limit 1
-    `)[0]?.src ?? null,
+    plan_source: src?.src ?? null,
   });
 });
 

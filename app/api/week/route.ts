@@ -59,15 +59,40 @@ export const GET = route(async (req: NextRequest) => {
    * metric." Counted off the work laps of every completed session that states a
    * pace, so a session with no laps contributes nothing rather than a zero.
    */
+  /*
+   * One query for every session's laps, not one per session.
+   *
+   * This ran inside the loop, so a full week of completed sessions meant up to
+   * ten sequential round trips to build one number — and every one of them was
+   * crossing the Atlantic until the region was fixed. Fetched together and
+   * grouped in memory: the rows are small and there are at most a few hundred.
+   */
+  const wanted = sessions
+    .filter((s) => prescribedPace(String(s.title ?? "")) && s.activity_id
+      && ["done", "adjusted"].includes(String(s.status)))
+    .map((s) => String(s.activity_id));
+
+  const lapsByActivity = new Map<string, LapRow[]>();
+  if (wanted.length > 0) {
+    const rows = await sql<(LapRow & { activity_id: string })[]>`
+      select activity_id, lap_index, name, distance_m, moving_seconds, elapsed_seconds,
+             avg_speed_ms, max_speed_ms, avg_hr, max_hr
+        from activity_laps
+       where activity_id = any(${wanted})
+       order by activity_id, lap_index
+    `;
+    for (const r of rows) {
+      const list = lapsByActivity.get(r.activity_id) ?? [];
+      list.push(r);
+      lapsByActivity.set(r.activity_id, list);
+    }
+  }
+
   let repsOff = 0;
   for (const s of sessions) {
     const pace = prescribedPace(String(s.title ?? ""));
     if (!pace || !s.activity_id || !["done", "adjusted"].includes(String(s.status))) continue;
-    const laps = await sql<LapRow[]>`
-      select lap_index, name, distance_m, moving_seconds, elapsed_seconds,
-             avg_speed_ms, max_speed_ms, avg_hr, max_hr
-        from activity_laps where activity_id = ${s.activity_id} order by lap_index
-    `;
+    const laps = lapsByActivity.get(String(s.activity_id)) ?? [];
     if (laps.length === 0) continue;
     const n = (v: unknown) => (v == null ? null : Number(v));
     const { segments } = classifySegments(laps.map((l) => ({

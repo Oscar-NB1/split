@@ -130,6 +130,17 @@ export const STEPS: Step[] = [
     sub: "Both can be changed later without rebuilding the block." },
 ];
 
+/**
+ * What the gear step starts with ticked.
+ *
+ * Floor space and running from the door are not equipment, they are the absence
+ * of an obstacle — nearly everyone has both, and making someone confirm they own
+ * a floor reads as a form that has not thought about them. Everything requiring
+ * an actual purchase or a gym stays off, because a pre-ticked treadmill would put
+ * treadmill sessions in the plan of someone who does not have one.
+ */
+export const GEAR_ASSUMED = ["Burpee floor space", "Run from the door"];
+
 export type Answers = Record<string, unknown>;
 
 const str = (a: Answers, k: string) => String(a[k] ?? "");

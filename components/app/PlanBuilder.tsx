@@ -6,7 +6,7 @@ import IntakeGoal from "./IntakeGoal";
 import IntakeStart from "./IntakeStart";
 import IntakeRaces, { type PastRace } from "./IntakeRaces";
 import IntakeBRaces, { type BRace } from "./IntakeBRaces";
-import { filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
+import { GEAR_ASSUMED, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
 /**
@@ -73,7 +73,8 @@ const EMPTY: Answers = {
   role: null, division: null, base: "", runningSelf: "",
   paceMin: 32, paceSec: 0, paceUnknown: false,
   days: [], commitments: [], freq: {}, commitDay: {},
-  equipment: [], sled: null, injuries: "",
+  // Pre-ticked: see GEAR_ASSUMED. Deselectable like anything else.
+  equipment: [...GEAR_ASSUMED], sled: null, injuries: "",
   volume: "Progressive", difficulty: "Challenging", benchmark: "offered",
   longestRun: 0, peakWeek: 0, longestRunUnknown: false, peakWeekUnknown: false,
   volumeSource: null,
@@ -242,7 +243,8 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           raceDate: i.race_date, role: i.role, division: i.division, base: i.base,
           runningSelf: i.running_self, paceMin: i.pace_min ?? 32, paceSec: i.pace_sec ?? 0,
           paceUnknown: i.pace_unknown, days: i.days ?? [], commitments: i.commitments ?? [],
-          freq: i.freq ?? {}, commitDay: i.commit_day ?? {}, equipment: i.equipment ?? [],
+          freq: i.freq ?? {}, commitDay: i.commit_day ?? {},
+          equipment: (i.equipment?.length ? i.equipment : [...GEAR_ASSUMED]),
           sled: i.sled, injuries: i.injuries ?? "", volume: i.volume,
           difficulty: i.difficulty, benchmark: "offered",
           // stored answers win over a Strava prefill: they were confirmed once
