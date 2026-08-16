@@ -7,6 +7,23 @@
  * enforces, and the capability hierarchy admits only what this says is usable.
  */
 
+/**
+ * What a second race can be.
+ *
+ * Per race rather than inherited from the target: a singles athlete entering a
+ * doubles is entering a different event, and its result is read against
+ * different standards. "Other event" is here so an obstacle race or a swim is
+ * enterable — it costs training time whatever it is called.
+ */
+export const B_KINDS = [
+  "Hyrox singles", "Hyrox doubles", "Running race", "Other event",
+] as const;
+export type BKind = (typeof B_KINDS)[number];
+
+/** Division only means anything for the two Hyrox kinds. */
+export const kindHasDivision = (k: string | null): boolean =>
+  k === "Hyrox singles" || k === "Hyrox doubles";
+
 export const INTENTS = ["training", "sharpen", "compete"] as const;
 export type Intent = (typeof INTENTS)[number];
 

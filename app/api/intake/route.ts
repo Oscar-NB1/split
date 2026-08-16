@@ -6,7 +6,7 @@ import { materialise } from "@/lib/templates";
 import {
   BASE, BENCH_VARIANTS, COMMITMENT, COMMITMENTS, DAYS, DIFFICULTY, DISCIPLINE,
   DIVISION_DOUBLES, DIVISION_SOLO, EQUIPMENT, EQUIPMENT_RUNNING, HAS_RACE,
-  RACE_DISTANCE, ROLE, RUNNING_SELF, RUN_CEIL, SLED, VOLUME_PREF,
+  DIVISION, RACE_DISTANCE, ROLE, RUNNING_SELF, RUN_CEIL, SLED, VOLUME_PREF,
   type Day, type Intake, liveQuestions, validate,
 } from "@/lib/intake";
 import { generate as legacyGenerate, resolve } from "@/lib/generate";
@@ -14,7 +14,9 @@ import { generate as buildPlan } from "@/lib/plan/generate";
 import { paramsFrom } from "@/lib/plan/from-intake";
 import { toTemplate } from "@/lib/plan/to-template";
 import { recentFor } from "@/lib/recent";
-import { checkIntent, intentLocked, type Intent } from "@/lib/race/brace";
+import {
+  B_KINDS, checkIntent, intentLocked, type Intent,
+} from "@/lib/race/brace";
 import { today } from "@/lib/dates";
 
 /**
@@ -223,7 +225,11 @@ function parse(body: Record<string, unknown>): Intake {
     bRaces: (Array.isArray(body.bRaces) ? body.bRaces : [])
       .map((r: Record<string, unknown>) => ({
         date: String(r.date ?? ""),
-        venue: String(r.venue ?? "").trim().slice(0, 120),
+        kind: B_KINDS.includes(String(r.kind) as never) ? String(r.kind) : null,
+        // Checked against the whole list rather than the kind's own, because the
+        // kind is what says which list applies and it may be missing.
+        division: DIVISION.includes(String(r.division) as never)
+          ? String(r.division) : null,
         intent: ["training", "sharpen", "compete"].includes(String(r.intent))
           ? String(r.intent) : "training",
       }))
@@ -451,8 +457,8 @@ export const POST = route(async (req: NextRequest) => {
           athlete_id, race_date, venue, discipline, division, role, intent,
           intent_locked
         ) values (
-          ${me.id}, ${b.date}, ${b.venue || null}, ${intake.discipline},
-          ${intake.division}, 'secondary',
+          ${me.id}, ${b.date}, null, ${b.kind ?? intake.discipline},
+          ${b.division}, 'secondary',
           ${ok.ok ? b.intent : "training"},
           ${intentLocked(b.date, today())}
         )

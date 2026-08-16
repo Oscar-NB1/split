@@ -724,6 +724,8 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
 
       {q.kind === "bRaces" && (
         <IntakeBRaces races={a.bRaces} targetDate={a.raceDate}
+          targetLabel={[a.discipline, a.raceDistance].filter(Boolean).join(" · ")
+            || "Your target race"}
           onChange={(r) => set("bRaces", r)}
           skipLabel={s.skip ?? ""} onSkip={() => setStep(step + 1)} />
       )}

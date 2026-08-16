@@ -161,8 +161,16 @@ export type Intake = {
     event: string; division: string | null; finish: string;
     run_avg: string; stations: string; rox: string;
   }[];
-  /** races entered between now and the target, each with its intent */
-  bRaces: { date: string; venue: string; intent: string }[];
+  /**
+   * Races entered between now and the target, each with its intent.
+   *
+   * The discipline and division are per race rather than inherited from the
+   * target: a Hyrox singles athlete entering a doubles in August is entering a
+   * different event, and the result is read against different standards.
+   */
+  bRaces: {
+    date: string; kind: string | null; division: string | null; intent: string;
+  }[];
   /** where those two came from — "strava" halves the unmeasured haircut */
   volumeSource: "strava" | "self" | null;
   days: Day[];
