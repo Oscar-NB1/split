@@ -6,6 +6,7 @@ import {
   continuousRun, hyroxClass, hyroxSession, longRun, qualityRun, type LongShape,
 } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
+import { applyBRaces } from "./braces";
 import { whyFor } from "./why";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
@@ -54,6 +55,16 @@ export type Params = ResolveInput & {
    */
   benchmark?: boolean;
   week_start: (n: number) => string;
+  /**
+   * Race day, and any race the athlete has entered before it.
+   *
+   * The plan was built backwards from the race date and then never wrote the race
+   * into it: race day arrived as an ordinary Sunday long run, and a B-race entered
+   * in the intake reshaped nothing. Both are sessions, and the weeks around them
+   * are different weeks.
+   */
+  race_date?: string | null;
+  b_races?: { date: string; intent: "training" | "sharpen" | "compete"; full_event: boolean }[];
   /** the athlete's first day, which may be mid-week; week 1 is short */
   first_day?: string;
 };
@@ -475,7 +486,137 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     };
   });
 
-  return { version: GENERATOR_VERSION, role, resolved: r, weeks, flags };
+  /*
+   * The races themselves.
+   *
+   * The block is built backwards from race day and then never wrote it down: race
+   * day arrived as an ordinary Sunday long run. A race is a session — it replaces
+   * whatever was on that day rather than being added beside it — and the weeks
+   * around a secondary race are different weeks, which is what applyBRaces has been
+   * built and tested to do and has never once been called.
+   */
+  const dayOf = (date: string) => {
+    const first = p.week_start(1);
+    const days = Math.round(
+      (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86_400_000);
+    if (days < 0) return null;
+    return { week: Math.floor(days / 7) + 1, day: days % 7 };
+  };
+
+  let withRaces = weeks;
+  const secondaries = (p.b_races ?? [])
+    .map((b) => ({ at: dayOf(b.date), b }))
+    .filter((x): x is { at: { week: number; day: number }; b: typeof x.b } => !!x.at)
+    .filter((x) => x.at.week <= weeks.length);
+
+  if (secondaries.length > 0) {
+    const applied = applyBRaces(
+      withRaces as never,
+      secondaries.map((x) => ({
+        week: x.at.week, day: x.at.day, intent: x.b.intent, full_event: x.b.full_event,
+      })),
+    );
+    withRaces = applied.weeks as never;
+    for (const f of applied.flags) flags.push(f);
+
+    // The race itself, on the day, replacing what was there.
+    for (const x of secondaries) {
+      const w = withRaces.find((y) => y.n === x.at.week);
+      if (!w) continue;
+      (w.sessions as Session[]) = [
+        ...(w.sessions as Session[]).filter((sn) => sn.day !== x.at.day),
+        {
+          day: x.at.day, kind: "race", hard: true,
+          label: x.b.full_event ? "Race · Hyrox" : "Race",
+          minutes: x.b.full_event ? 75 : 60,
+          why_text: `A race you entered. ${
+            x.b.intent === "compete" ? "You said this one matters, so the week either side of it is built around it."
+            : x.b.intent === "sharpen" ? "Freshened up for two days, easy for two after."
+            : "Run as training — slot it in and carry on."}`,
+        } as Session,
+      ].sort((a, b) => a.day - b.day);
+    }
+  }
+
+  const target = p.race_date ? dayOf(p.race_date) : null;
+  if (target && target.week <= withRaces.length) {
+    const w = withRaces.find((y) => y.n === target.week);
+    if (w) {
+      /*
+       * Race week is a taper, not a lighter version of a normal week.
+       *
+       * It was the same six sessions with the volume scaled — two quality runs, two
+       * Hyrox sessions and a long run, four days before a race. What race week has
+       * to do is keep the athlete sharp and get out of the way: one short session at
+       * race pace to remind the legs what it feels like, one easy session on the
+       * stations, two days entirely clear before the gun.
+       *
+       * Sessions are placed relative to race day rather than to Monday, because a
+       * Saturday race and a Sunday race are different weeks.
+       */
+      const raceDay = target.day;
+      const before = (n: number) => raceDay - n;
+      const keep: Session[] = [];
+      const sharpener = (w.sessions as Session[]).find((sn) =>
+        String(sn.kind) === "quality_run");
+      if (sharpener && before(5) >= 0) {
+        keep.push({
+          ...sharpener,
+          day: before(5),
+          label: "3 × 1 km at race pace",
+          km: 7,
+          minutes: 45,
+          target_text: [
+            "- 2km Z2 warm up",
+            "- 3x",
+            `- 1000m Z4 ${p.anchor ? `@ ${Math.floor((p.anchor.race_pace_s_per_km) / 60)}:${String(p.anchor.race_pace_s_per_km % 60).padStart(2, "0")}/km` : ""}`.trim(),
+            "- 90s Z1 walk",
+            "- 1km Z1 cool down",
+          ].join("\n"),
+          why_text: "The last quality session of the block, and it is a reminder rather than a workout. Three kilometres at race pace to make Sunday's pace feel familiar — if it feels hard this week, that is the taper, not your fitness.",
+        });
+      }
+      const stations = (w.sessions as Session[]).find((sn) =>
+        String(sn.kind) === "hyrox" || String(sn.kind) === "easy_hyrox");
+      if (stations && before(4) >= 0) {
+        keep.push({
+          ...stations, day: before(4), kind: "easy_hyrox",
+          label: "Easy Hyrox · stations at race weight", km: 0, minutes: 35,
+          why_text: "Every station at race weight, none of them to failure. This is about your hands and your positions remembering the loads, not about training.",
+        });
+      }
+      if (before(3) >= 0) {
+        keep.push({
+          day: before(3), kind: "easy_run", hard: false, label: "Easy run",
+          km: 6, minutes: 35,
+          why_text: "Easy, and genuinely easy. The work is banked.",
+        } as Session);
+      }
+      // before(2) — nothing. The day off is the session.
+      if (before(1) >= 0) {
+        keep.push({
+          day: before(1), kind: "easy_run", hard: false, label: "Shakeout · 20 min",
+          km: 4, minutes: 20,
+          target_text: "- 4km Z2\n- 4x\n- 100m Z4 strides\n- 60s Z1 walk",
+          why_text: "Twenty minutes and four strides, the day before. It keeps the legs turning over — two flat days before a race leaves you heavy on the line.",
+        } as Session);
+      }
+      w.sessions = keep as never;
+      w.note = "Race week";
+    }
+    if (w) {
+      (w.sessions as Session[]) = [
+        ...(w.sessions as Session[]).filter((sn) => sn.day !== target.day),
+        {
+          day: target.day, kind: "race", hard: true, label: "Race day",
+          minutes: 75,
+          why_text: "Race day. Nothing you do now makes you fitter — the fitness was made in the weeks behind this one. Run the first kilometre at the pace on your card, not at the pace of the person beside you.",
+        } as Session,
+      ].sort((a, b) => a.day - b.day);
+    }
+  }
+
+  return { version: GENERATOR_VERSION, role, resolved: r, weeks: withRaces, flags };
 }
 
 /**

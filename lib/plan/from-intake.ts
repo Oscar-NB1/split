@@ -216,6 +216,16 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     exclusions: [],
     benchmark: x.benchmark !== "skipped",
     week_start: (n) => addDays(anchor, (n - 1) * 7),
+    race_date: x.raceDate ?? null,
+    b_races: (x.bRaces ?? [])
+      .filter((r) => r.date)
+      .map((r) => ({
+        date: r.date,
+        intent: (["training", "sharpen", "compete"].includes(String(r.intent))
+          ? r.intent : "training") as "training" | "sharpen" | "compete",
+        // A full Hyrox costs recovery whatever the athlete intended by it.
+        full_event: String(r.kind ?? "").startsWith("Hyrox"),
+      })),
     /** the day they actually begin, inside week 1 */
     first_day: start,
   };

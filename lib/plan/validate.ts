@@ -21,7 +21,11 @@ export type PlanWeek = Week & {
 export type Violation = { assertion: string; week?: number; detail: string };
 
 /** Sessions measured in sets and loads rather than kilometres. */
-const NO_TARGET_NEEDED = new Set(["strength", "hyrox", "benchmark", "rest"]);
+const NO_TARGET_NEEDED = new Set([
+  "strength", "hyrox", "easy_hyrox", "benchmark", "rest",
+  // A race is not prescribed a pace. It is the thing every pace was for.
+  "race",
+]);
 
 export function validate(weeks: PlanWeek[], r: Resolved): Violation[] {
   const out: Violation[] = [];
