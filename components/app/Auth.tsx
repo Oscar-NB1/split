@@ -61,6 +61,7 @@ export default function Auth() {
   if (mode === "welcome") {
     return (
       <div style={{ position: "absolute", inset: 0, zIndex: 20, background: OFF,
+        paddingTop: "env(safe-area-inset-top)",
         display: "flex", flexDirection: "column", overflowY: "auto" }}>
         <div style={{ flex: 1, display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center", gap: 26,
@@ -98,6 +99,7 @@ export default function Auth() {
 
   return (
     <div style={{ position: "absolute", inset: 0, zIndex: 20, background: OFF,
+      paddingTop: "env(safe-area-inset-top)",
       display: "flex", flexDirection: "column", overflowY: "auto" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column",
         padding: "18px 22px 30px", gap: 20 }}>

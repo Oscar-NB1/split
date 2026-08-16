@@ -1,5 +1,13 @@
 // Minimal offline shell: cache the app frame, always hit the network for data.
-const CACHE = "split-v2";
+/*
+ * Bump this on any deploy that changes the shell.
+ *
+ * It sat at v2 through a day of deploys, so installed PWAs kept booting a cached
+ * "/" that referenced the previous CSS bundle — which still exists on the CDN,
+ * so it was served happily and every fix looked like it had not shipped. The
+ * activate handler deletes every cache that is not this one.
+ */
+const CACHE = "hyrox-v3";
 const SHELL = ["/", "/manifest.json"];
 
 self.addEventListener("install", (e) => {

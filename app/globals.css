@@ -45,6 +45,15 @@
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
+/*
+ * The shell is exactly the viewport, and the page never scrolls.
+ *
+ * Without the height and the overflow, 100dvh in an iOS standalone PWA can come
+ * up short of the visual viewport and the body background shows through below
+ * the tab bar — the blank strip at the bottom. Pinning both to 100% and letting
+ * only .scroll scroll removes the gap and the rubber-banding with it.
+ */
+html,body{height:100%;overflow:hidden}
 html{background:var(--off)}
 body{
   background:var(--off); color:var(--ink);
@@ -63,7 +72,7 @@ a:hover{color:var(--teal-l)}
 
 /* ------------------------------------------------------------------ shell */
 .app{
-  height:100dvh; box-sizing:border-box; display:flex; flex-direction:column;
+  height:100%; box-sizing:border-box; display:flex; flex-direction:column;
   background:var(--off); max-width:520px; margin:0 auto;
   position:relative; overflow:hidden;
   /*
