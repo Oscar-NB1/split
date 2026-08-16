@@ -155,10 +155,35 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
               {a.max_hr ? ` · peak ${Math.round(a.max_hr)}` : ""}
             </span>
           </div>
-          <HrChart series={d.series} />
+          <HrChart series={d.series} segments={live} endT={endT} />
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: INK40 }}>
             <span>0:00</span><span>{hms(endT / 2)}</span><span>{hms(endT)}</span>
           </div>
+        </div>
+      )}
+
+      {/*
+        * Pace against the target.
+        *
+        * A heart-rate trace says how hard it felt; this says whether the session
+        * was actually run as prescribed, which is the question the plan cares
+        * about. One bar per segment, the target as a line across it, and the
+        * colour is simply which side of the line the bar landed on.
+        */}
+      {prescribed && live.length > 1
+        && live.some((sg) => sg.avg_speed_ms) && (
+        <div style={band}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+            <span style={caps}>Pace against target</span>
+            <span style={{ fontSize: 11, color: INK55 }}>
+              target {pace(1000 / prescribed)} /km
+            </span>
+          </div>
+          <PaceChart segments={live} prescribed={prescribed} />
+          <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
+            Work segments only — the recoveries are meant to be slow, so putting
+            them on the same scale would flatten everything that matters.
+          </span>
         </div>
       )}
 
@@ -257,7 +282,19 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
  * draws it. The domain is padded 8 below and 6 above so the trace never touches
  * the frame; a line grazing the top edge reads as clipped even when it is not.
  */
-function HrChart({ series }: { series: NonNullable<Payload["series"]> }) {
+/** Which segment roles get a band, and in what colour. */
+const BAND: Record<string, string> = {
+  work: "rgba(10,143,176,.13)",
+  rest: "rgba(18,49,77,.05)",
+};
+
+function HrChart({
+  series, segments, endT,
+}: {
+  series: NonNullable<Payload["series"]>;
+  segments: Segment[];
+  endT: number;
+}) {
   const { line, area } = useMemo(() => {
     const W = 330, H = 100;
     const vals = series.hr;
@@ -274,8 +311,40 @@ function HrChart({ series }: { series: NonNullable<Payload["series"]> }) {
     return { line: l, area: `${l} L${W} ${H} L0 ${H} Z` };
   }, [series]);
 
+  /*
+   * The intervals, drawn behind the trace.
+   *
+   * A heart-rate line on its own cannot be read as a session: the peaks are
+   * obviously reps and the dips obviously rests, but which rep, and whether the
+   * warm-up ran long, is guesswork. Banding the segments turns the same curve
+   * into something you can count.
+   */
+  const bands = useMemo(() => {
+    if (!endT || segments.length < 2) return [];
+    return segments
+      .filter((sg) => BAND[sg.role])
+      .map((sg) => {
+        const dur = sg.elapsed_seconds ?? sg.moving_seconds ?? 0;
+        return {
+          key: `${sg.role}-${sg.start_s}`,
+          x: (sg.start_s / endT) * 330,
+          w: Math.max(0.6, (dur / endT) * 330),
+          fill: BAND[sg.role],
+        };
+      });
+  }, [segments, endT]);
+
   return (
     <svg viewBox="0 0 330 100" preserveAspectRatio="none" style={{ width: "100%", height: 100 }}>
+      {bands.map((b) => (
+        <rect key={b.key} x={b.x} y={0} width={b.w} height={100} fill={b.fill} />
+      ))}
+      {/* A hairline at each boundary, so two work segments back to back still read
+          as two rather than as one long effort. */}
+      {bands.map((b) => (
+        <line key={`e-${b.key}`} x1={b.x} y1={0} x2={b.x} y2={100}
+          stroke="rgba(18,49,77,.16)" strokeWidth="0.5" />
+      ))}
       <line x1="0" y1="30" x2="330" y2="30" stroke="rgba(18,49,77,.09)" />
       <line x1="0" y1="65" x2="330" y2="65" stroke="rgba(18,49,77,.09)" />
       <path d={area} fill="rgba(10,143,176,.16)" />
@@ -545,5 +614,85 @@ function RouteMap({ points, activityId, basemap }: {
       <path d={d} fill="none" stroke={TEAL} strokeWidth="2.5" vectorEffect="non-scaling-stroke"
         strokeLinejoin="round" strokeLinecap="round" />
     </svg>
+  );
+}
+
+/**
+ * Pace per work segment, against the prescribed target.
+ *
+ * Bars rather than a line: pace is only meaningful per rep, and a continuous line
+ * through the recoveries would spend most of its length describing walking. The
+ * target is a line across the chart, so the answer to "did I run this as written"
+ * is which side of it each bar sits on — not a number to compare in your head.
+ *
+ * Quicker than target is not automatically good, and the colour does not pretend
+ * it is: it marks distance from the line in either direction, because a rep run
+ * thirty seconds quick is a rep that cost the next one.
+ */
+function PaceChart({
+  segments, prescribed,
+}: {
+  segments: Segment[];
+  /** target pace, in metres per second */
+  prescribed: number;
+}) {
+  const reps = useMemo(
+    () => segments
+      .filter((sg) => sg.role === "work" && sg.avg_speed_ms)
+      .map((sg, i) => ({
+        n: i + 1,
+        secPerKm: 1000 / (sg.avg_speed_ms as number),
+        hr: sg.avg_hr,
+      })),
+    [segments],
+  );
+  if (reps.length === 0) return null;
+
+  const target = 1000 / prescribed;
+  // The scale spans the target and every rep, with a little air, so the target
+  // line is never at the very edge where it cannot be read against anything.
+  const all = [target, ...reps.map((r) => r.secPerKm)];
+  const lo = Math.min(...all) - 8, hi = Math.max(...all) + 8;
+  const y = (v: number) => 100 - ((v - lo) / (hi - lo)) * 92 - 4;
+  const targetY = y(target);
+  const w = 330 / reps.length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <svg viewBox="0 0 330 100" preserveAspectRatio="none"
+        style={{ width: "100%", height: 108 }}>
+        {reps.map((r, i) => {
+          // Quicker is a lower number, so a bar below the line is a quick rep.
+          const top = Math.min(y(r.secPerKm), targetY);
+          const h = Math.abs(y(r.secPerKm) - targetY);
+          const quick = r.secPerKm < target;
+          const off = Math.abs(r.secPerKm - target);
+          return (
+            <rect key={r.n} x={i * w + w * 0.18} width={w * 0.64}
+              y={top} height={Math.max(1.5, h)} rx="2"
+              fill={off <= 3 ? "rgba(10,143,176,.30)" : quick ? TEAL : "#C07A3E"} />
+          );
+        })}
+        <line x1="0" y1={targetY} x2="330" y2={targetY}
+          stroke={NAVY_D} strokeWidth="1.2" strokeDasharray="4 3" />
+      </svg>
+
+      <div style={{ display: "flex" }}>
+        {reps.map((r) => {
+          const off = Math.round(r.secPerKm - target);
+          return (
+            <span key={r.n} style={{
+              flex: 1, textAlign: "center", fontSize: 9, fontWeight: 700,
+              color: Math.abs(off) <= 3 ? INK55 : off < 0 ? TEAL : "#8E3521",
+            }}>
+              {off === 0 ? "on" : `${off > 0 ? "+" : ""}${off}`}
+            </span>
+          );
+        })}
+      </div>
+      <span style={{ fontSize: 9, color: INK40, textAlign: "center" }}>
+        seconds per kilometre against target, per rep
+      </span>
+    </div>
   );
 }
