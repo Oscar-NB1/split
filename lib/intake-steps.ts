@@ -246,7 +246,6 @@ export function liveSteps(a: Answers, stravaConnected: boolean): Step[] {
 export function filled(s: Step, a: Answers): boolean {
   switch (s.kind) {
     // Nothing to fill in: connecting is optional and the rest are skippable.
-    // Nothing to fill in: connecting is optional and the rest are skippable.
     case "connect": case "races": case "text": case "time": case "bRaces":
       return true;
     case "km":
@@ -286,3 +285,81 @@ export const STRAVA_READS: [string, string][] = [
   ["Full heart-rate stream", "zone time and drift, which no self-report can give"],
   ["Your last 8 weeks", "longest run and peak week filled in for you"],
 ];
+
+// ------------------------------------------------------------------- the map
+
+/**
+ * The blocks the questions fall into.
+ *
+ * Twenty-eight steps in one flat line means the only way back to step 8 from step
+ * 26 is eighteen taps on an arrow. Grouping them gives somewhere to jump from —
+ * and the groups are the athlete's own mental model of the form, not the
+ * generator's stages.
+ */
+export const BLOCKS: { name: string; topics: string; ids: string[] }[] = [
+  {
+    name: "Your race",
+    topics: "What you are training for and when",
+    ids: ["hasRace", "discipline", "raceDistance", "raceDate", "bRaces", "goal"],
+  },
+  {
+    name: "You and your partner",
+    topics: "Standards, experience, races behind you",
+    ids: ["runDelta", "stationDelta", "division", "hyroxExp", "pastRaces"],
+  },
+  {
+    name: "Where you are starting",
+    topics: "Your base, your running, your recent volume",
+    ids: ["startDate", "base", "runningSelf", "stravaConnect", "longestRun",
+      "peakWeek", "pace"],
+  },
+  {
+    name: "Your week",
+    topics: "Days, sessions, and what is already in it",
+    ids: ["days", "targetSessions", "commitments", "allowDoubles", "wantRestDay",
+      "sessionPref"],
+  },
+  {
+    name: "Your setup",
+    topics: "Kit, access, and how hard you want it",
+    ids: ["equipment", "sled", "injuries", "prefs"],
+  },
+];
+
+export type MapRow = { id: string; q: string; answer: string; step: number };
+export type MapBlock = {
+  name: string; topics: string; range: string;
+  answered: number; total: number; rows: MapRow[];
+};
+
+/**
+ * The map, over the steps this athlete is actually being asked.
+ *
+ * Ranges and counts come from `live` rather than from BLOCKS, so a block whose
+ * questions do not apply reports what is really there — a doubles athlete and a
+ * runner see different numbers against the same block name, which is correct.
+ */
+export function mapOf(
+  live: Step[], answers: Answers, describe: (s: Step) => string,
+): MapBlock[] {
+  const indexOf = new Map(live.map((s, i) => [s.id, i]));
+  return BLOCKS.map((b) => {
+    const steps = b.ids
+      .map((id) => live.find((s) => s.id === id))
+      .filter((s): s is Step => !!s);
+    const rows: MapRow[] = steps.map((s) => ({
+      id: s.id, q: s.q, answer: describe(s), step: (indexOf.get(s.id) ?? 0) + 1,
+    }));
+    const nums = rows.map((r) => r.step);
+    return {
+      name: b.name, topics: b.topics,
+      range: nums.length
+        ? (nums.length === 1 ? `Step ${nums[0]}`
+          : `Steps ${Math.min(...nums)}–${Math.max(...nums)}`)
+        : "",
+      answered: steps.filter((s) => filled(s, answers)).length,
+      total: steps.length,
+      rows,
+    };
+  }).filter((b) => b.total > 0);
+}

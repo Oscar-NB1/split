@@ -9,7 +9,8 @@ import IntakeBRaces, { type BRace } from "./IntakeBRaces";
 import IntakeGear from "./IntakeGear";
 import IntakeCommitments, { type Mode } from "./IntakeCommitments";
 import IntakeLoad, { SHOWS_LOAD } from "./IntakeLoad";
-import { GEAR_ASSUMED, dependentsOf, filled, liveSteps, subFor, type Answers as StepAnswers } from "@/lib/intake-steps";
+import IntakeMap from "./IntakeMap";
+import { GEAR_ASSUMED, dependentsOf, filled, liveSteps, mapOf, subFor, type Answers as StepAnswers, type Step } from "@/lib/intake-steps";
 import { divisionsFor } from "@/lib/intake";
 
 /**
@@ -205,6 +206,7 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   const [opts, setOpts] = useState<Options | null>(null);
   const [a, setA] = useState<Answers>(EMPTY);
   const [step, setStep] = useState(0);
+  const [mapOpen, setMapOpen] = useState(false);
   /**
    * Whether Strava is connected, and what it says about their recent running.
    *
@@ -430,6 +432,45 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
 
   // ------------------------------------------------------------- the questions
 
+  /**
+   * One line describing what was answered, for the map.
+   *
+   * Written here rather than in the spec because it reads the live answers, and
+   * kept short: the map is for recognising an answer, not re-reading it.
+   */
+  const describe = (st: Step): string => {
+    const raw = (a as unknown as Record<string, unknown>)[st.id];
+    if (st.id === "pace") {
+      return a.paceUnknown ? "Test in week 1"
+        : `${a.paceMin}:${String(a.paceSec).padStart(2, "0")}`;
+    }
+    if (st.kind === "km") {
+      const unknown = (a as unknown as Record<string, unknown>)[`${st.id}Unknown`];
+      return unknown ? "Do not know" : Number(raw) ? `${raw} km` : "";
+    }
+    if (st.kind === "prefs") return [a.volume, a.difficulty].filter(Boolean).join(" · ");
+    if (st.kind === "connect") return connected ? "Connected" : "Skipped";
+    if (st.kind === "gear") {
+      return a.equipment.length ? `${a.equipment.length} items` : "";
+    }
+    if (st.kind === "races") return a.pastRaces.length ? `${a.pastRaces.length} logged` : "None";
+    if (st.kind === "bRaces") return a.bRaces.length ? `${a.bRaces.length} entered` : "None";
+    if (st.kind === "start") return a.startDate ?? "";
+    if (Array.isArray(raw)) return raw.length ? raw.join(", ") : "";
+    return raw == null || raw === "" ? "" : String(raw);
+  };
+
+  if (mapOpen) {
+    return (
+      <IntakeMap
+        blocks={mapOf(live, a as unknown as StepAnswers, describe)}
+        stepLabel={`Step ${i + 1} of ${live.length}`}
+        onJump={(n) => { setStep(n - 1); setMapOpen(false); }}
+        onClose={() => setMapOpen(false)}
+        ctaLabel={`Back to step ${i + 1}`} />
+    );
+  }
+
   return (
     <div style={{ padding: "16px 18px 26px", display: "flex", flexDirection: "column",
       gap: 16, minHeight: "100%" }}>
@@ -442,9 +483,14 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
           <div style={{ height: 4, borderRadius: 2, background: "#0A8FB0",
             width: `${Math.round(((i + 1) / live.length) * 100)}%` }} />
         </div>
-        <span style={{ fontSize: 10, fontWeight: 700, color: INK40, whiteSpace: "nowrap" }}>
+        <button onClick={() => setMapOpen(true)} aria-label="See all your answers"
+          style={{
+            fontSize: 10, fontWeight: 700, color: INK40, whiteSpace: "nowrap",
+            display: "flex", alignItems: "center", gap: 5, padding: "4px 0",
+          }}>
           Step {i + 1} of {live.length}
-        </span>
+          <span style={{ fontSize: 11, color: "#0A8FB0" }}>☰</span>
+        </button>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>

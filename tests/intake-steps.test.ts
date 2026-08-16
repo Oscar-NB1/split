@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEPENDENTS, STEPS, dependentsOf, filled, liveSteps, subFor, weeklyLoad,
+  BLOCKS, DEPENDENTS, STEPS, dependentsOf, filled, liveSteps, mapOf, subFor,
+  weeklyLoad,
   type Answers, type Step,
 } from "../lib/intake-steps";
 
@@ -165,4 +166,47 @@ test("every dependent names a real step or an answer a step writes", () => {
       assert.ok(ids.has(d) || written.has(d), `${d} is a step or a written field`);
     }
   }
+});
+
+// ----------------------------------------------------------------------- map
+
+test("every step belongs to exactly one block", () => {
+  // A question missing from BLOCKS is a question the overview cannot reach, and
+  // one listed twice is one that reads as answered in two places.
+  const seen = new Map<string, string>();
+  for (const b of BLOCKS) {
+    for (const id of b.ids) {
+      assert.ok(!seen.has(id), `${id} is only in ${seen.get(id) ?? b.name}`);
+      seen.set(id, b.name);
+      assert.ok(STEPS.some((s) => s.id === id), `${id} is a real step`);
+    }
+  }
+  for (const s of STEPS) assert.ok(seen.has(s.id), `${s.id} is in a block`);
+});
+
+test("the map numbers the steps the athlete is actually asked", () => {
+  // The point of deriving from `live`: a runner is never told to go to a step
+  // about their partner, and the numbers match the header they can see.
+  const a: Answers = { discipline: "Running race", hasRace: "Yes", base: "Some" };
+  const live = liveSteps(a, false);
+  const blocks = mapOf(live, a, (s) => (s.id === "base" ? "Some" : ""));
+
+  const flat = blocks.flatMap((b) => b.rows);
+  assert.deepEqual(flat.map((r) => r.id), live.map((s) => s.id).filter(
+    (id) => flat.some((r) => r.id === id)), "in the order they are asked");
+  for (const r of flat) {
+    assert.equal(live[r.step - 1].id, r.id, `${r.id} jumps to its own step`);
+  }
+  assert.ok(!flat.some((r) => r.id === "runDelta"), "no partner questions");
+
+  const start = blocks.find((b) => b.name === "Where you are starting")!;
+  assert.ok(start.answered < start.total, `${start.answered}/${start.total}`);
+  assert.equal(start.rows.find((r) => r.id === "base")!.answer, "Some");
+  assert.ok(start.range.startsWith("Steps "), start.range);
+});
+
+test("a block with nothing to ask is left out rather than shown empty", () => {
+  const a: Answers = { discipline: "Running race", hasRace: "Yes" };
+  const names = mapOf(liveSteps(a, false), a, () => "").map((b) => b.name);
+  assert.ok(!names.includes("You and your partner"), names.join(", "));
 });
