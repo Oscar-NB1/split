@@ -102,6 +102,84 @@ export function withoutAnchor(maxHr: number | null, zone: number, rpe: number): 
   return { kind: "rpe", value: rpe, label: `RPE ${rpe}` };
 }
 
+/**
+ * An anchor from a 5 km time the athlete has actually run.
+ *
+ * Paces only ever came from a benchmark, so an athlete who had given a real 5 km
+ * time was prescribed heart-rate zones andeffort numbers — "8 min", with no pace
+ * anywhere on the session. That is the same mistake as treating a declined test as
+ * a property of the plan: the number exists, they ran it, and the plan should use
+ * it.
+ *
+ * Critical velocity sits a little slower than 5 km race pace; the multiplier table
+ * hangs off that. Flagged as self-reported rather than measured, because it is.
+ */
+export function anchorFromFiveK(seconds: number | null): Anchor | null {
+  if (!seconds || seconds < 600 || seconds > 3600) return null;
+  const fiveKPace = seconds / 5;
+  return {
+    cv_pace_s_per_km: Math.round(fiveKPace / RUNG_MULTIPLIER.five_k),
+    durability: 1,
+    race_pace_s_per_km: Math.round(fiveKPace * 1.12),
+    flags: [{
+      code: "paces_from_five_k",
+      message: "Paces come from the 5 km time you gave, not from a test. If that time is old, they will be optimistic.",
+    }],
+  };
+}
+
+/**
+ * An anchor from a race the athlete has already run.
+ *
+ * The best evidence there is short of a benchmark: a real average run split from a
+ * real event. It is compromised running — eight runs with a station between each —
+ * so fresh critical velocity sits faster than it, which is what the multiplier is.
+ */
+export function anchorFromRaceSplit(runAvgSeconds: number | null): Anchor | null {
+  if (!runAvgSeconds || runAvgSeconds < 150 || runAvgSeconds > 900) return null;
+  return {
+    cv_pace_s_per_km: Math.round(runAvgSeconds * COMPROMISED_TO_FRESH),
+    durability: 1,
+    race_pace_s_per_km: runAvgSeconds,
+    flags: [{
+      code: "paces_from_race",
+      message: "Paces come from your own race splits. Fresh running is quicker than compromised running, and the targets account for that.",
+    }],
+  };
+}
+
+/**
+ * How much quicker fresh running is than running off a station.
+ *
+ * Eight per cent, which is the middle of what the field shows between an athlete's
+ * standalone 5 km pace and their average Hyrox run split.
+ */
+export const COMPROMISED_TO_FRESH = 0.92;
+
+/**
+ * An anchor from the time the athlete is training for.
+ *
+ * The weakest of the sources and the only one that is not a measurement: a goal is
+ * what they want, not what they have done. Used only when there is nothing else,
+ * and flagged as an aspiration so nothing downstream mistakes it for evidence.
+ */
+export function anchorFromGoal(goalSeconds: number | null): Anchor | null {
+  if (!goalSeconds || goalSeconds < 1800 || goalSeconds > 10800) return null;
+  // A Hyrox is 8 km of running inside the total; roughly 55% of the clock is spent
+  // running for a mid-pack athlete.
+  const runSeconds = goalSeconds * 0.55;
+  const perKm = runSeconds / 8;
+  return {
+    cv_pace_s_per_km: Math.round(perKm * COMPROMISED_TO_FRESH),
+    durability: 1,
+    race_pace_s_per_km: Math.round(perKm),
+    flags: [{
+      code: "paces_from_goal",
+      message: "Paces come from the time you are aiming at, not from anything you have run yet. Run a 5 km or a benchmark and they will be rebuilt from real numbers.",
+    }],
+  };
+}
+
 export function prescribe(
   anchor: Anchor | null, rung: keyof typeof RUNG_MULTIPLIER | "hyrox_race",
   maxHr: number | null, fallbackZone: number, fallbackRpe: number,

@@ -6,6 +6,7 @@ import type { Goal } from "./allocate";
 import type { Params } from "./generate";
 import type { RecentRunning, RunningBase, TrainingAge } from "./resolve";
 import { hyroxToAge, olderOf } from "./resolve";
+import { anchorFromFiveK, anchorFromGoal, anchorFromRaceSplit } from "./paces";
 import { deriveVariant, type Access, type Kit, type RunAttachment } from "./variant";
 
 /**
@@ -191,8 +192,15 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     /** the equipment answers as given, for the strength prescription */
     equipment: x.equipment ?? [],
     max_hr: extra.max_hr,
-    // No anchor without a benchmark: every pace is derived and flagged as such.
-    anchor: null,
+    /*
+     * The paces come from the best time on file.
+     *
+     * A benchmark anchors it where one has been run; otherwise the athlete's own
+     * 5 km does. Only where there is neither does the plan fall back to zones and
+     * effort — which is where it was falling for everybody, including athletes who
+     * had typed in a 5 km time, so no session carried a pace at all.
+     */
+    anchor: anchorFor(x),
     commitments: commitmentsOf(x),
     absences: extra.absences,
     exclusions: [],
@@ -201,6 +209,48 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     /** the day they actually begin, inside week 1 */
     first_day: start,
   };
+}
+
+/**
+ * Where the paces come from, best evidence first.
+ *
+ * A benchmark result outranks everything, and is applied elsewhere once one exists.
+ * Below that: the athlete's own race splits, then a 5 km they have run, then — only
+ * if there is nothing at all — the time they are aiming at, flagged as the
+ * aspiration it is. Every source states itself on the session, so a target built
+ * from a goal is never mistaken for one built from a measurement.
+ */
+function anchorFor(x: Intake): ReturnType<typeof anchorFromFiveK> {
+  return anchorFromRaceSplit(raceRunSplit(x))
+    ?? anchorFromFiveK(fiveKSeconds(x))
+    ?? anchorFromGoal(x.goal === "Target a time" && x.goalMin
+      ? Math.round(x.goalMin * 60) : null);
+}
+
+/** mm:ss or h:mm:ss as seconds. */
+function clock(t: string | undefined | null): number | null {
+  if (!t) return null;
+  const parts = String(t).trim().split(":").map(Number);
+  if (parts.some((n) => !Number.isFinite(n))) return null;
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  return null;
+}
+
+/** The average run split from the race the athlete anchored the plan on. */
+function raceRunSplit(x: Intake): number | null {
+  const races = x.pastRaces ?? [];
+  if (races.length === 0) return null;
+  const anchored = races.find((r) => r.anchored) ?? races[0];
+  return clock(anchored.run_avg);
+}
+
+/** The 5 km the athlete gave, in seconds, or nothing if they skipped it. */
+function fiveKSeconds(x: Intake): number | null {
+  if (x.paceUnknown) return null;
+  const m = Number(x.paceMin), s = Number(x.paceSec ?? 0);
+  if (!Number.isFinite(m) || m <= 0) return null;
+  return Math.round(m * 60 + (Number.isFinite(s) ? s : 0));
 }
 
 const VOLUME_DIAL: Record<string, number> = {

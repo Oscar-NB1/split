@@ -90,11 +90,17 @@ const KIND_COLOUR: Record<string, string> = {
   benchmark: "#E8C051",                                // the test: gold
   race: "#C6FF5B",                                     // race day: lime
   rest: "#C9D3DB",
-  // not the plan's: classes, matches, anything the athlete already keeps
-  commitment: "#232B31",
-  Workout: "#232B31", HighIntensityIntervalTraining: "#232B31", Crossfit: "#232B31",
-  Kickboxing: "#232B31", Ride: "#232B31", Swim: "#232B31", Walk: "#232B31",
-  Yoga: "#232B31", Hike: "#232B31",
+  /*
+   * Not the plan's: classes, matches, anything the athlete already keeps.
+   *
+   * A warm grey rather than the near-black it was, which sat close enough to the
+   * Hyrox navy that a kickboxing class and a Hyrox session read as the same thing
+   * in a list of dots.
+   */
+  commitment: "#8A94A0",
+  Workout: "#8A94A0", HighIntensityIntervalTraining: "#8A94A0", Crossfit: "#8A94A0",
+  Kickboxing: "#8A94A0", Ride: "#8A94A0", Swim: "#8A94A0", Walk: "#8A94A0",
+  Yoga: "#8A94A0", Hike: "#8A94A0",
 };
 
 /**
@@ -105,7 +111,7 @@ const KIND_COLOUR: Record<string, string> = {
  * than a fifth blue nobody can tell apart from the others.
  */
 export const kindColour = (k: string | null | undefined) =>
-  (k && KIND_COLOUR[k]) || "#232B31";
+  (k && KIND_COLOUR[k]) || "#8A94A0";
 
 /** Human labels for the plan kinds and the Strava sport types we see. */
 export const KIND_LABEL: Record<string, string> = {

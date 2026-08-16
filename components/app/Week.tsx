@@ -310,15 +310,13 @@ export default function Week({
                     {s.significance}
                   </span>
                 )}
-                {/hyrox|race|sim/i.test(s.title) && s.significance && (
-                  <span style={{ display: "flex", alignItems: "center", gap: 6,
-                    alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: INK55 }}>
-                    <span style={{ width: 16, height: 16, borderRadius: "50%", background: NAVY,
-                      color: LIME, fontSize: 8, fontWeight: 800, display: "flex",
-                      alignItems: "center", justifyContent: "center" }}>2</span>
-                    With Olivier
-                  </span>
-                )}
+                {/*
+                  * A "with Olivier" line used to hang off every Hyrox session — a
+                  * name hardcoded from the first athlete this app was written for,
+                  * shown to everyone else. Whether a session is done with a partner
+                  * is not something the plan knows, and inventing it is worse than
+                  * leaving it out.
+                  */}
               </div>
             </button>
           );

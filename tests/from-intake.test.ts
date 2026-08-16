@@ -124,8 +124,46 @@ test("weeks start on the Monday the athlete picked", () => {
   assert.equal(p.week_start(2), "2026-08-24");
 });
 
-test("no anchor without a benchmark, so every pace is flagged as derived", () => {
-  assert.equal(paramsFrom(base(), EMPTY_EXTRA).anchor, null);
+test("the paces come from the best evidence on file", () => {
+  /*
+   * A race the athlete has run beats a 5 km they typed, which beats the time they
+   * are aiming at. Every one of them states itself on the session, so a target
+   * built from a goal is never read as a measurement.
+   */
+  const raced = paramsFrom(base({
+    pastRaces: [{ event: "Heerenveen", division: null, finish: "1:00:50",
+      run_avg: "4:33", stations: "21:17", rox: "5:20", anchored: true }],
+  }), EMPTY_EXTRA).anchor!;
+  assert.match(raced.flags[0].code, /from_race/);
+  assert.equal(raced.race_pace_s_per_km, 273, "their own average run split");
+  assert.ok(raced.cv_pace_s_per_km < 273, "fresh running is quicker than compromised");
+
+  const goalOnly = paramsFrom(base({
+    paceUnknown: true, goal: "Target a time", goalMin: 60, pastRaces: [],
+  }), EMPTY_EXTRA).anchor!;
+  assert.match(goalOnly.flags[0].code, /from_goal/);
+  assert.match(goalOnly.flags[0].message, /not from anything you have run/);
+
+  const nothing = paramsFrom(base({
+    paceUnknown: true, goal: "Just finish it", goalMin: null, pastRaces: [],
+  }), EMPTY_EXTRA).anchor;
+  assert.equal(nothing, null, "no evidence, no invented pace");
+});
+
+test("the paces come from the 5 km where there is no race", () => {
+  /*
+   * Anchors only ever came from a benchmark, so an athlete who had given a real
+   * 5 km time was prescribed zones and efforts — no session carried a pace at all.
+   * The number exists and they ran it; the plan uses it, flagged as self-reported.
+   */
+  const a = paramsFrom(base({ paceMin: 21, paceSec: 30 }), EMPTY_EXTRA).anchor;
+  assert.ok(a, "an anchor");
+  assert.ok(a!.cv_pace_s_per_km > 250 && a!.cv_pace_s_per_km < 290, `${a!.cv_pace_s_per_km}`);
+  assert.match(a!.flags[0].code, /five_k/);
+
+  // Without the 5 km it drops to the next source down rather than to nothing.
+  const noFiveK = paramsFrom(base({ paceUnknown: true }), EMPTY_EXTRA).anchor;
+  assert.ok(noFiveK && noFiveK.flags[0].code !== "paces_from_five_k", "a weaker source");
 });
 
 test("a skipped benchmark schedules none", () => {

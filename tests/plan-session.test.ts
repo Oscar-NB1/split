@@ -49,8 +49,14 @@ test("the week can trim the session, and the title follows it", () => {
   assert.ok(trimmed.km < full.km, `${trimmed.km} vs ${full.km}`);
   assert.equal(trimmed.title, "5 × 1000 m");
   assert.equal(repCount(parseSteps(trimmed.target)), 5);
-  // Never below two: one rep is a different session, not a smaller one.
-  assert.equal(qualityRun("6 × 1000 m", 250, 310, 4).title, "2 × 1000 m");
+  /*
+   * Never below two reps: one rep is a different session, not a smaller one. So
+   * when two still will not fit, the reps themselves come down — 2 × 500 m rather
+   * than a session that quietly overruns the week it is in.
+   */
+  const tiny = qualityRun("6 × 1000 m", 250, 310, 4);
+  assert.equal(tiny.title, "2 × 500 m");
+  assert.ok(tiny.km <= 4.6, `${tiny.km} km`);
 });
 
 test("an easy run says one thing, and a Hyrox session alternates", () => {

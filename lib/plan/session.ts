@@ -99,15 +99,26 @@ function trim(work: Work | null, paceS: number, maxKm: number): Work | null {
   if (!work || maxKm === Infinity) return work;
   const room = Math.max(1, maxKm - WARMUP_KM - COOLDOWN_KM);
 
+  /*
+   * Fewer reps first; shorter reps only when two of them still will not fit.
+   *
+   * Two is the floor — one rep is a different session — so in a race week the reps
+   * themselves have to come down. 2 × 15 min becomes 2 × 8 min rather than a
+   * session that quietly overruns the week it is in.
+   */
   if (work.shape === "reps" || work.shape === "strides") {
     const per = work.metres / 1000;
     const fit = Math.max(2, Math.min(work.reps, Math.floor(room / per)));
-    return { ...work, reps: fit };
+    if (fit > 2 || per * 2 <= room) return { ...work, reps: fit };
+    const metres = Math.max(200, Math.round(((room / 2) * 1000) / 100) * 100);
+    return { ...work, reps: 2, metres };
   }
   if (work.shape === "reps_time") {
     const per = work.seconds / paceS;
     const fit = Math.max(2, Math.min(work.reps, Math.floor(room / per)));
-    return { ...work, reps: fit };
+    if (fit > 2 || per * 2 <= room) return { ...work, reps: fit };
+    const seconds = Math.max(180, Math.round(((room / 2) * paceS) / 60) * 60);
+    return { ...work, reps: 2, seconds };
   }
   if (work.shape === "continuous") {
     const seconds = Math.min(work.seconds, Math.max(600, room * paceS));
