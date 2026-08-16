@@ -57,8 +57,8 @@ async function main() {
   const recent = await measuredRecent(me.id);
   console.log(`  ${races.n} Hyrox session(s) on file · max HR ${me.hr_max}`);
   console.log(recent
-    ? `  recent: ${recent.weekly_km} km in a typical week, biggest ${recent.peak_week_km} km, longest run ${recent.long_run_km} km (measured)\n`
-    : "  recent: nothing in the last 8 weeks, so the matrix decides week 1\n");
+    ? `  recent: biggest week ${recent.peak_week_km} km (last 4), longest run ${recent.long_run_km} km (last 8), measured\n`
+    : "  recent: nothing recent on file, so the bracket decides week 1\n");
 
   const params: Params = {
     // derived from the data above

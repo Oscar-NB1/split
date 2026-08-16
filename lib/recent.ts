@@ -21,23 +21,28 @@ import type { RecentRunning } from "./plan/resolve";
  * summary list only, never per-activity detail — but it does start describing
  * a training block the athlete has already left.
  */
-export const RECENT_WEEKS = 4;
+export const PEAK_WEEKS = 4;
+/**
+ * The long run gets a wider window than the peak week.
+ *
+ * A biggest week describes current training and goes stale fast; a longest run
+ * is a demonstration of what the legs have done, and four weeks is short enough
+ * to miss one entirely. Different questions, different horizons.
+ */
+export const LONG_RUN_WEEKS = 8;
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /**
- * Two numbers, because they answer two different questions.
+ * Two numbers over two windows.
  *
- * The typical week is what the block starts from, and it is the mean of the
- * complete weeks rather than the median: an athlete whose weeks alternate
- * between 20 and 38 km has a median that lands in the trough and describes
- * neither half of what they do. The mean sits where a coach would put it.
- *
- * The biggest week is what the peak is allowed to build on, because "proven"
- * means the most they have actually completed — not the most they average.
+ * The biggest week of the last four is what week 1 is built from — the most the
+ * athlete has recently shown they can absorb. The longest run of the last eight
+ * is what caps the long run and its growth. Neither is an average: an average
+ * describes a block that includes the weeks they were ill.
  */
 export async function measuredRecent(
-  userId: string, weeks = RECENT_WEEKS,
+  userId: string, peakWeeks = PEAK_WEEKS, longWeeks = LONG_RUN_WEEKS,
 ): Promise<RecentRunning | null> {
   const rows = await sql<{ week: string; km: number; current: boolean }[]>`
     select date_trunc('week', start_time)::date::text as week,
@@ -46,16 +51,17 @@ export async function measuredRecent(
       from activities
      where user_id = ${userId}
        and sport_type ilike ${RUN_SPORT_SQL}
-       and start_time >= now() - (${weeks} * interval '1 week')
+       and start_time >= now() - (${peakWeeks} * interval '1 week')
      group by 1 order by 1
   `;
   const [longest] = await sql<{ km: number }[]>`
     select max(distance_m) / 1000.0 as km from activities
      where user_id = ${userId}
        and sport_type ilike ${RUN_SPORT_SQL}
-       and start_time >= now() - (${weeks} * interval '1 week')
+       and start_time >= now() - (${longWeeks} * interval '1 week')
   `;
-  if (rows.length === 0) return null;
+  const long_run_km = longest?.km ? round1(Number(longest.km)) : null;
+  if (rows.length === 0) return long_run_km ? { peak_week_km: null, long_run_km, source: "measured" } : null;
 
   /**
    * Drop the current week, which is partial by definition and would read as a
@@ -66,14 +72,7 @@ export async function measuredRecent(
   const complete = rows.filter((r) => !r.current);
   const full = complete.length > 0 ? complete : rows;
   const km = full.map((r) => Number(r.km));
-  const typical = km.reduce((a, b) => a + b, 0) / km.length;
-
-  return {
-    weekly_km: round1(typical),
-    peak_week_km: round1(Math.max(...km)),
-    long_run_km: longest?.km ? round1(Number(longest.km)) : null,
-    source: "measured",
-  };
+  return { peak_week_km: round1(Math.max(...km)), long_run_km, source: "measured" };
 }
 
 /**
@@ -84,10 +83,10 @@ export async function measuredRecent(
  */
 export function preferMeasured(
   measured: RecentRunning | null,
-  reported: { weekly_km: number | null; long_run_km: number | null },
+  reported: { peak_week_km: number | null; long_run_km: number | null },
 ): RecentRunning | null {
-  if (measured?.weekly_km) return measured;
-  if (reported.weekly_km || reported.long_run_km) {
+  if (measured?.peak_week_km || measured?.long_run_km) return measured;
+  if (reported.peak_week_km || reported.long_run_km) {
     return { ...reported, source: "reported" };
   }
   return null;
@@ -106,9 +105,9 @@ export function preferMeasured(
  * schedule and this survey is thrown away.
  */
 export async function surveyStrava(
-  userId: string, weeks = RECENT_WEEKS,
+  userId: string, peakWeeks = PEAK_WEEKS, longWeeks = LONG_RUN_WEEKS,
 ): Promise<RecentRunning | null> {
-  const after = Math.floor(Date.now() / 1000) - weeks * 7 * 86_400;
+  const after = Math.floor(Date.now() / 1000) - longWeeks * 7 * 86_400;
   const list = await stravaGet<
     { start_date_local: string; distance: number; sport_type?: string; type?: string }[]
   >(userId, `/athlete/activities?after=${after}&per_page=200`);
@@ -118,24 +117,25 @@ export async function surveyStrava(
     .filter((a) => Number(a.distance) > 0);
   if (runs.length === 0) return null;
 
+  // One request covers both windows: fetch the wider one and filter for the
+  // narrower, rather than spending a second call to ask again.
+  const peakCutoff = Date.now() - peakWeeks * 7 * 86_400_000;
   const byWeek = new Map<string, number>();
   let longest = 0;
   for (const a of runs) {
     const km = Number(a.distance) / 1000;
+    const when = new Date(a.start_date_local);
     longest = Math.max(longest, km);
-    const key = weekKey(new Date(a.start_date_local));
-    byWeek.set(key, (byWeek.get(key) ?? 0) + km);
+    if (when.getTime() < peakCutoff) continue;
+    byWeek.set(weekKey(when), (byWeek.get(weekKey(when)) ?? 0) + km);
   }
 
   // The current week is partial, so it describes a week nobody has finished.
   byWeek.delete(weekKey(new Date()));
   const km = [...byWeek.values()];
-  if (km.length === 0) return null;
-
   return {
-    weekly_km: round1(km.reduce((a, b) => a + b, 0) / km.length),
-    peak_week_km: round1(Math.max(...km)),
-    long_run_km: round1(longest),
+    peak_week_km: km.length ? round1(Math.max(...km)) : null,
+    long_run_km: longest ? round1(longest) : null,
     source: "measured",
   };
 }
@@ -160,7 +160,7 @@ export async function recentFor(
   userId: string, connected: boolean,
 ): Promise<{ recent: RecentRunning | null; from: "app" | "strava" | "none" }> {
   const local = await measuredRecent(userId);
-  if (local?.weekly_km) return { recent: local, from: "app" };
+  if (local?.peak_week_km) return { recent: local, from: "app" };
   if (!connected) return { recent: null, from: "none" };
   try {
     const survey = await surveyStrava(userId);

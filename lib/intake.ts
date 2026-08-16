@@ -113,14 +113,15 @@ export type Intake = {
    * What they have actually been running lately, which beats every adjective
    * above it.
    *
-   * "Runs regularly" is a self-description; 40 km a week with a 16 km long run
-   * is a measurement. Where the two disagree the numbers win, because a block
-   * that starts below what someone is already doing is a detraining block.
+   * The biggest week of the last four is what week 1 is built from; the longest
+   * run of the last eight caps where the long run starts and how fast it grows.
    * Both are optional — not everyone tracks, and refusing to build a plan
-   * without them would be worse than the matrix guess they replace.
+   * without them would be worse than the bracket guess they replace.
    */
-  recentWeeklyKm: number | null;
-  recentLongRunKm: number | null;
+  peakWeekKm: number | null;
+  longestRunKm: number | null;
+  /** where those two came from — "strava" halves the unmeasured haircut */
+  volumeSource: "strava" | "self" | null;
   days: Day[];
   commitments: CommitmentName[];
   /** how many times a week each one happens */

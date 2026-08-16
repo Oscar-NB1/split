@@ -27,7 +27,7 @@ const HER: Intake = {
   base: "Over a year",
   runningSelf: "Runs with walk breaks",
   paceMin: 32, paceSec: 0, paceUnknown: false,
-  recentWeeklyKm: null, recentLongRunKm: null,
+  peakWeekKm: null, longestRunKm: null, volumeSource: null,
   days: ["Tue", "Wed", "Thu", "Fri", "Sat"],
   commitments: ["Spin class"],
   freq: { "Spin class": 1 },

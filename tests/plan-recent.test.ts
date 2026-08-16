@@ -1,105 +1,112 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  BASE_MATRIX, LONG_RUN_SHARE, PROVEN_HEADROOM, RUNNING_CEILING,
-  baseFromLongRun, resolve, type ResolveInput,
+  BASE_MATRIX, HAIRCUT_NONE, HAIRCUT_STRAVA, LONG_RUN_SHARE, PEAK_OVER_BRACKET,
+  PROVEN_HEADROOM, RUNNING_CEILING, baseFromLongRun, resolve, type ResolveInput,
 } from "../lib/plan/resolve";
-import { preferMeasured } from "../lib/recent";
+import { preferMeasured, __weekKeyForTest as weekKey } from "../lib/recent";
 
 const base = (o: Partial<ResolveInput> = {}): ResolveInput => ({
   general_training_age: "advanced",
   hyrox_experience: null,
-  running_base: "runs_regularly",
+  running_base: "half_marathon_fit",
   target_sessions: 6,
   available_days: 6,
   confidence: "estimated",
   ...o,
 });
+const strava = (peak: number | null, long: number | null) =>
+  ({ peak_week_km: peak, long_run_km: long, source: "measured" as const });
 
-test("what you are already running beats what the matrix guessed", () => {
-  // the complaint this exists for: the matrix reads adjectives and said 28 km
-  // to someone already running 40
-  const matrix = resolve(base());
-  assert.equal(matrix.start_volume, BASE_MATRIX.advanced[6]);
-  const real = resolve(base({
-    recent: { weekly_km: 40, peak_week_km: 44, long_run_km: 16, source: "measured" },
-  }));
-  assert.equal(real.start_volume, 40);
-  assert.ok(real.flags.some((f) => /you are already running that/.test(f)));
+// ------------------------------------------- the peak week is what week 1 uses
+
+test("week 1 is built from the biggest recent week, not the bracket", () => {
+  const bracket = BASE_MATRIX.advanced[6];
+  const r = resolve(base({ recent: strava(38, 19) }));
+  // 38 is inside 1.6x the bracket, so it stands; then the Strava haircut
+  assert.equal(r.start_volume, Math.round(38 * HAIRCUT_STRAVA * 10) / 10);
+  assert.ok(r.start_volume > bracket, "a real 38 km week beats a 28 km guess");
 });
 
-test("a recent week below the matrix also wins, and says why", () => {
-  // it cuts as well as raises — the point is that it is the real number
-  const r = resolve(base({
-    recent: { weekly_km: 14, long_run_km: 8, source: "measured" },
-  }));
-  assert.equal(r.start_volume, 14);
-  assert.ok(r.flags.some((f) => /where your running actually is/.test(f)));
+test("one enormous week is evidence, but only so far", () => {
+  // a race week inside an otherwise quiet block is not a base to build from
+  const bracket = BASE_MATRIX.advanced[6];
+  const r = resolve(base({ recent: strava(90, 30) }));
+  assert.equal(r.start_volume,
+    Math.round(Math.round(bracket * PEAK_OVER_BRACKET) * HAIRCUT_STRAVA * 10) / 10);
+  assert.ok(r.flags.some((f) => /as far above your training bracket as one week/.test(f)));
 });
 
-test("nothing recent falls back to the matrix rather than refusing", () => {
-  for (const recent of [null, undefined, { weekly_km: null, long_run_km: null, source: "reported" as const }]) {
-    assert.equal(resolve(base({ recent })).start_volume, BASE_MATRIX.advanced[6]);
+test("a peak week below the bracket is still the number used", () => {
+  const r = resolve(base({ recent: strava(12, 8) }));
+  assert.ok(r.start_volume < BASE_MATRIX.advanced[6]);
+  assert.ok(r.flags.some((f) => /rather than the .* the bracket suggested/.test(f)));
+});
+
+test("nothing recent falls back to the bracket rather than refusing", () => {
+  for (const recent of [null, undefined, strava(null, null)]) {
+    const r = resolve(base({ recent }));
+    assert.equal(r.start_volume, Math.round(BASE_MATRIX.advanced[6] * HAIRCUT_NONE * 10) / 10);
   }
 });
 
-// ------------------------------------------------------- the long run as evidence
+// -------------------------------------------- the long run caps, it never lifts
+
+test("the longest run caps the week whatever the athlete called themselves", () => {
+  // 8 km longest run does not support a 30 km week, however experienced
+  const r = resolve(base({ running_base: "marathon_competitive", recent: strava(40, 8) }));
+  assert.equal(r.ceiling, Math.round(8 * LONG_RUN_SHARE));
+  assert.ok(r.flags.some((f) => /does not yet support more than that in a week/.test(f)));
+});
 
 test("a long run raises the running base, never lowers it", () => {
   assert.equal(baseFromLongRun(19), "half_marathon_fit");
   assert.equal(baseFromLongRun(12), "runs_regularly");
   assert.equal(baseFromLongRun(null), null);
 
-  // an 18 km run out of someone who called themselves a 5 km runner
-  const r = resolve(base({
-    running_base: "5k_nonstop",
-    recent: { weekly_km: null, long_run_km: 19, source: "measured" },
-  }));
-  assert.ok(r.ceiling !== null && r.ceiling > RUNNING_CEILING["5k_nonstop"]!);
+  const r = resolve(base({ running_base: "5k_nonstop", recent: strava(30, 19) }));
   assert.ok(r.flags.some((f) => /puts your running above what you called it/.test(f)));
-
-  // and a short one out of a marathon runner changes nothing
-  const kept = resolve(base({
-    running_base: "marathon_competitive",
-    recent: { weekly_km: null, long_run_km: 5, source: "measured" },
-  }));
-  assert.equal(kept.ceiling, RUNNING_CEILING.marathon_competitive);
+  assert.ok(r.ceiling! > RUNNING_CEILING["5k_nonstop"]!);
 });
 
-test("a reported week is checked against the long run behind it", () => {
-  // 60 km a week behind a 5 km longest run is a mistyped answer
-  const r = resolve(base({
-    recent: { weekly_km: 60, long_run_km: 5, source: "reported" },
-  }));
-  assert.equal(r.start_volume, 5 * LONG_RUN_SHARE);
-  assert.ok(r.flags.some((f) => /usually a quarter to a third/.test(f)));
+test("the tighter of the two ceilings wins", () => {
+  // stated base says 45, a 10 km long run says 32 — the run is the binding one
+  const r = resolve(base({ running_base: "half_marathon_fit", recent: strava(60, 10) }));
+  assert.equal(r.ceiling, 32);
 });
 
-test("a measured week is never second-guessed", () => {
-  // it is the athlete's own arithmetic over their own files; disbelieving it
-  // in favour of a rule of thumb would be the wrong way round
-  const r = resolve(base({
-    recent: { weekly_km: 60, long_run_km: 5, source: "measured" },
+// ------------------------------------------------ not knowing has a stated cost
+
+test("a benchmark clears the haircut, Strava halves it, nothing pays it in full", () => {
+  const measured = resolve(base({ confidence: "measured", recent: strava(38, 19) }));
+  const stravaOnly = resolve(base({ recent: strava(38, 19) }));
+  const guessed = resolve(base({
+    recent: { peak_week_km: 38, long_run_km: 19, source: "reported" },
   }));
-  assert.equal(r.start_volume, 60);
-  assert.ok(!r.flags.some((f) => /quarter to a third/.test(f)));
+
+  assert.equal(measured.start_volume, 38, "measured pays nothing");
+  assert.equal(stravaOnly.start_volume, Math.round(38 * HAIRCUT_STRAVA * 10) / 10);
+  assert.equal(guessed.start_volume, Math.round(38 * HAIRCUT_NONE * 10) / 10);
+  assert.ok(stravaOnly.start_volume > guessed.start_volume);
+
+  assert.ok(stravaOnly.flags.some((f) => /half the usual margin/.test(f)));
+  assert.ok(guessed.flags.some((f) => /nothing here is measured yet/.test(f)));
+  assert.ok(!measured.flags.some((f) => /under your ceiling/.test(f)));
+});
+
+test("the ramp is tiered the same way", () => {
+  const ramp = (o: Partial<ResolveInput>) => resolve(base(o)).ramp_rate;
+  const measured = ramp({ confidence: "measured", recent: strava(38, 19) });
+  const stravaOnly = ramp({ recent: strava(38, 19) });
+  const guessed = ramp({ recent: { peak_week_km: 38, long_run_km: 19, source: "reported" } });
+  assert.ok(measured >= stravaOnly && stravaOnly > guessed);
+  assert.equal(Math.round(guessed * 100), 8);
 });
 
 // ------------------------------------------------------------------ the peak
 
-test("the peak builds on the biggest week actually completed", () => {
-  // an athlete whose weeks swing 20 to 38 has proven 38, not 27
-  const r = resolve(base({
-    recent: { weekly_km: 27.3, peak_week_km: 38, long_run_km: 19, source: "measured" },
-  }));
-  assert.equal(r.peak_ceiling, Math.round(27.3 * 2.2 * 10) / 10, "under the cap, so uncapped");
-  assert.ok(r.peak_ceiling <= 38 * PROVEN_HEADROOM);
-});
-
 test("a block builds on proven volume rather than doubling it", () => {
-  const r = resolve(base({
-    recent: { weekly_km: 40, peak_week_km: 40, long_run_km: 16, source: "measured" },
-  }));
+  const r = resolve(base({ confidence: "measured", recent: strava(40, 19) }));
   assert.equal(r.peak_ceiling, Math.round(40 * PROVEN_HEADROOM * 10) / 10);
   assert.ok(r.peak_ceiling < 40 * 2.2, "the multiplier alone would give 88 km");
   assert.ok(r.flags.some((f) => /biggest recent week/.test(f)));
@@ -113,27 +120,23 @@ test("with nothing recent the peak is unbounded by proof", () => {
 // ------------------------------------------------------------ measured beats told
 
 test("a record beats a memory, and the two are never blended", () => {
-  const measured = { weekly_km: 27.3, long_run_km: 19, source: "measured" as const };
-  assert.equal(preferMeasured(measured, { weekly_km: 40, long_run_km: 16 }), measured);
+  const measured = strava(38, 19);
+  assert.equal(preferMeasured(measured, { peak_week_km: 50, long_run_km: 16 }), measured);
 
-  const told = preferMeasured(null, { weekly_km: 40, long_run_km: 16 });
-  assert.deepEqual(told, { weekly_km: 40, long_run_km: 16, source: "reported" });
-  assert.equal(preferMeasured(null, { weekly_km: null, long_run_km: null }), null);
+  const told = preferMeasured(null, { peak_week_km: 50, long_run_km: 16 });
+  assert.deepEqual(told, { peak_week_km: 50, long_run_km: 16, source: "reported" });
+  assert.equal(preferMeasured(null, { peak_week_km: null, long_run_km: null }), null);
 
   // an empty history does not silently outrank what they told us
   assert.equal(
-    preferMeasured({ weekly_km: null, long_run_km: null, source: "measured" },
-      { weekly_km: 40, long_run_km: 16 })?.source, "reported");
+    preferMeasured(strava(null, null), { peak_week_km: 50, long_run_km: 16 })?.source,
+    "reported");
 });
 
-// -------------------------------------------------- surveying before importing
-
-test("the week key agrees with what the database buckets by", async () => {
+test("the week key agrees with what the database buckets by", () => {
   // both paths bucket Monday-first; if they disagreed, the same athlete would
-  // get different numbers depending on whether their history had imported yet
-  const { __weekKeyForTest } = await import("../lib/recent");
-  // Sun 16 Aug 2026 and Mon 10 Aug 2026 are the same week, Monday-based
-  assert.equal(__weekKeyForTest(new Date("2026-08-16T22:00:00")), "2026-08-10");
-  assert.equal(__weekKeyForTest(new Date("2026-08-10T06:00:00")), "2026-08-10");
-  assert.equal(__weekKeyForTest(new Date("2026-08-17T06:00:00")), "2026-08-17");
+  // get a different week 1 depending on whether their history had imported yet
+  assert.equal(weekKey(new Date("2026-08-16T22:00:00")), "2026-08-10");
+  assert.equal(weekKey(new Date("2026-08-10T06:00:00")), "2026-08-10");
+  assert.equal(weekKey(new Date("2026-08-17T06:00:00")), "2026-08-17");
 });

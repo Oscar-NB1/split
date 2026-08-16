@@ -23,11 +23,12 @@ import { generate, resolve } from "@/lib/generate";
 
 type Row = Omit<Intake, "hasRace" | "raceDistance" | "raceDate" | "runningSelf"
   | "paceMin" | "paceSec" | "paceUnknown" | "commitDay"
-  | "recentWeeklyKm" | "recentLongRunKm"> & {
+  | "peakWeekKm" | "longestRunKm" | "volumeSource"> & {
   has_race: string; race_distance: string | null; race_date: string | null;
   running_self: string; pace_min: number | null; pace_sec: number | null;
   pace_unknown: boolean; commit_day: Record<string, Day[]>;
-  recent_weekly_km: number | null; recent_long_run_km: number | null;
+  peak_week_km: number | null; longest_run_km: number | null;
+  volume_source: string | null;
   completed_at: string;
 };
 
@@ -41,7 +42,8 @@ const toIntake = (r: Row): Intake => ({
   base: r.base,
   runningSelf: r.running_self as Intake["runningSelf"],
   paceMin: r.pace_min, paceSec: r.pace_sec, paceUnknown: r.pace_unknown,
-  recentWeeklyKm: r.recent_weekly_km, recentLongRunKm: r.recent_long_run_km,
+  peakWeekKm: r.peak_week_km, longestRunKm: r.longest_run_km,
+  volumeSource: r.volume_source as Intake["volumeSource"],
   days: r.days, commitments: r.commitments, freq: r.freq, commitDay: r.commit_day,
   equipment: r.equipment, sled: r.sled,
   injuries: r.injuries, volume: r.volume, difficulty: r.difficulty,
@@ -52,7 +54,7 @@ const load = async (userId: string) => {
   const [row] = await sql<Row[]>`
     select has_race, discipline, race_distance, race_date::text as race_date, role,
            division, base, running_self, pace_min, pace_sec, pace_unknown,
-           recent_weekly_km, recent_long_run_km,
+           peak_week_km, longest_run_km, volume_source,
            days, commitments, freq, commit_day, equipment, sled, injuries,
            volume, difficulty, benchmark, completed_at::text as completed_at
       from athlete_intake where user_id = ${userId}
@@ -153,8 +155,10 @@ function parse(body: Record<string, unknown>): Intake {
     paceMin: int(body.paceMin),
     paceSec: int(body.paceSec) ?? 0,
     paceUnknown: body.paceUnknown === true,
-    recentWeeklyKm: km(body.recentWeeklyKm),
-    recentLongRunKm: km(body.recentLongRunKm),
+    peakWeekKm: km(body.peakWeekKm),
+    longestRunKm: km(body.longestRunKm),
+    volumeSource: body.volumeSource === "strava" ? "strava"
+      : body.volumeSource === "self" ? "self" : null,
     days: list(body.days, DAYS),
     commitments,
     freq,
@@ -226,14 +230,14 @@ export const POST = route(async (req: NextRequest) => {
     insert into athlete_intake (
       user_id, has_race, discipline, race_distance, race_date, role, division,
       base, running_self, pace_min, pace_sec, pace_unknown,
-      recent_weekly_km, recent_long_run_km,
+      peak_week_km, longest_run_km, volume_source,
       days, commitments, freq, commit_day, equipment, sled,
       injuries, volume, difficulty, benchmark, updated_at
     ) values (
       ${me.id}, ${intake.hasRace}, ${intake.discipline}, ${intake.raceDistance},
       ${intake.raceDate}, ${intake.role}, ${intake.division},
       ${intake.base}, ${intake.runningSelf}, ${intake.paceMin}, ${intake.paceSec},
-      ${intake.paceUnknown}, ${intake.recentWeeklyKm}, ${intake.recentLongRunKm},
+      ${intake.paceUnknown}, ${intake.peakWeekKm}, ${intake.longestRunKm}, ${intake.volumeSource},
       ${intake.days}, ${intake.commitments},
       ${sql.json(intake.freq as never)}, ${sql.json(intake.commitDay as never)},
       ${intake.equipment}, ${intake.sled}, ${intake.injuries},
@@ -245,8 +249,9 @@ export const POST = route(async (req: NextRequest) => {
       role = excluded.role, division = excluded.division, base = excluded.base,
       running_self = excluded.running_self, pace_min = excluded.pace_min,
       pace_sec = excluded.pace_sec, pace_unknown = excluded.pace_unknown,
-      recent_weekly_km = excluded.recent_weekly_km,
-      recent_long_run_km = excluded.recent_long_run_km,
+      peak_week_km = excluded.peak_week_km,
+      longest_run_km = excluded.longest_run_km,
+      volume_source = excluded.volume_source,
       days = excluded.days, commitments = excluded.commitments, freq = excluded.freq,
       commit_day = excluded.commit_day, equipment = excluded.equipment,
       sled = excluded.sled, injuries = excluded.injuries, volume = excluded.volume,

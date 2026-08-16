@@ -94,10 +94,9 @@ export type Confidence = "estimated" | "measured";
  * and a figure from the file is a record.
  */
 export type RecentRunning = {
-  /** the typical week — what the block starts from */
-  weekly_km: number | null;
-  /** the biggest week they have actually completed — what the peak builds on */
-  peak_week_km?: number | null;
+  /** biggest week in the last four — the number week 1 is built from */
+  peak_week_km: number | null;
+  /** longest single run in the last eight weeks */
   long_run_km: number | null;
   source: "measured" | "reported";
 };
@@ -119,15 +118,23 @@ export function baseFromLongRun(km: number | null): RunningBase | null {
 const runRank = (b: RunningBase) => RUNNING_BASE.indexOf(b);
 
 /**
- * The most a week can plausibly be, given the longest run in it.
+ * The weekly ceiling a longest run implies.
  *
- * A long run is normally a quarter to a third of the week, so a claimed 60 km
- * week behind a 5 km longest run is a mistyped answer rather than a training
- * history. Four times the long run is the generous end of that, and it only
- * ever trims a reported number — never a measured one, where the arithmetic is
- * already the athlete's own.
+ * A long run is normally a quarter to a third of a week, so 3.2 times it is the
+ * generous end of what that week can be. This caps the ceiling rather than the
+ * answer: it is a statement about what the athlete's legs currently support,
+ * and it binds whatever they called themselves.
  */
-export const LONG_RUN_SHARE = 4;
+export const LONG_RUN_SHARE = 3.2;
+
+/**
+ * How far a recent peak week may outrun the training-base bracket.
+ *
+ * A peak week is evidence and a bracket is a guess, so evidence wins — but one
+ * enormous week inside an otherwise quiet block is a race or a one-off, not a
+ * base. Capped either side.
+ */
+export const PEAK_OVER_BRACKET = 1.6;
 
 export type ResolveInput = {
   general_training_age: TrainingAge;
@@ -185,22 +192,42 @@ export function resolve(x: ResolveInput): Resolved {
     );
   }
 
-  const ceiling = RUNNING_CEILING[running_base];
-  const capped = ceiling == null ? matrix_volume : Math.min(matrix_volume, ceiling);
-  if (ceiling != null && ceiling < matrix_volume) {
+  /**
+   * A recent peak week is evidence; the matrix bracket is a guess.
+   *
+   * Evidence wins, capped either side — one enormous week inside an otherwise
+   * quiet block is a race or a one-off rather than a base to build from.
+   */
+  const peak_week = x.recent?.peak_week_km ?? null;
+  const bracket = peak_week
+    ? Math.round(Math.min(peak_week, matrix_volume * PEAK_OVER_BRACKET))
+    : matrix_volume;
+  if (peak_week && bracket !== matrix_volume) {
     flags.push(
-      `Week 1 is held at ${capped} km rather than ${matrix_volume} km: your training says one thing and your running says another, and the running wins.`,
+      peak_week > bracket
+        ? `Your biggest recent week was ${peak_week} km, but week 1 builds from ${bracket} km — that is as far above your training bracket as one week of evidence carries.`
+        : `Week 1 builds from your biggest recent week of ${peak_week} km rather than the ${matrix_volume} km the bracket suggested.`,
     );
   }
 
-  /**
-   * What they are already running beats what the matrix guessed.
-   *
-   * The matrix reads adjectives; a recent weekly figure is the thing itself.
-   * Starting below where someone already is spends the first weeks of a block
-   * detraining them, which is the more common failure of the two.
-   */
-  const recent = plausibleRecent(x.recent ?? null, flags);
+  /** What the legs support: the stated base, and the long run behind it. */
+  const stated_ceiling = RUNNING_CEILING[running_base];
+  const long_run_ceiling = x.recent?.long_run_km
+    ? Math.round(x.recent.long_run_km * LONG_RUN_SHARE) : null;
+  const ceiling = stated_ceiling == null ? long_run_ceiling
+    : long_run_ceiling == null ? stated_ceiling
+    : Math.min(stated_ceiling, long_run_ceiling);
+
+  const capped = ceiling == null ? bracket : Math.min(bracket, ceiling);
+  if (ceiling != null && ceiling < bracket) {
+    flags.push(
+      long_run_ceiling === ceiling
+        ? `Week 1 is held at ${capped} km: a ${x.recent!.long_run_km} km longest run does not yet support more than that in a week.`
+        : `Week 1 is held at ${capped} km rather than ${bracket} km: your training says one thing and your running says another, and the running wins.`,
+    );
+  }
+
+
 
   /**
    * No benchmark is not a reason to train less.
@@ -212,17 +239,33 @@ export function resolve(x: ResolveInput): Resolved {
    * the absence of a test penalises not having taken one. A benchmark sharpens
    * the paces; it does not license the volume.
    */
-  const start_volume = Math.max(3, Math.round((recent ?? capped) * 10) / 10);
-  if (recent != null && Math.abs(recent - capped) >= 1) {
+  /**
+   * Not knowing has a cost, and it is stated.
+   *
+   * A benchmark clears it. Strava supplying the volume halves it rather than
+   * clearing it, because a measured week says what the athlete ran and still
+   * says nothing about how fast they can run it.
+   */
+  // The volume has to have actually arrived. A Strava survey that came back
+  // empty is not a measurement, and must not earn the measured discount.
+  const strava_volume = x.recent?.source === "measured" && !!x.recent.peak_week_km;
+  const haircut = x.confidence === "measured" ? 1
+    : strava_volume ? HAIRCUT_STRAVA : HAIRCUT_NONE;
+  const start_volume = Math.max(3, Math.round(capped * haircut * 10) / 10);
+  if (haircut < 1) {
     flags.push(
-      recent > capped
-        ? `Week 1 starts at ${Math.round(recent * 10) / 10} km, not the ${capped} km the matrix suggested — you are already running that, and a block that starts under you is a block spent catching up.`
-        : `Week 1 starts at ${Math.round(recent * 10) / 10} km rather than ${capped} km, because that is where your running actually is right now.`,
+      haircut === HAIRCUT_STRAVA
+        ? `Week 1 sits ${Math.round((1 - haircut) * 100)}% under your ceiling. Strava gave us the volume, so this is half the usual margin — a benchmark clears the rest by measuring the pace.`
+        : `Week 1 sits ${Math.round((1 - haircut) * 100)}% under your ceiling, because nothing here is measured yet. A benchmark, or connecting Strava, closes most of that.`,
     );
   }
 
   const dial = x.volume_dial ?? 1.0;
-  const ramp_rate = Math.min(BASE_RAMP[training_age], RUNNING_RAMP[x.running_base]) * dial;
+  /** The same tiering on the climb: measured 12%, Strava 10%, neither 8%. */
+  const ramp_cap = x.confidence === "measured" ? 0.12
+    : strava_volume ? 0.10 : 0.08;
+  const ramp_rate =
+    Math.min(ramp_cap, BASE_RAMP[training_age], RUNNING_RAMP[running_base]) * dial;
 
   // Training age sets the peak. Whether a test has been run does not: the same
   // athlete does not become capable of less by declining to be measured.
@@ -241,7 +284,7 @@ export function resolve(x: ResolveInput): Resolved {
   // Against the biggest week they have actually done, not the typical one:
   // "proven" means the most they have completed, and an athlete whose weeks
   // swing between 20 and 38 km has proven 38.
-  const proven = x.recent?.peak_week_km ?? recent;
+  const proven = peak_week;
   const proven_cap = proven != null ? proven * PROVEN_HEADROOM : Infinity;
   const peak_ceiling = Math.round(Math.min(raw_peak, proven_cap) * 10) / 10;
   if (proven_cap < raw_peak) {
@@ -264,25 +307,8 @@ export function resolve(x: ResolveInput): Resolved {
 /** How far above a proven week a single block is allowed to build. */
 export const PROVEN_HEADROOM = 1.6;
 
-/**
- * A recent weekly figure, sanity-checked against the long run behind it.
- *
- * Only reported numbers are trimmed. A measured one is the athlete's own
- * arithmetic over their own files, and second-guessing it here would mean
- * disbelieving a record in favour of a rule of thumb.
- */
-function plausibleRecent(
-  recent: RecentRunning | null, flags: string[],
-): number | null {
-  const weekly = recent?.weekly_km;
-  if (!recent || !weekly || weekly <= 0) return null;
-  const long = recent.long_run_km;
-  if (recent.source === "measured" || !long || long <= 0) return weekly;
 
-  const most = long * LONG_RUN_SHARE;
-  if (weekly <= most) return weekly;
-  flags.push(
-    `You put ${weekly} km a week behind a ${long} km long run. A long run is usually a quarter to a third of the week, so week 1 is built from ${Math.round(most * 10) / 10} km — correct either number and it moves.`,
-  );
-  return most;
-}
+/** Week 1 sits under the ceiling by this much when nothing is measured. */
+export const HAIRCUT_NONE = 0.85;
+/** Halved when Strava supplied the volume: it says what, not how fast. */
+export const HAIRCUT_STRAVA = 0.93;

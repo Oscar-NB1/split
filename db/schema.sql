@@ -671,3 +671,11 @@ alter table benchmark_results add column if not exists applied_at  timestamptz;
 -- with a 16 km long run is a measurement.
 alter table athlete_intake add column if not exists recent_weekly_km   numeric;
 alter table athlete_intake add column if not exists recent_long_run_km numeric;
+
+-- Renamed to match the form (2026-08-16): the biggest week of the last four is
+-- what week 1 builds from, and the longest run of the last eight caps the long
+-- run. volume_source records whether Strava supplied them, which halves the
+-- unmeasured haircut rather than clearing it.
+alter table athlete_intake rename column recent_weekly_km   to peak_week_km;
+alter table athlete_intake rename column recent_long_run_km to longest_run_km;
+alter table athlete_intake add column if not exists volume_source text;
