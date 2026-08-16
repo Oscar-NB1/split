@@ -511,11 +511,19 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
       const ok = checkIntent(b.intent as Intent, b.date, intake.raceDate);
       await sql`
         insert into race_targets (
-          athlete_id, race_date, venue, discipline, division, role, intent,
-          intent_locked
+          athlete_id, race_date, start_date, venue, discipline, division, role,
+          goal, intent, intent_locked
         ) values (
-          ${me.id}, ${b.date}, null, ${b.kind ?? intake.discipline},
+          -- The block's start, not a start of its own: a secondary race is run
+          -- inside the block aimed at the target. Omitting it violated a not-null
+          -- constraint, so every athlete who entered a second race got a 500 on
+          -- the last step of the form and no way to tell why.
+          ${me.id}, ${b.date}, ${startDate}, null, ${b.kind ?? intake.discipline},
           ${b.division}, 'secondary',
+          -- What the athlete wants from the target race, carried over: this column
+          -- describes the block, and a secondary race is run inside the same block.
+          -- The race's own answer is the intent below it.
+          ${intake.goal},
           ${ok.ok ? b.intent : "training"},
           ${intentLocked(b.date, today())}
         )
