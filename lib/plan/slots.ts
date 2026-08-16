@@ -30,6 +30,8 @@ export const HYROX_RUN_CREDIT = 0.5;
 
 export type SlotInput = {
   target_sessions: number;
+  /** which phase this week belongs to; the second Hyrox session is phase-gated */
+  phase?: string;
   allocation: Allocation;
   discipline: "doubles" | "singles" | "running";
   commitments: Commitment[];
@@ -88,8 +90,16 @@ export function allocateSlots(x: SlotInput): SlotPlan {
    * slots. A third belongs to an athlete whose station share is genuinely
    * dominant, and nobody else.
    */
+  /*
+   * And the ceiling moves with the phase for the same reason the minimum does.
+   *
+   * Leaving it at two meant the spare-slot loop below handed the second one back
+   * the moment the minimum stopped asking for it — the cap has to agree with the
+   * rule, or the rule is decoration.
+   */
+  const specific = x.phase === "specific";
   const hyroxWanted = isHyrox
-    ? Math.min(slots, x.allocation.station >= 35 ? 3 : 2)
+    ? Math.min(slots, specific ? (x.allocation.station >= 35 ? 3 : 2) : 1)
     : 0;
 
   // --- the minimums, in the order the brief ranks them --------------------
@@ -97,10 +107,27 @@ export function allocateSlots(x: SlotInput): SlotPlan {
   if (slots >= 3) counts.long_run = 1;
   if (slots >= 3 && isHyrox) counts.hyrox = 1;
   if (slots >= 4) counts.strength = 1;
-  // A second Hyrox session outranks a second strength session: strength is a
-  // means, the Hyrox session is the sport, plus compromised running, plus the
-  // only transition practice in the week.
-  if (slots >= 5 && isHyrox) counts.hyrox = 2;
+  /*
+   * Easy running is a minimum, not a leftover.
+   *
+   * It was neither: the minimums did not include it, and the spare-slot scores
+   * below only ever ran once or twice. A six-session week came out as two quality
+   * runs, two Hyrox sessions, strength and the long run — five hard days and no
+   * aerobic running at all, in a sport decided by the aerobic engine. Whatever else
+   * the week holds, one easy run is in it from five slots and two from seven.
+   */
+  if (slots >= 5) counts.easy_run = 1;
+  if (slots >= 7) counts.easy_run = 2;
+
+  /*
+   * A second Hyrox session belongs to the specific phase.
+   *
+   * Two of them every week from week one is the whole block spent rehearsing the
+   * race, and it is what put a half simulation and a full simulation on consecutive
+   * days in August. One a week builds the skill; the second arrives when the work
+   * turns race-shaped.
+   */
+  if (slots >= 6 && isHyrox && x.phase === "specific") counts.hyrox = 2;
 
   let used = Object.values(counts).reduce((a, b) => a + b, 0);
   if (used > slots) {
@@ -161,7 +188,19 @@ export function allocateSlots(x: SlotInput): SlotPlan {
   // sessions come down first — and the second one, which outranks a second
   // strength session, still cannot outrank the number of hard days an athlete
   // can absorb. Anything shed becomes easy running rather than disappearing.
+  /*
+   * Three hard days, whatever the training age permits.
+   *
+   * A specific-phase week was coming out as two quality runs and two Hyrox
+   * sessions: four hard days, which forces two of them onto consecutive days in any
+   * week that also holds a long run and a commitment. The race-specific session is
+   * quality work — it does not need a second interval session beside it.
+   */
+  const hardCeiling = Math.min(x.max_hard, 3);
   const minHyrox = isHyrox ? (slots >= 3 ? 1 : 0) : 0;
+  while (counts.quality_run + counts.hyrox > hardCeiling && counts.quality_run > 1) {
+    counts.quality_run--; counts.easy_run++;
+  }
   while (counts.quality_run + counts.hyrox > x.max_hard && counts.hyrox > minHyrox) {
     counts.hyrox--; counts.easy_run++;
   }

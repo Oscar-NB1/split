@@ -79,11 +79,27 @@ test("the never-runner starts on run/walk and is never handed intervals", () => 
   assert.equal(rungFor("L4", "doesnt_run", 0, "base").rung, 0, "the bottom, if it appears at all");
 });
 
-test("a rung climbs about one a week, and the phase caps it", () => {
+test("a rung climbs every other week, and the phase caps it", () => {
   const base = rungFor("L3", "runs_regularly", 6, "base");
   const specific = rungFor("L3", "runs_regularly", 6, "specific");
   assert.ok(base.rung < specific.rung, "a base week cannot reach the top of the ladder");
-  assert.equal(specific.rung, LADDERS.L3.rungs.length - 1, "the specific phase can");
+  // Six weeks in, climbing every other week from an entry that leaves headroom:
+  // near the top of the ladder rather than exactly on it, and the top is reachable
+  // from any entry given enough weeks.
+  assert.ok(specific.rung >= LADDERS.L3.rungs.length - 2, `${specific.rung}`);
+  assert.equal(rungFor("L3", "runs_regularly", 12, "specific").rung,
+    LADDERS.L3.rungs.length - 1, "and the top is reachable");
+});
+
+test("a phase does not open and close on the same rung", () => {
+  /*
+   * Weeks one to four of the base phase were the same session every Monday: the
+   * athlete's entry rung already sat at the phase cap, so the clamp pinned it and
+   * nothing moved. Entering below the cap leaves the phase somewhere to go.
+   */
+  const across = [0, 1, 2, 3, 4, 5].map((w) => rungFor("L3", "half_marathon_fit", w, "base").rung);
+  assert.ok(new Set(across).size > 1, `pinned at ${across.join(", ")}`);
+  assert.ok(across[across.length - 1] > across[0], across.join(" → "));
 });
 
 test("race-specific work only appears in the phases that have it", () => {

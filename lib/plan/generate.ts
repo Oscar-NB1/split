@@ -56,6 +56,8 @@ export type Params = ResolveInput & {
 export type Session = {
   day: number; kind: SlotKind | string; hard: boolean;
   label: string; km?: number;
+  /** which ladder this session came from, which decides how fast its work is */
+  ladder?: string;
   /** the prescription, in the syntax the app parses and the watch understands */
   target_text?: string;
   /** one line about the session, where the kind has something worth saying */
@@ -126,7 +128,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     const slotPlan = allocateSlots({
       target_sessions: r.sessions, allocation,
       discipline: p.discipline, commitments: p.commitments, max_hard: r.max_hard,
-      quality_target: p.quality_target,
+      quality_target: p.quality_target, phase: w.phase,
     });
     for (const f of slotPlan.flags) flags.push({ code: "slots", message: f });
 
@@ -169,6 +171,8 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * next rung in the cycle, so the week holds two different stimuli.
      */
     let qualitySeen = 0;
+    /** Which ladder each quality run came from, so it can be paced as itself. */
+    const secondLadder = otherLadder(ladder, stations);
     /*
      * Two Hyrox sessions in a week were the same session twice — the same rung, the
      * same name, on consecutive days. The second takes the next rung of the
@@ -178,8 +182,9 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     const sessions: Session[] = placed.week.map((s) => {
       const isQuality = s.kind === "quality_run";
       const second = isQuality && qualitySeen++ > 0;
+      const thisLadder = second ? secondLadder : ladder;
       const thisRung = second
-        ? rungFor(otherLadder(ladder, stations), p.running_base, inPhase, w.phase)
+        ? rungFor(secondLadder, p.running_base, inPhase, w.phase)
         : rung;
       const isBench = benchmarks.has(w.n) && isQuality && !benchTaken;
       if (isBench) benchTaken = true;
@@ -196,6 +201,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
             ? `Hyrox · ${(hyroxSeen++ === 0 ? hyroxRung : hyroxRung2 ?? hyroxRung).toLowerCase()}`
           : String(s.kind)),
         km: share ? Math.round(runnable * share * 10) / 10 : undefined,
+        ladder: isQuality ? thisLadder : undefined,
         prescription: share
           ? prescribe(p.anchor, isQuality ? "cv" : s.kind === "long_run" ? "long" : "easy",
               p.max_hr, isQuality ? 4 : 2, isQuality ? 7 : 4)
@@ -245,7 +251,8 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         // No single session may exceed 40% of the week — the bound the plan asserts
         // against itself, applied where the session is built rather than checked
         // after the fact.
-        const built = qualityRun(s.label, cvPace, easyPace, w.km * 0.38);
+        const built = qualityRun(s.label, cvPace, easyPace, w.km * 0.38, inPhase,
+          s.ladder ?? "L4");
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title && kind === "quality_run") s.label = built.title;
       } else if (kind === "hyrox") {

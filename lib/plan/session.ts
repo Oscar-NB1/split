@@ -86,6 +86,21 @@ export function readRung(label: string): Work | null {
 
 const km1 = (n: number) => Math.round(n * 10) / 10;
 
+/** One more rep every other week, to a ceiling of three added. */
+function grow(work: Work | null, progress: number): Work | null {
+  if (!work || progress <= 0) return work;
+  const extra = Math.min(3, Math.floor(progress / 2));
+  if (extra === 0) return work;
+  if (work.shape === "reps" || work.shape === "strides" || work.shape === "reps_time"
+      || work.shape === "alternating") {
+    return { ...work, reps: work.reps + extra };
+  }
+  if (work.shape === "continuous") {
+    return { ...work, seconds: work.seconds + extra * 300 };
+  }
+  return work;
+}
+
 /** Seconds per kilometre as a pace anybody can read. */
 const paceOf = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s) % 60).padStart(2, "0")}`;
 /** The pace target as it is written into the prescription. */
@@ -155,10 +170,31 @@ const doseKm = (km: number) => (km >= 1 ? `${km1(km)}km` : `${Math.round(km * 10
  * at threshold is about 3.5 km for one athlete and 4.2 km for another, and inventing
  * a single number for both is how "2 × 15 min" ended up as 13.4 km.
  */
+/**
+ * How fast each ladder's work is, relative to critical velocity.
+ *
+ * Both quality sessions in a week were written at the same number, so a threshold
+ * session and a VO2 session — different stimuli, the whole reason for having two —
+ * were the same run twice. Threshold sits above CV pace, neuromuscular below it.
+ */
+export const LADDER_PACE: Record<string, number> = {
+  L1: 1.20, L2: 1.14, L3: 1.06, L4: 1.00, L5: 0.90, L6: 1.04,
+};
+
 export function qualityRun(
-  label: string, paceS: number, easyS: number, maxKm = Infinity,
+  label: string, paceS: number, easyS: number, maxKm = Infinity, progress = 0,
+  ladder = "L4",
 ): Built {
-  const work = trim(readRung(label), paceS, maxKm);
+  const workPace = Math.round(paceS * (LADDER_PACE[ladder] ?? 1));
+  /*
+   * The same session, done more of, until the rung itself moves.
+   *
+   * Weeks one to four were "4 × 8 min" every Monday: the ladder rung was pinned by
+   * the phase cap, and nothing else varied. Progression inside a rung is what a
+   * coach actually writes — four reps, then five, then six — and the week's own
+   * ceiling still decides whether there is room for it.
+   */
+  const work = trim(grow(readRung(label), progress), paceS, maxKm);
   /*
    * Every step carries its pace.
    *
@@ -183,7 +219,7 @@ export function qualityRun(
   if (work.shape === "reps" || work.shape === "strides") {
     const rest = work.shape === "strides" ? 60 : restFor((work.metres / 1000) * paceS);
     title = `${work.reps} × ${work.metres} m`;
-    const repPace = work.shape === "strides" ? Math.round(paceS * 0.88) : paceS;
+    const repPace = work.shape === "strides" ? Math.round(paceS * 0.88) : workPace;
     lines.push(`- ${work.reps}x`);
     lines.push(`- ${work.metres}m ${work.shape === "strides" ? "Z5" : "Z4"} ${at(repPace)}`);
     // A walking recovery has no pace, and saying so is the honest instruction.
@@ -194,14 +230,14 @@ export function qualityRun(
     const rest = restFor(work.seconds);
     title = `${work.reps} × ${Math.round(work.seconds / 60)} min`;
     lines.push(`- ${work.reps}x`);
-    lines.push(`- ${Math.round(work.seconds / 60)}m Z4 ${at(paceS)}`);
+    lines.push(`- ${Math.round(work.seconds / 60)}m ${ladder === "L3" ? "Z3" : "Z4"} ${at(workPace)}`);
     lines.push(`- ${rest}s Z1 jog ${at(Math.round(paceS * RECOVERY_JOG))}`);
-    workKm = (work.seconds / paceS) * work.reps;
+    workKm = (work.seconds / workPace) * work.reps;
     workSeconds = work.reps * (work.seconds + rest);
   } else if (work.shape === "continuous") {
     title = `${Math.round(work.seconds / 60)} min continuous`;
     lines.push(`- ${Math.round(work.seconds / 60)}m Z3 ${at(Math.round(paceS * 1.06))}`);
-    workKm = work.seconds / paceS;
+    workKm = work.seconds / workPace;
     workSeconds = work.seconds;
   } else {
     const rounds = work.reps;

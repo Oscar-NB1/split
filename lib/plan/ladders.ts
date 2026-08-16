@@ -117,9 +117,19 @@ export function rungFor(
   ladder: LadderId, base: RunningBase, weeksIn: number, phase: PhaseName,
 ): Rung {
   const rungs = LADDERS[ladder].rungs;
-  const entry = ENTRY[base]?.[ladder] ?? 0;
   const ceiling = Math.max(0, Math.floor((rungs.length - 1) * PHASE_CAP[phase]));
-  const rung = Math.min(entry + weeksIn, ceiling, rungs.length - 1);
+  /*
+   * Start below the ceiling so there is somewhere to climb.
+   *
+   * An athlete whose entry already sat at the phase cap got the same rung in week
+   * one and week four — the clamp pinned it, and every Monday of the base phase
+   * was the same session. Entering a rung under the cap leaves the phase somewhere
+   * to go, and the cap still decides how far.
+   */
+  const entry = Math.min(ENTRY[base]?.[ladder] ?? 0, Math.max(0, ceiling - 1));
+  // Every other week, not every week: a rung is a change of session, and changing
+  // it weekly means nothing is ever repeated well enough to be measured.
+  const rung = Math.min(entry + Math.floor(weeksIn / 2), ceiling, rungs.length - 1);
   return { label: rungs[Math.max(0, rung)], rung: Math.max(0, rung) };
 }
 
