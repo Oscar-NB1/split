@@ -72,9 +72,24 @@ a:hover{color:var(--teal-l)}
 
 /* ------------------------------------------------------------------ shell */
 .app{
-  height:100%; box-sizing:border-box; display:flex; flex-direction:column;
+  /*
+   * Pinned to the viewport, not sized as a percentage of it.
+   *
+   * height:100% needs every parent to report the right height, and iOS in
+   * standalone mode does not reliably do that — so the shell came up short of the
+   * screen and the body background showed through below the tab bar. Two previous
+   * fixes moved that gap around instead of removing it, because both were still
+   * measuring rather than anchoring.
+   *
+   * position:fixed with inset:0 has no chain to depend on: it is the visual
+   * viewport by definition. max-width and auto margins still centre it on a wide
+   * screen, because inset:0 sets left and right to 0 and margin:auto resolves
+   * against that.
+   */
+  position:fixed; inset:0;
+  box-sizing:border-box; display:flex; flex-direction:column;
   background:var(--off); max-width:520px; margin:0 auto;
-  position:relative; overflow:hidden;
+  overflow:hidden;
   /*
    * No top padding here.
    *
