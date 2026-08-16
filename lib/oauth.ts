@@ -187,11 +187,15 @@ export async function exchange(p: Provider, code: string): Promise<Profile> {
 
 // ------------------------------------------------------- turning it into a user
 
+/**
+ * `linked` only ever comes from a deliberate link inside an existing session.
+ * There is no "conflict" outcome any more: nothing joins accounts on an email,
+ * so there is no ambiguity for the login screen to resolve.
+ */
 export type Resolution =
   | { kind: "signed-in"; userId: string }
   | { kind: "created"; userId: string }
-  | { kind: "linked"; userId: string }
-  | { kind: "conflict"; email: string };
+  | { kind: "linked"; userId: string };
 
 /**
  * Which account this identity belongs to.
@@ -219,17 +223,20 @@ export async function resolveIdentity(profile: Profile): Promise<Resolution> {
     return { kind: "signed-in", userId: existing.user_id };
   }
 
-  if (profile.email) {
-    const [byEmail] = await sql<{ id: string }[]>`
-      select id from users where lower(email) = ${profile.email}
-    `;
-    if (byEmail) {
-      if (!profile.emailVerified) return { kind: "conflict", email: profile.email };
-      await link(profile, byEmail.id);
-      return { kind: "linked", userId: byEmail.id };
-    }
-  }
-
+  /*
+   * A sign-in the app has never seen creates a new athlete. It is never matched
+   * onto an existing account by email.
+   *
+   * Email matching was the one place where signing in somewhere else could hand
+   * you an account here: an address is a claim, not a proof, and "verified by
+   * Google" only means Google believes it today. Identity is the provider's
+   * subject — a Google `sub` or a Strava athlete id — which is issued by them,
+   * stable, and cannot be claimed by registering an address.
+   *
+   * The cost is that one person signing in with both Google and Strava gets two
+   * accounts. That is a linking feature, done deliberately from inside a session
+   * they are already holding, rather than a guess made at the login screen.
+   */
   const [created] = await sql<{ id: string }[]>`
     insert into users (email, display_name, avatar_url, email_verified, weight_kg)
     values (${profile.email}, ${profile.name ?? "Athlete"}, ${profile.avatar},

@@ -4,21 +4,26 @@ import { issueSession } from "@/lib/session";
 import { identitiesFor } from "@/lib/auth";
 
 /**
- * The bootstrap, and only the bootstrap.
+ * The bootstrap, off unless switched on.
  *
- * Sign-in is Google or Strava. These two accounts predate that: they were made
- * by an access code, they hold a training history, and neither provider can
- * reach them — one email is an iCloud address Google will never match, and
- * Strava carries no email at all, so signing in with it would create a second
- * account rather than find the first.
+ * This existed because the first two accounts predated OAuth and no provider
+ * could reach them. Registration now creates a new athlete for any sign-in the
+ * app has not seen, so the bootstrap has no job: it can only ever open those two
+ * legacy accounts, and it would have stayed open forever because they will never
+ * acquire an identity of their own.
  *
- * So the code still works, exactly until it is not needed. The moment an account
- * has a way of signing in of its own, the code stops opening it: whoever holds a
- * shared secret should not keep a key to an account that has since got a real
- * one. It retires itself per person, which means nobody has to remember to
- * remove it.
+ * A shared code that grants a 180-day session on a public URL is the kind of
+ * thing that survives by being forgotten, so it is now off by default and has to
+ * be asked for. Set ALLOW_CODE_LOGIN=1 to reach the old accounts and their
+ * training history; leave it unset in production.
  */
 export async function POST(req: NextRequest) {
+  if (process.env.ALLOW_CODE_LOGIN !== "1") {
+    // Deliberately the same answer as a wrong code: whether a disabled door
+    // exists is not something a public endpoint should confirm.
+    return NextResponse.json({ error: "That code doesn't match." }, { status: 401 });
+  }
+
   const { code } = await req.json();
 
   const people = [

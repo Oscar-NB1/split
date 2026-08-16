@@ -30,11 +30,6 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
       const outcome = linkTo
         ? ({ kind: "linked", userId: linkTo } as const)
         : await resolveIdentity(profile);
-      // Strava carries no email, so it can never reach the conflict case — but
-      // the check stays, because a provider that starts returning one should not
-      // silently start joining accounts on an unverified address.
-      if (outcome.kind === "conflict") return back("/", "email-in-use");
-
       await link(profile, outcome.userId);
       await fillProfileGaps(outcome.userId, profile);
       await saveTokens(outcome.userId, {
@@ -61,7 +56,6 @@ async function handle(req: NextRequest, provider: string, params: URLSearchParam
     }
 
     const outcome = await resolveIdentity(profile);
-    if (outcome.kind === "conflict") return back("/", "email-in-use");
     await fillProfileGaps(outcome.userId, profile);
     await issueSession(outcome.userId);
     return back("/", outcome.kind === "created" ? "created" : "signed-in");
