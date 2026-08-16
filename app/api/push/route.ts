@@ -57,7 +57,7 @@ export const PUT = route(async () => {
   const me = await requireUser();
   await sql`
     insert into notifications (user_id, kind, dedupe_key, title, body, url)
-    values (${me.id}, 'session_paired', ${`test:${Date.now()}`}, 'Split',
+    values (${me.id}, 'session_paired', ${`test:${Date.now()}`}, 'Hyrox Coaching App',
             'Notifications are working. This is the only one you asked for.', '/')
   `;
   const sent = await flush();

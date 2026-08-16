@@ -192,7 +192,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "record" ? "Record" : view === "connect" ? "Strava"
     : view === "build" ? "Build my plan"
     : view === "notes" ? "Messages" : view === "inbox" ? "Thread"
-    : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions" : "Split";
+    : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions" : "Hyrox";
 
   return (
     <div className="app">

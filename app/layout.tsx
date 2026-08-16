@@ -25,10 +25,10 @@ const instrument = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Split",
-  description: "Two athletes, one calendar.",
+  title: "Hyrox Coaching App",
+  description: "Hyrox and running plans that build themselves from your own training.",
   manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Split" },
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Hyrox" },
 };
 
 export const viewport: Viewport = {

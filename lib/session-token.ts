@@ -8,6 +8,14 @@ import { SignJWT, jwtVerify } from "jose";
  * would drag the whole database client in behind it.
  */
 
+/**
+ * Deliberately still `split_session` after the rename to Hyrox Coaching App.
+ *
+ * The cookie name is not a product name, it is a key: renaming it would sign
+ * out everyone holding the old one, which is precisely the thing the rolling
+ * refresh exists to prevent. Same reasoning for the `split-` prefixed
+ * localStorage keys — renaming those resets the theme someone chose.
+ */
 export const COOKIE = "split_session";
 export const MAX_AGE = 60 * 60 * 24 * 180;
 /** Re-sign a token once it is a week old. Rare enough to be free, frequent

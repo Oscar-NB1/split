@@ -12,7 +12,7 @@ export default async function RacesPage() {
     <div className="wrap">
       <header className="top">
         <div className="brandrow">
-          <div className="brand"><h1>Split</h1></div>
+          <div className="brand"><h1>Hyrox</h1></div>
           <a href="/" className="toplink">Week</a>
         </div>
       </header>
