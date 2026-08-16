@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { continuousRun, hyroxSession, qualityRun, readRung } from "../lib/plan/session";
-import { parseSteps, repCount } from "../lib/prescription";
+import { parseSteps, parseStrength, repCount } from "../lib/prescription";
+import { kitFrom, strengthTarget } from "../lib/plan/strength";
 
 test("a rung label is read back into what it asks for", () => {
   assert.deepEqual(readRung("6 × 800 m"), { shape: "reps", reps: 6, metres: 800 });
@@ -61,4 +62,30 @@ test("an easy run says one thing, and a Hyrox session alternates", () => {
   const groups = parseSteps(hyrox.target);
   assert.ok(groups.some((g) => /×/.test(g.label)), "it repeats");
   assert.match(hyrox.target, /station/, "the station is in the session");
+});
+
+test("a strength session prescribes lifts, from the kit the athlete has", () => {
+  // The screen said "no lifts prescribed for this one" above a session the plan had
+  // put in the week and told the athlete to protect.
+  const full = strengthTarget("build", 3, kitFrom(["Barbell", "Kettlebells", "Rig or pull-up bar"]));
+  const lifts = parseStrength(full);
+  assert.ok(lifts.length >= 4, full);
+  for (const l of lifts) {
+    assert.ok(l.sets > 0 && l.reps > 0, `${l.name} has a set scheme`);
+  }
+  assert.ok(lifts.some((l) => /deadlift|squat/i.test(l.name)), "a main lift");
+
+  // Nothing but a floor: the session still exists, with what can be done on it.
+  const bodyweight = parseStrength(strengthTarget("base", 2, kitFrom([])));
+  assert.ok(bodyweight.length >= 4);
+  assert.ok(!bodyweight.some((l) => /barbell|back squat/i.test(l.name)), "no barbell");
+});
+
+test("the phase decides the scheme, not the exercise list", () => {
+  const kit = kitFrom(["Barbell"]);
+  const base = parseStrength(strengthTarget("base", 1, kit))[0];
+  const build = parseStrength(strengthTarget("build", 1, kit))[0];
+  const taper = parseStrength(strengthTarget("taper", 1, kit))[0];
+  assert.ok(base.reps > build.reps, `${base.reps} vs ${build.reps}`);
+  assert.ok(taper.sets < build.sets, `${taper.sets} vs ${build.sets}`);
 });

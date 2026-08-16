@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { fmt } from "@/lib/dates";
-import { kindColour } from "@/lib/coach";
+import { kindColour, kindLabel } from "@/lib/coach";
 import { humanDose, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
@@ -71,7 +71,9 @@ type Group = { label: string; color: string; items: Item[]; note: string };
  * reps expanded — six rows, numbered 2 to 7 — because that is what you read
  * standing on a track, one line per thing you are about to do.
  */
-function groupsFor(steps: StepGroup[], prescribed: number | null, mode: string): Group[] {
+function groupsFor(
+  steps: StepGroup[], prescribed: number | null, mode: string, kind: string,
+): Group[] {
   const out: Group[] = [];
   const cap = prescribed
     ? mode === "Treadmill"
@@ -107,7 +109,17 @@ function groupsFor(steps: StepGroup[], prescribed: number | null, mode: string):
         work: true,
       });
     }
-    out.push({ label: `Session · ${items.length} reps`, color: TEAL, items, note: cap });
+    /*
+     * The work block wears the session's own colour.
+     *
+     * It was teal for everything, so an interval session — the only red on every
+     * other screen in the app — turned blue the moment you opened it. The colour is
+     * how a week is read at a glance; it cannot mean one thing in the list and
+     * another inside.
+     */
+    out.push({
+      label: `Session · ${items.length} reps`, color: kindColour(kind), items, note: cap,
+    });
   }
   return out;
 }
@@ -129,7 +141,7 @@ export default function Brief({
   const noteLines = s.coach_note?.split("\n").filter(Boolean) ?? [];
   const why = noteLines[0];
   const pace = prescribedPace(s.title);
-  const groups = groupsFor(d.steps, pace, mode);
+  const groups = groupsFor(d.steps, pace, mode, s.kind);
   const accent = kindColour(s.kind);
 
   async function skip() {
@@ -157,7 +169,9 @@ export default function Brief({
         <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
           lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 8 }}>{s.title}</div>
         <div style={{ fontSize: 13, color: "var(--ink-55)", marginTop: 6 }}>
-          {s.kind.startsWith("run") ? "Run" : s.kind === "strength" ? "Strength" : "Hyrox"}
+          {/* The kind, in the app's words. It said "Hyrox" for anything that was
+              not a run or a lift, so an interval session read as Hyrox. */}
+          {kindLabel(s.kind)}
           {d.reps > 0 ? ` · ${d.reps} reps` : ""}
         </div>
 

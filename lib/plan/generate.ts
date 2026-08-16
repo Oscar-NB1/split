@@ -3,6 +3,7 @@ import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, rungFor } from "./ladders";
 import { continuousRun, hyroxSession, qualityRun } from "./session";
+import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
 import { type PhaseName, type Week, skeleton } from "./skeleton";
@@ -27,6 +28,8 @@ export type Params = ResolveInput & {
   rest_day: "full" | "easy" | "none";
   /** quality runs a week, from the difficulty dial */
   quality_target?: number;
+  /** what the athlete said they can reach, for the strength lifts */
+  equipment?: string[];
   /** whether the long run carries a pace target */
   long_run_pace?: boolean;
   /** 0 = Monday, or null for no preference */
@@ -55,6 +58,8 @@ export type Session = {
   label: string; km?: number;
   /** the prescription, in the syntax the app parses and the watch understands */
   target_text?: string;
+  /** one line about the session, where the kind has something worth saying */
+  note_text?: string;
   /** how long it takes, from what is in it rather than from its distance */
   minutes?: number;
   /** true when this is the athlete's own session, scheduled around rather than prescribed */
@@ -238,6 +243,14 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       } else if (kind === "hyrox") {
         const built = hyroxSession(s.label, easyPace);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+      } else if (kind === "strength") {
+        /*
+         * The lifts, which were never written at all — the screen said "no lifts
+         * prescribed for this one" above a session the plan had told the athlete to
+         * protect. Chosen from the equipment they said they can reach.
+         */
+        s.target_text = strengthTarget(w.phase, w.n, kitFrom(p.equipment));
+        s.note_text = strengthNote(w.phase);
       }
       spent += s.km ?? 0;
     }

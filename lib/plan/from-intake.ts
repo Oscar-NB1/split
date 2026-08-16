@@ -188,6 +188,8 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     goal: GOALS[String(x.goal ?? "")] ?? "strong",
     partner: partnerOf(x),
     variant: deriveVariant({ kit, access, run_attachment }),
+    /** the equipment answers as given, for the strength prescription */
+    equipment: x.equipment ?? [],
     max_hr: extra.max_hr,
     // No anchor without a benchmark: every pace is derived and flagged as such.
     anchor: null,

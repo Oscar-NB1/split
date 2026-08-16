@@ -123,6 +123,7 @@ function target(s: Session): string | undefined {
  */
 function note(s: Session, w: GeneratedWeek): string | undefined {
   const bits: string[] = [];
+  if (s.note_text) bits.push(s.note_text);
   if (String(s.kind) === "benchmark") {
     bits.push("The baseline test. Every pace after this is written from it.");
   }
