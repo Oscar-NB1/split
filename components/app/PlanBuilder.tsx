@@ -10,8 +10,9 @@ import IntakeGear from "./IntakeGear";
 import IntakeCommitments, { type Mode } from "./IntakeCommitments";
 import IntakeLoad, { SHOWS_LOAD } from "./IntakeLoad";
 import IntakeMap from "./IntakeMap";
-import { GEAR_ASSUMED, dependentsOf, filled, liveSteps, mapOf, subFor, type Answers as StepAnswers, type Step } from "@/lib/intake-steps";
-import { divisionsFor } from "@/lib/intake";
+import IntakeDials, { DialText } from "./IntakeDials";
+import { GEAR_ASSUMED, blockLabel, dependentsOf, filled, liveSteps, mapOf, subFor, type Answers as StepAnswers, type Step } from "@/lib/intake-steps";
+import { divisionsFor, type Intake } from "@/lib/intake";
 
 /**
  * Nothing is filtered out any more.
@@ -69,6 +70,7 @@ type Answers = {
   hyroxExp: string | null; targetSessions: string;
   gymAccess: string | null; runStationLink: string | null;
   allowDoubles: string | null; wantRestDay: string | null; sessionPref: string | null;
+  longRunDay: string | null;
   runDelta: string | null; stationDelta: string | null;
   goal: string | null; goalMin: number; startDate: string | null;
   pastRaces: PastRace[];
@@ -86,6 +88,7 @@ const EMPTY: Answers = {
   longestRun: 0, peakWeek: 0, longestRunUnknown: false, peakWeekUnknown: false,
   volumeSource: null,
   hyroxExp: null, targetSessions: "", allowDoubles: null, wantRestDay: null,
+  longRunDay: null,
   gymAccess: "Open floor, any time", runStationLink: "Yes, with a walk between",
   sessionPref: null, runDelta: null, stationDelta: null,
   goal: null, goalMin: 60, startDate: null, pastRaces: [], bRaces: [],
@@ -329,6 +332,11 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
      * "Mixed doubles" -> men's open all along.
      */
     if (id === "division") return [...divisionsFor(a.discipline as never)];
+    /*
+     * The long run can only go on a day the athlete said they were available, so
+     * the options are their own answer, not a fixed list of seven.
+     */
+    if (id === "longRunDay") return ["No preference", ...a.days];
     if (s.opts) return s.opts.map(([label]) => label);
     return s.chips ?? [];
   };
@@ -480,26 +488,33 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
   return (
     <div style={{ padding: "16px 18px 26px", display: "flex", flexDirection: "column",
       gap: 16, minHeight: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button onClick={() => (i === 0 ? onDone() : setStep(i - 1))} style={{
           width: 28, height: 28, flex: "none", borderRadius: "50%", background: OFF,
           border: 0, fontSize: 13, color: INK,
         }}>←</button>
-        <div style={{ flex: 1, height: 4, background: OFF, borderRadius: 2, overflow: "hidden" }}>
-          <div style={{ height: 4, borderRadius: 2, background: "#0A8FB0",
-            width: `${Math.round(((i + 1) / live.length) * 100)}%` }} />
-        </div>
+        {/*
+          * Which section this is, how much of it is answered, and the way out.
+          *
+          * The bar alone said where you were in a run of twenty-six questions,
+          * which is not the same as what you are being asked about. Tapping it
+          * opens every answer.
+          */}
         <button onClick={() => setMapOpen(true)} aria-label="See all your answers"
-          style={{
-            fontSize: 10, fontWeight: 700, color: INK40, whiteSpace: "nowrap",
-            display: "flex", alignItems: "center", gap: 5, padding: "4px 0",
-          }}>
-          {/* Position and completion are different facts and both are wanted:
-              the bar says where you are, the percentage says how much is done. */}
-          Step {i + 1} of {live.length}
-          <span style={{ color: "#0A8FB0" }}>{done}%</span>
-          <span style={{ fontSize: 11, color: "#0A8FB0" }}>☰</span>
+          style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4,
+            textAlign: "left" }}>
+          <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".09em",
+            textTransform: "uppercase", color: "#0A8FB0" }}>
+            {blockLabel(live, a as unknown as StepAnswers, i)}
+          </span>
+          <span style={{ width: "100%", height: 4, background: OFF, borderRadius: 2,
+            overflow: "hidden", display: "block" }}>
+            <span style={{ display: "block", height: 4, borderRadius: 2,
+              background: "#0A8FB0", width: `${done}%` }} />
+          </span>
         </button>
+        <span style={{ fontSize: 10, fontWeight: 700, color: INK40,
+          whiteSpace: "nowrap" }}>Step {i + 1} of {live.length}</span>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -745,7 +760,7 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
       )}
 
       {q.kind === "start" && (
-        <IntakeStart startDate={a.startDate}
+        <IntakeStart startDate={a.startDate} raceDate={a.raceDate}
           onStart={(d) => set("startDate", d)} />
       )}
 
@@ -783,16 +798,13 @@ export default function PlanBuilder({ onDone }: { onDone: () => void }) {
               </div>
             </div>
           ))}
+          {/* The curve moves with the dials, which is the whole reason it is on
+              this step rather than the next one. */}
+          <IntakeDials answers={a as unknown as Intake} />
+
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {([["Training volume", PREF_TEXT.volume[a.volume]],
-               ["Difficulty", PREF_TEXT.difficulty[a.difficulty]]] as const).map(([l, t]) => (
-              <div key={l} style={{ background: PAPER, border: `1px solid ${LINE}`,
-                borderRadius: "var(--r-card)", padding: "13px 14px",
-                display: "flex", flexDirection: "column", gap: 5 }}>
-                <span style={{ ...caps, color: "#0A8FB0" }}>{l}</span>
-                <span style={{ fontSize: 12, lineHeight: 1.6, color: INK70 }}>{t}</span>
-              </div>
-            ))}
+            <DialText label="Training volume" text={PREF_TEXT.volume[a.volume]} />
+            <DialText label="Difficulty" text={PREF_TEXT.difficulty[a.difficulty]} />
           </div>
         </div>
       )}

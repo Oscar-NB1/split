@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  BLOCKS, DEPENDENTS, STEPS, dependentsOf, filled, liveSteps, mapOf, subFor,
-  weeklyLoad,
+  BLOCK_ORDER, DEPENDENTS, STEPS, blockLabel, dependentsOf, filled, liveSteps,
+  mapOf, subFor, weeklyLoad,
   type Answers, type Step,
 } from "../lib/intake-steps";
 
@@ -13,8 +13,13 @@ const doubles: Answers = { discipline: "Hyrox doubles", hasRace: "Yes" };
 test("every step has a question and a unique id", () => {
   assert.equal(new Set(STEPS.map((s) => s.id)).size, STEPS.length);
   for (const s of STEPS) assert.ok(s.q.length > 0, `${s.id} asks something`);
+  // Two steps build their options from earlier answers — the division from the
+  // discipline, the long-run day from the days the athlete gave — so the spec
+  // carries fewer than two and the screen fills the rest.
+  const COMPUTED = ["division", "longRunDay"];
   for (const s of STEPS.filter((x) => x.kind === "choice")) {
-    assert.ok((s.opts ?? []).length >= 2, `${s.id} offers a choice`);
+    const n = (s.opts ?? []).length;
+    assert.ok(COMPUTED.includes(s.id) ? n >= 1 : n >= 2, `${s.id} offers a choice`);
   }
 });
 
@@ -56,9 +61,24 @@ test("doubles and rest days are only asked when the week does not fit", () => {
   assert.equal(weeklyLoad(packed), 8);
   assert.ok(ids(packed).includes("allowDoubles"));
 
-  const everyDay = { ...packed, days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] };
-  assert.ok(ids(everyDay).includes("wantRestDay"));
-  assert.ok(!ids({ ...everyDay, days: ["Mon", "Tue"] }).includes("wantRestDay"));
+  /*
+   * The rest day follows the session count, not the number of days ticked.
+   *
+   * It used to need all seven days AND seven sessions, so six sessions across six
+   * days — where whether to keep a day clear is a real decision — was never asked
+   * and silently got one.
+   */
+  assert.ok(ids({ ...doubles, targetSessions: "6" }).includes("wantRestDay"));
+  assert.ok(!ids({ ...doubles, targetSessions: "5" }).includes("wantRestDay"));
+  assert.ok(ids({ ...doubles, targetSessions: "4", commitments: ["Padel"],
+    freq: { Padel: 2 } }).includes("wantRestDay"), "commitments count towards it");
+});
+
+test("the long run day is offered from the days the athlete gave", () => {
+  const week = { ...doubles, targetSessions: "5", days: ["Tue", "Thu", "Sun"] };
+  assert.ok(ids(week).includes("longRunDay"));
+  // Nothing to choose between before the days are answered.
+  assert.ok(!ids({ ...doubles, targetSessions: "5" }).includes("longRunDay"));
 });
 
 test("'Nothing fixed' costs no sessions", () => {
@@ -170,18 +190,30 @@ test("every dependent names a real step or an answer a step writes", () => {
 
 // ----------------------------------------------------------------------- map
 
-test("every step belongs to exactly one block", () => {
-  // A question missing from BLOCKS is a question the overview cannot reach, and
-  // one listed twice is one that reads as answered in two places.
-  const seen = new Map<string, string>();
-  for (const b of BLOCKS) {
-    for (const id of b.ids) {
-      assert.ok(!seen.has(id), `${id} is only in ${seen.get(id) ?? b.name}`);
-      seen.set(id, b.name);
-      assert.ok(STEPS.some((s) => s.id === id), `${id} is a real step`);
-    }
+test("every step names a section that exists, and a short label", () => {
+  // The sections are derived from the steps, so belonging to exactly one is
+  // structural; what still needs checking is that the name is a real section and
+  // that the overview has something short to print.
+  for (const s of STEPS) {
+    assert.ok(BLOCK_ORDER.includes(s.block), `${s.id}: ${s.block}`);
+    assert.ok(s.short.length > 0 && s.short.length < 24, `${s.id}: ${s.short}`);
   }
-  for (const s of STEPS) assert.ok(seen.has(s.id), `${s.id} is in a block`);
+});
+
+test("the sections stay in the order the questions are asked", () => {
+  const a: Answers = { discipline: "Hyrox doubles", hasRace: "Yes" };
+  const live = liveSteps(a, false);
+  const seen = mapOf(live, a, () => "").map((b) => b.name);
+  const fromSteps = [...new Set(live.map((s) => s.block))];
+  assert.deepEqual(seen, fromSteps);
+});
+
+test("the eyebrow counts the section the athlete is in", () => {
+  const a: Answers = { discipline: "Hyrox singles", hasRace: "Yes", base: "Some" };
+  const live = liveSteps(a, false);
+  const at = live.findIndex((s) => s.id === "base");
+  const label = blockLabel(live, a, at);
+  assert.match(label, /^Where you are starting · \d+ of \d+ · all questions$/, label);
 });
 
 test("the map numbers the steps the athlete is actually asked", () => {

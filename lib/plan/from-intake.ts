@@ -1,4 +1,4 @@
-import { addDays, today } from "../dates";
+import { addDays, mondayOf, today } from "../dates";
 import type { Intake } from "../intake";
 import type { Absence } from "./intake-rules";
 import type { Commitment } from "./slots";
@@ -113,9 +113,18 @@ export type Extra = {
 };
 
 export function paramsFrom(x: Intake, extra: Extra): Params {
-  // Not snapped to a Monday: weeks are seven days from whenever the athlete
-  // starts, so insisting on one only moved their answer.
+  /*
+   * The athlete's first day, and the Monday its week belongs to.
+   *
+   * Weeks run Monday to Sunday because that is what a week is — the day indices
+   * every stage places on are 0 = Monday, so laying the block from a Wednesday put
+   * a session the athlete had been told was Monday's on a Wednesday.
+   *
+   * Starting mid-week does not move the answer: week 1 is simply a short one, and
+   * the days before the athlete started are not written at all.
+   */
   const start = startFrom(x) ?? today();
+  const anchor = mondayOf(start);
   const race = x.raceDate ?? null;
 
   /*
@@ -156,13 +165,25 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     // of volume, not of pace, and the two are not interchangeable.
     confidence: extra.measured ? "measured" : "estimated",
     volume_dial: VOLUME_DIAL[x.volume] ?? 1,
+    /*
+     * The difficulty dial, which this generator was ignoring entirely — Steady and
+     * Hard produced the same week, and only the older generator's copy read it.
+     */
+    quality_target: DIFFICULTY[x.difficulty]?.quality ?? 1,
+    long_run_pace: DIFFICULTY[x.difficulty]?.longRunPace ?? true,
     allow_doubles: (x.allowDoubles ?? "").startsWith("Yes"),
     recent: extra.recent,
 
     // ------- the rest
     length,
     days: (x.days ?? []).map((d) => DAY_INDEX[d]).filter((n) => n !== undefined).sort(),
-    want_rest_day: (x.wantRestDay ?? "Yes, keep one").startsWith("Yes"),
+    /*
+     * Three answers, not two. "No, but keep one easy" is the common one and used to
+     * be read as "train seven hard days", because the field was a boolean.
+     */
+    rest_day: !x.wantRestDay ? "none"
+      : x.wantRestDay.startsWith("Yes") ? "full" : "easy",
+    long_run_day: DAY_INDEX[String(x.longRunDay ?? "")] ?? null,
     discipline: disciplineOf(x),
     goal: GOALS[String(x.goal ?? "")] ?? "strong",
     partner: partnerOf(x),
@@ -174,12 +195,21 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     absences: extra.absences,
     exclusions: [],
     benchmark: x.benchmark !== "skipped",
-    week_start: (n) => addDays(start, (n - 1) * 7),
+    week_start: (n) => addDays(anchor, (n - 1) * 7),
+    /** the day they actually begin, inside week 1 */
+    first_day: start,
   };
 }
 
 const VOLUME_DIAL: Record<string, number> = {
   Conservative: 0.6, Progressive: 1, Aggressive: 1.25,
+};
+
+/** What each difficulty asks for. The same three rows the older generator used. */
+const DIFFICULTY: Record<string, { quality: number; longRunPace: boolean }> = {
+  Steady: { quality: 1, longRunPace: false },
+  Challenging: { quality: 1, longRunPace: true },
+  Hard: { quality: 2, longRunPace: true },
 };
 
 const isHyrox = (x: Intake) => (x.discipline ?? "").startsWith("Hyrox");

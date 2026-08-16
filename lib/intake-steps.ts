@@ -18,6 +18,15 @@ export type StepKind =
 export type Step = {
   id: string;
   kind: StepKind;
+  /**
+   * Which section of the form this belongs to, and a two-word name for it.
+   *
+   * On the step rather than in a table beside it: a table is a second list that
+   * drifts, and a question missing from it is a question the overview cannot
+   * reach. The sections in the overview are derived from these.
+   */
+  block: Block;
+  short: string;
   q: string;
   sub: string;
   /** [label, sub-label] pairs for choice steps */
@@ -31,53 +40,76 @@ export type Step = {
   seed?: number;
 };
 
+/**
+ * The sections, in the order they are asked.
+ *
+ * "You and your partner" holds only the two questions about the pair, so it
+ * disappears for anyone not racing doubles rather than putting a partner heading
+ * over an athlete's own answers.
+ */
+export const BLOCK_ORDER = [
+  "Your race", "You and your partner", "Your standards and history",
+  "Where you are starting", "Your week", "Your setup",
+] as const;
+export type Block = (typeof BLOCK_ORDER)[number];
+
+/** What each section covers, for the overview. */
+export const BLOCK_TOPIC: Record<Block, string> = {
+  "Your race": "What you are training for and when",
+  "You and your partner": "How the pair splits the work",
+  "Your standards and history": "Weights, experience, races behind you",
+  "Where you are starting": "Your base, your running, your recent volume",
+  "Your week": "Days, sessions, and what is already in it",
+  "Your setup": "Kit, access, and how hard you want it",
+};
+
 const c = (...opts: [string, string?][]) => opts;
 
 export const STEPS: Step[] = [
-  { id: "hasRace", kind: "choice", q: "Do you have your next race planned?",
+  { id: "hasRace", block: "Your race", short: "race", kind: "choice", q: "Do you have your next race planned?",
     sub: "A date changes everything downstream — plan length, phases, when the taper lands.",
     opts: c(["Yes", "I have picked my race"], ["No", "Help me find a goal to work towards"]) },
-  { id: "discipline", kind: "choice", q: "What are you training for?",
+  { id: "discipline", block: "Your race", short: "discipline", kind: "choice", q: "What are you training for?",
     sub: "This sets how the week is split between running, stations and strength.",
     opts: c(
       ["Hyrox doubles", "Shared stations with a partner — only this adds the two questions about how you and your partner compare"],
       ["Hyrox singles", "Every station yourself"],
       ["Running race", "5K through marathon"], ["General fitness", "No race, just build"]) },
-  { id: "raceDistance", kind: "choice", q: "Which distance?",
+  { id: "raceDistance", block: "Your race", short: "distance", kind: "choice", q: "Which distance?",
     sub: "The goal time and the long run are built from this.",
     opts: c(["5 km"], ["10 km"], ["Half marathon"], ["Marathon"]) },
-  { id: "raceDate", kind: "date", q: "When is race day?",
+  { id: "raceDate", block: "Your race", short: "date", kind: "date", q: "When is race day?",
     sub: "The plan is built backwards from here." },
-  { id: "bRaces", kind: "bRaces", q: "Any other races before then?",
+  { id: "bRaces", block: "Your race", short: "other races", kind: "bRaces", q: "Any other races before then?",
     sub: "Anything you have entered. Each one costs training time, and how much depends on what you want from it.",
     skip: "No other races" },
-  { id: "goal", kind: "goal", q: "What do you want from race day?",
+  { id: "goal", block: "Your race", short: "goal", kind: "goal", q: "What do you want from race day?",
     sub: "This decides how hard the plan pushes, and whether it projects a time at all." },
-  { id: "runDelta", kind: "choice", q: "Over 8 km, who is faster?",
+  { id: "runDelta", block: "You and your partner", short: "run delta", kind: "choice", q: "Over 8 km, who is faster?",
     sub: "Relative, not absolute. The pair runs at the slower runner’s pace, so this decides how the running is weighted.",
     opts: c(["They are much faster"], ["They are a bit faster"], ["About the same"],
       ["I am a bit faster"], ["I am much faster"]) },
-  { id: "stationDelta", kind: "choice", q: "On the heavy stations, who is stronger?",
+  { id: "stationDelta", block: "You and your partner", short: "station delta", kind: "choice", q: "On the heavy stations, who is stronger?",
     sub: "Sleds, sandbag lunges, farmers carry — the ones a pair splits unevenly.",
     opts: c(["They are much stronger"], ["They are a bit stronger"], ["About the same"],
       ["I am a bit stronger"], ["I am much stronger"]) },
-  { id: "division", kind: "choice", q: "Which standards apply?",
+  { id: "division", block: "Your standards and history", short: "division", kind: "choice", q: "Which standards apply?",
     sub: "Sled, wall ball and sandbag weights come from this.",
     opts: c(["Women · open"], ["Women · pro"], ["Men · open"], ["Men · pro"]) },
-  { id: "hyroxExp", kind: "choice", q: "How much Hyrox-specific training have you done?",
+  { id: "hyroxExp", block: "Your standards and history", short: "Hyrox experience", kind: "choice", q: "How much Hyrox-specific training have you done?",
     sub: "Separate from general fitness. Station work and transitions are their own skill.",
     opts: c(["None", "Never trained the stations"], ["Occasional", "A station session here and there"],
       ["Weekly", "One dedicated session most weeks"], ["Multiple weekly", "Two or more, structured"],
       ["Daily focus", "Hyrox is the whole programme"]) },
-  { id: "pastRaces", kind: "races", q: "Have you raced Hyrox before?",
+  { id: "pastRaces", block: "Your standards and history", short: "past races", kind: "races", q: "Have you raced Hyrox before?",
     sub: "Your official splits are the most useful data in this whole form. Name the event and we pull run, station and roxzone times.",
     skip: "This is my first race" },
-  { id: "startDate", kind: "start", q: "When do you want to start, and are you away at all?",
+  { id: "startDate", block: "Where you are starting", short: "start date", kind: "start", q: "When do you want to start, and are you away at all?",
     sub: "Absences move the down weeks rather than being trained through." },
-  { id: "base", kind: "choice", q: "How long have you trained consistently?",
+  { id: "base", block: "Where you are starting", short: "base", kind: "choice", q: "How long have you trained consistently?",
     sub: "Sets the volume your body already knows.",
     opts: c(["Under 3 months"], ["3 to 12 months"], ["Over a year"], ["Several years"]) },
-  { id: "runningSelf", kind: "choice", q: "How would you describe your running?",
+  { id: "runningSelf", block: "Where you are starting", short: "running", kind: "choice", q: "How would you describe your running?",
     sub: "Answer honestly. This caps week 1, whatever the rest says. A 5 km time on the next step can lift it.",
     opts: c(["I do not run", "Walking, or no running yet"],
       ["Runs with walk breaks", "Not yet 5 km continuous"],
@@ -86,49 +118,64 @@ export const STEPS: Step[] = [
       ["Half marathon fit", "15–20 km long runs, structured weeks"],
       ["Marathon runner", "30 km long runs, years of mileage"],
       ["Competitive", "Racing for time, coached or self-coached to a plan"]) },
-  { id: "stravaConnect", kind: "connect", q: "Connect Strava first?",
+  { id: "stravaConnect", block: "Where you are starting", short: "Strava", kind: "connect", q: "Connect Strava first?",
     sub: "The next two questions are numbers Strava already knows. Connecting means you confirm them instead of guessing.",
     skip: "Not now — I will enter them myself" },
-  { id: "longestRun", kind: "km", q: "What is your longest run in the last 8 weeks?",
+  { id: "longestRun", block: "Where you are starting", short: "longest run", kind: "km", q: "What is your longest run in the last 8 weeks?",
     sub: "A single run, not a week. This caps where the long run starts and how fast it grows.",
     min: 0, max: 45, step: 1, unit: "km", seed: 10, skip: "I do not know" },
-  { id: "peakWeek", kind: "km", q: "And your biggest week in the last 4 weeks?",
+  { id: "peakWeek", block: "Where you are starting", short: "peak week", kind: "km", q: "And your biggest week in the last 4 weeks?",
     sub: "Total running volume in your heaviest recent week. This is the number week 1 is built from.",
     min: 0, max: 90, step: 2, unit: "km", seed: 20, skip: "I do not know" },
-  { id: "pace", kind: "time", q: "What can you currently run 5 km in?",
+  { id: "pace", block: "Where you are starting", short: "5 km", kind: "time", q: "What can you currently run 5 km in?",
     sub: "Current fitness, not a personal best or a goal.", skip: "No idea — test me in week 1" },
-  { id: "days", kind: "chips", q: "Which days are you available?",
+  { id: "days", block: "Your week", short: "days", kind: "chips", q: "Which days are you available?",
     sub: "Availability, not a target. What gets scheduled comes next.",
     chips: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] },
-  { id: "targetSessions", kind: "choice", q: "How many sessions do you want a week?",
+  { id: "targetSessions", block: "Your week", short: "sessions", kind: "choice", q: "How many sessions do you want a week?",
     sub: "Fewer, done properly, beats more on paper.",
     opts: c(["3"], ["4"], ["5"], ["6"], ["7"]) },
-  { id: "commitments", kind: "chips", q: "Anything locked in your week?",
+  { id: "commitments", block: "Your week", short: "commitments", kind: "chips", q: "Anything locked in your week?",
     sub: "Classes and other sports still cost your legs. Name them, say how they sit with the plan, and it works around them.",
     chips: ["Spin class", "Kickboxing", "Football", "Padel", "Climbing", "Swimming", "Yoga", "Nothing fixed"],
     other: true },
-  { id: "allowDoubles", kind: "choice", q: "Happy to train twice in one day?", sub: "",
+  { id: "allowDoubles", block: "Your week", short: "doubles", kind: "choice", q: "Happy to train twice in one day?", sub: "",
     opts: c(["Yes, when it helps"], ["Occasionally"], ["No, once a day"]) },
-  { id: "wantRestDay", kind: "choice", q: "Keep one full rest day?",
-    sub: "Every day is available and every day is spoken for. A rest day is usually still the right call.",
-    opts: c(["Yes, keep one"], ["No, train every day"]) },
-  { id: "sessionPref", kind: "choice", q: "Station work: written sessions or classes?",
+  { id: "wantRestDay", block: "Your week", short: "rest day", kind: "choice",
+    q: "Keep one full rest day?",
+    sub: "Your week is full enough that something has to give on one day. Both answers are trainable — neither of them is training seven hard days.",
+    opts: c(
+      ["Yes, keep one", "One day with nothing on it"],
+      ["No, but keep one easy", "Train every day, with one day that is only an easy run"]) },
+  /*
+   * Which day the long run goes on.
+   *
+   * Asked rather than assumed. The placer used to spread the hard sessions and
+   * whichever day the long run landed on was an accident of the arithmetic —
+   * which is fine for the plan and wrong for the athlete whose Sunday is the only
+   * day they have two hours.
+   */
+  { id: "longRunDay", block: "Your week", short: "long run day", kind: "choice",
+    q: "Which day suits your long run?",
+    sub: "The longest session of the week. Everything else is placed around it.",
+    opts: c(["No preference", "Put it wherever the week works best"]) },
+  { id: "sessionPref", block: "Your week", short: "session style", kind: "choice", q: "Station work: written sessions or classes?",
     sub: "Only the station and interval work. Running is always yours to do alone — no class prescribes your paces.",
     opts: c(["Write me the session", "Stations written out, done on your own"],
       ["Classes where possible", "You would rather turn up and be coached"],
       ["Mix", "Classes for stations, written sessions for intervals"]) },
-  { id: "equipment", kind: "gear", q: "What can you actually get to?",
+  { id: "equipment", block: "Your setup", short: "kit and access", kind: "gear", q: "What can you actually get to?",
     sub: "Kit is only half of it — how freely you can use it decides whether compromised running is trainable.",
     chips: ["Sled — race weight", "Sled — lighter only", "SkiErg", "Rower", "Wall balls", "Sandbag",
       "Kettlebells", "Barbell", "Rig or pull-up bar", "Burpee floor space", "Treadmill",
       "Indoor track", "Run from the door"] },
-  { id: "sled", kind: "choice", q: "Sled experience?",
+  { id: "sled", block: "Your setup", short: "sled", kind: "choice", q: "Sled experience?",
     sub: "The most common place a first race falls apart.",
     opts: c(["Never used one"], ["Used a lighter sled"], ["Race weight, short distances"],
       ["Race weight and distance"]) },
-  { id: "injuries", kind: "text", q: "Anything to train around?",
+  { id: "injuries", block: "Your setup", short: "injuries", kind: "text", q: "Anything to train around?",
     sub: "Read before any volume increase is proposed." },
-  { id: "prefs", kind: "prefs", q: "Volume and difficulty",
+  { id: "prefs", block: "Your setup", short: "volume and difficulty", kind: "prefs", q: "Volume and difficulty",
     sub: "Both can be changed later without rebuilding the block." },
 ];
 
@@ -236,8 +283,19 @@ export function liveSteps(a: Answers, stravaConnected: boolean): Step[] {
       // Only worth asking when the week does not fit the days.
       case "allowDoubles":
         return weeklyLoad(a) > 7;
+      /*
+       * Asked once the week is busy, not only when it is impossible.
+       *
+       * This wanted all seven days AND seven sessions, so the athlete training six
+       * times across six days — the case where a rest day is a real decision — was
+       * never asked and silently got one.
+       */
       case "wantRestDay":
-        return arr(a, "days").length === 7 && weeklyLoad(a) >= 7;
+        return weeklyLoad(a) >= 6;
+      // Nothing to place if there are no days yet, and no long run under three
+      // sessions a week.
+      case "longRunDay":
+        return arr(a, "days").length > 0 && weeklyLoad(a) >= 3;
       default:
         return true;
     }
@@ -298,75 +356,54 @@ export const STRAVA_READS: [string, string][] = [
  * and the groups are the athlete's own mental model of the form, not the
  * generator's stages.
  */
-export const BLOCKS: { name: string; topics: string; ids: string[] }[] = [
-  {
-    name: "Your race",
-    topics: "What you are training for and when",
-    ids: ["hasRace", "discipline", "raceDistance", "raceDate", "bRaces", "goal"],
-  },
-  {
-    name: "You and your partner",
-    topics: "How the pair splits the work",
-    ids: ["runDelta", "stationDelta"],
-  },
-  {
-    name: "Your standards and history",
-    topics: "Weights, experience, races behind you",
-    ids: ["division", "hyroxExp", "pastRaces"],
-  },
-  {
-    name: "Where you are starting",
-    topics: "Your base, your running, your recent volume",
-    ids: ["startDate", "base", "runningSelf", "stravaConnect", "longestRun",
-      "peakWeek", "pace"],
-  },
-  {
-    name: "Your week",
-    topics: "Days, sessions, and what is already in it",
-    ids: ["days", "targetSessions", "commitments", "allowDoubles", "wantRestDay",
-      "sessionPref"],
-  },
-  {
-    name: "Your setup",
-    topics: "Kit, access, and how hard you want it",
-    ids: ["equipment", "sled", "injuries", "prefs"],
-  },
-];
-
 export type MapRow = { id: string; q: string; answer: string; step: number };
 export type MapBlock = {
-  name: string; topics: string; range: string;
+  name: Block; topics: string; range: string;
   answered: number; total: number; rows: MapRow[];
 };
 
 /**
  * The map, over the steps this athlete is actually being asked.
  *
- * Ranges and counts come from `live` rather than from BLOCKS, so a block whose
- * questions do not apply reports what is really there — a doubles athlete and a
- * runner see different numbers against the same block name, which is correct.
+ * Sections come from the steps rather than from a list beside them, so a section
+ * whose questions do not apply is absent rather than empty, and every question
+ * belongs to exactly one section by construction.
  */
+
 export function mapOf(
   live: Step[], answers: Answers, describe: (s: Step) => string,
 ): MapBlock[] {
-  const indexOf = new Map(live.map((s, i) => [s.id, i]));
-  return BLOCKS.map((b) => {
-    const steps = b.ids
-      .map((id) => live.find((s) => s.id === id))
-      .filter((s): s is Step => !!s);
-    const rows: MapRow[] = steps.map((s) => ({
-      id: s.id, q: s.q, answer: describe(s), step: (indexOf.get(s.id) ?? 0) + 1,
+  const order = new Map<Block, Step[]>();
+  live.forEach((st) => order.set(st.block, [...(order.get(st.block) ?? []), st]));
+
+  return BLOCK_ORDER.filter((b) => order.has(b)).map((name) => {
+    const steps = order.get(name)!;
+    const rows: MapRow[] = steps.map((st) => ({
+      id: st.id, q: st.q, answer: describe(st),
+      step: live.findIndex((x) => x.id === st.id) + 1,
     }));
     const nums = rows.map((r) => r.step);
     return {
-      name: b.name, topics: b.topics,
-      range: nums.length
-        ? (nums.length === 1 ? `Step ${nums[0]}`
-          : `Steps ${Math.min(...nums)}–${Math.max(...nums)}`)
-        : "",
-      answered: steps.filter((s) => filled(s, answers)).length,
+      name, topics: BLOCK_TOPIC[name],
+      range: nums.length === 1 ? `Step ${nums[0]}`
+        : `Steps ${Math.min(...nums)}\u2013${Math.max(...nums)}`,
+      answered: steps.filter((st) => filled(st, answers)).length,
       total: steps.length,
       rows,
     };
-  }).filter((b) => b.total > 0);
+  });
+}
+
+/**
+ * The eyebrow above every question: which section, how much of it is done.
+ *
+ * The same words the overview uses, because it is the way into the overview —
+ * a label that renamed itself between the two would read as a different place.
+ */
+export function blockLabel(live: Step[], answers: Answers, at: number): string {
+  const st = live[at];
+  if (!st) return "";
+  const mine = live.filter((x) => x.block === st.block);
+  const done = mine.filter((x) => filled(x, answers)).length;
+  return `${st.block} \u00b7 ${done} of ${mine.length} \u00b7 all questions`;
 }

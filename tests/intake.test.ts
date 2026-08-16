@@ -19,6 +19,7 @@ setClock(() => "2026-08-10");
  */
 const HER: Intake = {
   commitMode: {},
+  longRunDay: null,
   hasRace: "Yes",
   discipline: "Hyrox doubles",
   raceDistance: null,

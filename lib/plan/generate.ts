@@ -23,7 +23,13 @@ export type Params = ResolveInput & {
   length: number;
   /** which days of the week, 0 = Monday. `available_days` on ResolveInput is a count. */
   days: number[];
-  want_rest_day: boolean;
+  rest_day: "full" | "easy" | "none";
+  /** quality runs a week, from the difficulty dial */
+  quality_target?: number;
+  /** whether the long run carries a pace target */
+  long_run_pace?: boolean;
+  /** 0 = Monday, or null for no preference */
+  long_run_day: number | null;
   discipline: "doubles" | "singles" | "running";
   goal: Goal;
   partner: { run_delta: number; station_delta: number } | null;
@@ -39,6 +45,8 @@ export type Params = ResolveInput & {
    */
   benchmark?: boolean;
   week_start: (n: number) => string;
+  /** the athlete's first day, which may be mid-week; week 1 is short */
+  first_day?: string;
 };
 
 export type Session = {
@@ -108,13 +116,15 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     const slotPlan = allocateSlots({
       target_sessions: r.sessions, allocation,
       discipline: p.discipline, commitments: p.commitments, max_hard: r.max_hard,
+      quality_target: p.quality_target,
     });
     for (const f of slotPlan.flags) flags.push({ code: "slots", message: f });
 
     const placed = placeWeek({
       slots: slotPlan.slots, available_days: p.days,
       commitments: p.commitments, training_age: r.training_age,
-      want_rest_day: p.want_rest_day, allow_doubles: p.allow_doubles ?? false,
+      rest_day: p.rest_day, allow_doubles: p.allow_doubles ?? false,
+      long_run_day: p.long_run_day,
     });
     for (const f of placed.flags) flags.push({ code: "placement", message: f });
 

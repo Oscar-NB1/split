@@ -6,29 +6,37 @@ const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
 const LINE = "var(--line)", PAPER = "var(--paper)";
 
 /** Steps where the week's arithmetic can change, and so should be shown. */
-export const SHOWS_LOAD = ["days", "targetSessions", "commitments"];
+export const SHOWS_LOAD = [
+  "days", "targetSessions", "commitments", "longRunDay", "allowDoubles",
+  "wantRestDay", "sessionPref", "equipment", "sled", "injuries", "prefs",
+];
 
 /**
  * What the week comes to, on the steps that change it.
  *
  * Six sessions plus two commitments is eight sessions, and an athlete should meet
  * that number while they can still act on it rather than when the plan hands them
- * a double day. Shown on the three steps that move it and nowhere else — it was
- * bolted onto the equipment step, where nothing it counts can change.
+ * a double day. Carried from the days question through to the dials, so the number
+ * that decides the week never leaves the screen while the week is being described.
  */
 export default function IntakeLoad({ answers }: { answers: Answers }) {
+  /*
+   * Before the sessions question, the days answer is the only thing to count — so
+   * the card shows what has been said rather than vanishing until step 20.
+   */
   const asked = Number(String(answers.targetSessions ?? "")) || 0;
-  if (asked === 0) return null;
+  const days = Array.isArray(answers.days) ? answers.days.length : 0;
+  if (asked === 0 && days === 0) return null;
 
   const total = weeklyLoad(answers);
   const extra = total - asked;
-  const days = Array.isArray(answers.days) ? answers.days.length : 0;
 
   return (
     <div style={{ background: PAPER, border: `1px solid ${LINE}`,
       borderRadius: "var(--r-card)", padding: "14px 15px",
       display: "flex", flexDirection: "column", gap: 7 }}>
-      <Row k="Training sessions" v={String(asked)} />
+      <Row k="Days available" v={String(days)} />
+      <Row k="Training sessions" v={asked ? String(asked) : "Not yet chosen"} />
       {extra > 0 && <Row k="Your commitments" v={`+${extra} on top`} />}
       <div style={{ height: 1, background: LINE }} />
       <Row k="Total per week" v={String(total)} aside={`~${(total * 1.075).toFixed(1)} h`} bold />

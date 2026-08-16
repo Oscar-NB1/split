@@ -212,6 +212,7 @@ function parse(body: Record<string, unknown>): Intake {
     targetSessions: str(body.targetSessions),
     allowDoubles: str(body.allowDoubles),
     wantRestDay: str(body.wantRestDay),
+    longRunDay: str(body.longRunDay),
     sessionPref: str(body.sessionPref),
     hyroxExp: str(body.hyroxExp),
     runDelta: str(body.runDelta),
@@ -224,19 +225,27 @@ function parse(body: Record<string, unknown>): Intake {
      * row is dropped rather than half-read.
      */
     pastRaces: (Array.isArray(body.pastRaces) ? body.pastRaces : [])
-      .map((r: Record<string, unknown>) => ({
+      .map((r: Record<string, unknown>, i: number) => ({
         event: String(r.event ?? "").trim().slice(0, 120),
         division: str(r.division),
         finish: String(r.finish ?? "").trim(),
         run_avg: String(r.run_avg ?? "").trim(),
         stations: String(r.stations ?? "").trim(),
         rox: String(r.rox ?? "").trim(),
+        // The race the block is built from. Exactly one, whatever arrived: two
+        // anchors is the same problem as none.
+        anchored: r.anchored === true || i === 0,
       }))
       .filter((r: Intake["pastRaces"][number]) =>
         r.event.length > 1
         && [r.finish, r.run_avg, r.stations, r.rox]
           .every((t) => /^\d{1,2}:[0-5]\d(:[0-5]\d)?$/.test(t)))
-      .slice(0, 10),
+      .slice(0, 10)
+      .map((r: Intake["pastRaces"][number], i: number,
+            all: Intake["pastRaces"]) => ({
+        ...r,
+        anchored: all.findIndex((x) => x.anchored) === i,
+      })),
     /*
      * Secondary races. The intent is re-checked server-side at /plans/:id/races
      * against the gap — this is the athlete's answer, not the authority.
@@ -566,7 +575,8 @@ const DELTA_SIGN: Record<string, number> = {
 /** The reworked form's steps, stored together. */
 const EXTRA_KEYS = [
   "goal", "goalMin", "startDate", "targetSessions", "allowDoubles",
-  "wantRestDay", "sessionPref", "hyroxExp", "runDelta", "stationDelta", "gymAccess",
+  "wantRestDay", "longRunDay", "sessionPref", "hyroxExp", "runDelta", "stationDelta",
+  "gymAccess",
   // Typed-in race results. The only source of a roxzone in the whole app, so
   // they travel with the answers rather than being derived from anything.
   "pastRaces", "bRaces", "runStationLink",

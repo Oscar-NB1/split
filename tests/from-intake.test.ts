@@ -8,7 +8,7 @@ const EMPTY_EXTRA: Extra = { recent: null, absences: [], max_hr: null, measured:
 
 const base = (o: Partial<Intake> = {}): Intake => ({
   hasRace: "Yes", discipline: "Hyrox doubles", raceDistance: null,
-  raceDate: "2026-11-28", role: null, division: "Men · open",
+  raceDate: "2026-11-28", role: null, division: "Men · open", longRunDay: null,
   base: "Over a year", runningSelf: "Half marathon fit",
   paceMin: 22, paceSec: 0, paceUnknown: false,
   peakWeekKm: null, longestRunKm: null, volumeSource: null,
@@ -155,4 +155,19 @@ test("the sparsest survivable intake still generates", () => {
   }), EMPTY_EXTRA));
   assert.ok(out.weeks.length >= 4);
   assert.ok(out.weeks.every((w) => w.km > 0));
+});
+
+test("weeks run Monday to Sunday, and a mid-week start makes week 1 short", () => {
+  // The day indices every stage places on are 0 = Monday. Laying the block from a
+  // Wednesday put the session the athlete was told was Monday's on a Wednesday —
+  // so the block is anchored to the Monday of the start week instead, and the days
+  // before they started are simply not written.
+  const wed = paramsFrom(base({ startDate: "2026-08-19" }), EMPTY_EXTRA);
+  assert.equal(wed.week_start(1), "2026-08-17", "the Monday of that week");
+  assert.equal(wed.week_start(2), "2026-08-24");
+  assert.equal(wed.first_day, "2026-08-19", "but the athlete starts on the Wednesday");
+
+  const mon = paramsFrom(base({ startDate: "2026-08-17" }), EMPTY_EXTRA);
+  assert.equal(mon.week_start(1), "2026-08-17");
+  assert.equal(mon.first_day, "2026-08-17");
 });

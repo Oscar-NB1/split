@@ -7,6 +7,15 @@ const LINE = "var(--line)", PAPER = "var(--paper)";
 
 export type PastRace = {
   event: string;
+  /**
+   * The race the block is built from.
+   *
+   * With two results on file they are not equally useful: a race from last month
+   * says where the athlete is now, and one from two seasons ago says where they
+   * were. Exactly one is anchored — the first entered, unless the athlete says
+   * otherwise — and it is the one whose splits become the reference.
+   */
+  anchored?: boolean;
   division: string | null;
   finish: string;
   /** average of the eight run splits, mm:ss */
@@ -57,22 +66,46 @@ export default function IntakeRaces({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {races.map((r, i) => (
-        <div key={i} style={{
-          background: PAPER, border: `1px solid ${LINE}`, borderRadius: "var(--r-card)",
-          padding: "13px 14px", display: "flex", alignItems: "center", gap: 10,
-        }}>
-          <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>{r.event}</span>
-            <span style={{ fontSize: 11, color: INK55 }}>
-              {r.finish} · runs {r.run_avg} /km · stations {r.stations} · roxzone {r.rox}
-            </span>
-          </span>
-          <button onClick={() => onChange(races.filter((_, n) => n !== i))}
-            style={{ background: "none", border: 0, padding: 0, fontSize: 11,
-              fontWeight: 700, color: INK40 }}>Remove</button>
-        </div>
-      ))}
+      {races.map((r, i) => {
+        const anchored = anchorIndex(races) === i;
+        return (
+          <div key={i} style={{
+            background: PAPER, border: `1px solid ${anchored ? TEAL : LINE}`,
+            borderRadius: "var(--r-card)", padding: "13px 14px",
+            display: "flex", flexDirection: "column", gap: 10,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 13, fontWeight: 700 }}>{r.event}</span>
+                <span style={{ fontSize: 11, color: INK55 }}>
+                  {r.finish} · runs {r.run_avg} /km · stations {r.stations} · roxzone {r.rox}
+                </span>
+              </span>
+              <button onClick={() => onChange(races.filter((_, n) => n !== i))}
+                style={{ background: "none", border: 0, padding: 0, fontSize: 11,
+                  fontWeight: 700, color: INK40 }}>Remove</button>
+            </div>
+
+            <Split race={r} />
+
+            {/* One race is the reference. Which one is a choice, and with a single
+                result it is already made — so the button reads as a state. */}
+            <button
+              onClick={() => onChange(races.map((x, n) => ({ ...x, anchored: n === i })))}
+              disabled={races.length === 1}
+              style={{
+                width: "100%", borderRadius: "var(--r-pill)", padding: 11,
+                fontSize: 10, fontWeight: 800, letterSpacing: ".06em",
+                textTransform: "uppercase",
+                border: `1px solid ${anchored ? TEAL : LINE}`,
+                background: anchored ? TEAL_T : PAPER,
+                color: anchored ? TEAL : INK55,
+              }}>
+              {anchored ? "Anchoring the plan on this race" : "Anchor the plan on this race"}
+            </button>
+          </div>
+        );
+      })}
 
       {draft === null ? (
         <>
@@ -128,6 +161,53 @@ export default function IntakeRaces({
         decide what this block trains. Roxzone — the time between finishing a
         station and starting the next run — is recorded nowhere else, and it is
         usually where a minute and a half is sitting.
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Which race the plan is anchored on.
+ *
+ * The first one unless one is marked, so a list is never anchorless — and never
+ * doubly anchored, because this reads the list rather than trusting the flags.
+ */
+export function anchorIndex(races: PastRace[]): number {
+  const marked = races.findIndex((r) => r.anchored);
+  return marked > -1 ? marked : races.length ? 0 : -1;
+}
+
+/**
+ * Where the time actually went: eight runs, eight stations, eight transitions.
+ *
+ * The three numbers were typed in one at a time, and the proportion between them
+ * is the thing that decides what the block trains — so it is shown back rather
+ * than left to be worked out.
+ */
+function Split({ race }: { race: PastRace }) {
+  const sec = (t: string) => {
+    const q = t.split(":").map(Number);
+    if (q.some(Number.isNaN)) return 0;
+    return q.length === 3 ? q[0] * 3600 + q[1] * 60 + q[2] : q[0] * 60 + (q[1] ?? 0);
+  };
+  const run = sec(race.run_avg) * 8, st = sec(race.stations), rx = sec(race.rox);
+  const total = run + st + rx;
+  if (!total) return null;
+  const pct = (n: number) => Math.round((n / total) * 100);
+  const mmss = (n: number) =>
+    `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, "0")}`;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6,
+      background: "var(--off)", borderRadius: 10, padding: "11px 12px" }}>
+      <span style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden" }}>
+        <span style={{ width: `${pct(run)}%`, background: TEAL }} />
+        <span style={{ width: `${pct(st)}%`, background: "var(--navy)" }} />
+        <span style={{ width: `${pct(rx)}%`, background: "#E8C051" }} />
+      </span>
+      <span style={{ fontSize: 11, lineHeight: 1.5, color: INK55 }}>
+        Running {mmss(run)} ({pct(run)}%) · stations {mmss(st)} ({pct(st)}%) · roxzone{" "}
+        {mmss(rx)} ({pct(rx)}%)
       </span>
     </div>
   );

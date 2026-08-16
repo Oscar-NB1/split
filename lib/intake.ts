@@ -140,6 +140,8 @@ export type Intake = {
   sessionPref: string | null;
   hyroxExp: string | null;
   runDelta: string | null;
+  /** which day the long run is wanted on, or "No preference" */
+  longRunDay: string | null;
   stationDelta: string | null;
   /** how freely the kit can be used, which gates compromised running */
   gymAccess: string | null;
@@ -160,6 +162,8 @@ export type Intake = {
   pastRaces: {
     event: string; division: string | null; finish: string;
     run_avg: string; stations: string; rox: string;
+    /** the one the block is built from; exactly one is true */
+    anchored?: boolean;
   }[];
   /**
    * Races entered between now and the target, each with its intent.

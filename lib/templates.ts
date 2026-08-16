@@ -120,18 +120,22 @@ export async function materialise(templateId: string) {
    * begins.
    */
   const planStart = tpl.start_date;
+  // Weeks run Monday to Sunday; the day indices in the shape are 0 = Monday. An
+  // athlete who starts on a Wednesday gets a short first week, not a week whose
+  // "Monday" session falls on a Wednesday.
+  const anchor = mondayOf(planStart);
   const now = today();
   // How many whole weeks of the block are already behind us: materialising starts
   // from the current week rather than from week 1 of a plan begun in the past.
-  const elapsedWeeks = Math.max(0, diffWeeks(mondayOf(now), mondayOf(planStart)));
+  const elapsedWeeks = Math.max(0, diffWeeks(mondayOf(now), anchor));
   let created = 0;
 
   for (let w = 0; w < tpl.horizon; w++) {
-    const weekStart = addDays(planStart, elapsedWeeks * 7 + w * 7);
+    const weekStart = addDays(anchor, elapsedWeeks * 7 + w * 7);
 
     // which week of the plan is this? counted in days, so a DST weekend
     // can't round 4 weeks down to 3
-    const planWeek = diffWeeks(weekStart, planStart);
+    const planWeek = diffWeeks(weekStart, anchor);
     if (planWeek < 0) continue;
 
     const shape = tpl.weeks[planWeek % tpl.weeks.length];
@@ -148,6 +152,9 @@ export async function materialise(templateId: string) {
 
     for (const d of shape) {
       const date = addDays(weekStart, d.day);
+      // Week 1 is short when the block begins mid-week: the days before the
+      // athlete started are not sessions they skipped.
+      if (date < planStart) continue;
       if (date < now) continue; // never write the past
 
       const minutes = minutesFor(d, planWeek, factor, rules);
@@ -219,7 +226,10 @@ async function materialiseRaces(
   for (let planWeek = 0; planWeek < tpl.weeks.length; planWeek++) {
     for (const d of tpl.weeks[planWeek]) {
       if (d.significance !== "race") continue;
-      const date = addDays(addDays(planStart, planWeek * 7), d.day);
+      // Same Monday anchor as the training weeks, so a race sits on the day the
+      // plan placed it rather than on that day plus however far into the week the
+      // athlete happened to start.
+      const date = addDays(addDays(mondayOf(planStart), planWeek * 7), d.day);
       if (date < now) continue;
       const ref = `${tpl.id}:${date}:${d.kind}:${d.slot ?? "AM"}`;
       const rows = await sql<{ id: string }[]>`

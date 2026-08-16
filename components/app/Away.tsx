@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { fmt } from "@/lib/dates";
+import { fmt, iso, today as todayIso } from "@/lib/dates";
 
 const TEAL = "#0A8FB0";
 const TEAL_T = "var(--teal-tint)";
@@ -29,11 +29,16 @@ const KINDS: [string, string][] = [
  * wonder. Someone about to lose a fortnight wants to know the plan has already
  * absorbed it — that is the difference between a form and a coach.
  */
-export default function Away({ onChange }: { onChange?: (n: number) => void }) {
+export default function Away({ onChange, startFrom }: {
+  onChange?: (n: number) => void;
+  /** nothing before the block starts can be a trip it has to plan around */
+  startFrom?: string;
+}) {
   const [list, setList] = useState<Absence[] | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [kind, setKind] = useState("some_access");
+  const [month, setMonth] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,20 +117,44 @@ export default function Away({ onChange }: { onChange?: (n: number) => void }) {
         ))}
       </div>
 
-      <div style={{ display: "flex", gap: 7 }}>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
-          aria-label="Away from" style={dateBox} />
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
-          aria-label="Away until" style={dateBox} />
+      {/*
+        * A trip is a range, and two date fields make you type one twice.
+        *
+        * Tap the first day away, tap the last. The days already spoken for by
+        * another trip are shaded, so overlapping ones are visible before they are
+        * added rather than after.
+        */}
+      <div style={{ background: PAPER, border: `1px solid ${LINE}`,
+        borderRadius: "var(--r-card)", padding: "13px 13px 12px",
+        display: "flex", flexDirection: "column", gap: 9 }}>
+        <TripMonth
+          month={month} setMonth={setMonth}
+          from={from} to={to} min={startFrom ?? todayIso()}
+          taken={list ?? []}
+          onPick={(d) => {
+            // First tap starts a range; the next one closes it, unless it is
+            // earlier — in which case it is a new first day, not a backwards range.
+            if (!from || (from && to)) { setFrom(d); setTo(""); }
+            else if (d < from) setFrom(d);
+            else setTo(d);
+          }} />
+        <div style={{ borderTop: `1px solid ${LINE}`, paddingTop: 9 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: INK55 }}>
+            {!from ? "Tap the first day away"
+              : !to ? `${fmt(from, { day: "numeric", month: "short" })} → tap the last day`
+              : `${fmt(from, { day: "numeric", month: "short" })} – ${
+                  fmt(to, { day: "numeric", month: "short" })}`}
+          </span>
+        </div>
+        <button onClick={() => send({ from_date: from, to_date: to, kind })}
+          disabled={busy || !from || !to} style={{
+            width: "100%", border: 0, borderRadius: "var(--r-pill)", padding: 12,
+            fontSize: 11, fontWeight: 800, letterSpacing: ".06em",
+            textTransform: "uppercase",
+            background: from && to ? "var(--navy)" : "var(--off)",
+            color: from && to ? "#fff" : INK40,
+          }}>Add this trip</button>
       </div>
-
-      <button onClick={() => send({ from_date: from, to_date: to, kind })}
-        disabled={busy || !from || !to} style={{
-          width: "100%", background: "none", border: `1px solid ${LINE}`,
-          borderRadius: "var(--r-pill)", padding: 12, fontSize: 11, fontWeight: 800,
-          letterSpacing: ".06em", textTransform: "uppercase", color: "var(--ink)",
-          opacity: from && to ? 1 : .5,
-        }}>Add this trip</button>
 
       {error && <span style={{ fontSize: 11, color: "#C07A3E" }}>{error}</span>}
 
@@ -159,7 +188,64 @@ const caps: React.CSSProperties = {
   color: INK55,
 };
 
-const dateBox: React.CSSProperties = {
-  flex: 1, background: PAPER, border: `1px solid ${LINE}`, borderRadius: 12,
-  padding: "11px 12px", fontSize: 13, color: "var(--ink)",
-};
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+  "August", "September", "October", "November", "December"];
+
+/**
+ * One month, with the draft range and the trips already added.
+ *
+ * Days before the block starts are unpickable: a trip that ends before training
+ * begins is not something the plan has to absorb.
+ */
+function TripMonth({ month, setMonth, from, to, min, taken, onPick }: {
+  month: string | null; setMonth: (m: string) => void;
+  from: string; to: string; min: string;
+  taken: Absence[]; onPick: (d: string) => void;
+}) {
+  const anchor = new Date(`${month ?? (from || min).slice(0, 7)}-01T00:00:00`);
+  const y = anchor.getFullYear(), m = anchor.getMonth();
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7;
+  const total = new Date(y, m + 1, 0).getDate();
+
+  const cells: React.ReactNode[] = [];
+  for (let k = 0; k < lead; k++) cells.push(<span key={`p${k}`} style={{ padding: "9px 0" }} />);
+  for (let d = 1; d <= total; d++) {
+    const day = iso(new Date(y, m, d));
+    const before = day < min;
+    const inDraft = !!from && (day === from || (!!to && day > from && day <= to));
+    const inTrip = taken.some((t) => day >= t.from_date && day <= t.to_date);
+    cells.push(
+      <button key={day} disabled={before} onClick={() => onPick(day)} style={{
+        padding: "9px 0", textAlign: "center", fontSize: 12, border: 0,
+        borderRadius: 8, fontWeight: inDraft || inTrip ? 700 : 500,
+        background: inDraft ? TEAL : inTrip ? "rgba(232,192,81,.22)" : "transparent",
+        color: inDraft ? "#fff" : before ? INK40 : "var(--ink)",
+        opacity: before ? .45 : 1,
+      }}>{d}</button>,
+    );
+  }
+  const shift = (delta: number) => () => {
+    const next = new Date(y, m + delta, 1);
+    setMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center",
+        justifyContent: "space-between", gap: 10 }}>
+        <button onClick={shift(-1)} aria-label="Earlier month"
+          style={{ fontSize: 15, color: INK55 }}>‹</button>
+        <span style={{ fontSize: 12, fontWeight: 700 }}>{MONTHS[m]} {y}</span>
+        <button onClick={shift(1)} aria-label="Later month"
+          style={{ fontSize: 15, color: INK55 }}>›</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, k) => (
+          <span key={k} style={{ textAlign: "center", fontSize: 9, fontWeight: 800,
+            letterSpacing: ".06em", color: INK40 }}>{d}</span>
+        ))}
+        {cells}
+      </div>
+    </>
+  );
+}

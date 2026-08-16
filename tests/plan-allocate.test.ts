@@ -145,7 +145,7 @@ test("a fixed commitment day is never moved", () => {
   const { week } = placeWeek({
     slots: slotsFor().slots, available_days: [0, 1, 2, 3, 4, 5],
     commitments: [spin], training_age: "intermediate",
-    want_rest_day: true, allow_doubles: false,
+    rest_day: "full", long_run_day: null, allow_doubles: false,
   });
   assert.equal(week.find((p) => p.kind === "Spin")?.day, 2);
 });
@@ -154,7 +154,7 @@ test("a week that breaks a preference says so rather than refusing to schedule",
   const { flags } = placeWeek({
     slots: ["quality_run", "hyrox", "long_run", "strength", "easy_run"],
     available_days: [5, 6], // a real life with two days
-    commitments: [], training_age: "novice", want_rest_day: true, allow_doubles: false,
+    commitments: [], training_age: "novice", rest_day: "full", long_run_day: null, allow_doubles: false,
   });
   assert.ok(flags.length > 0, "the violation is surfaced, not hidden");
 });
@@ -229,4 +229,51 @@ test("Hyrox sessions never take most of the week", () => {
     assert.ok(s.counts.hyrox <= Math.ceil(sessions / 2),
       `${s.counts.hyrox} of ${sessions} sessions`);
   }
+});
+
+test("the long run goes on the day it was asked for", () => {
+  // Asked rather than assumed: whichever day the spread happened to land on was
+  // an accident of the arithmetic, and Sunday is often the only day with two
+  // hours in it.
+  const week = placeWeek({
+    slots: ["quality_run", "long_run", "easy_run", "strength"],
+    available_days: [0, 2, 4, 5, 6], commitments: [],
+    training_age: "intermediate", rest_day: "none", allow_doubles: false,
+    long_run_day: 6,
+  });
+  assert.equal(week.week.find((p) => p.kind === "long_run")?.day, 6);
+  assert.equal(week.week.filter((p) => p.kind === "long_run").length, 1,
+    "and only once — it is removed from the pool, not filtered from half of it");
+});
+
+test("a fixed commitment on that day wins, and the week says so", () => {
+  const week = placeWeek({
+    slots: ["quality_run", "long_run", "easy_run"],
+    available_days: [0, 2, 4, 6],
+    commitments: [{
+      activity: "Padel", per_week: 1, fixed_days: [6], intensity: "medium",
+      mode: "add", locked: true,
+    }],
+    training_age: "intermediate", rest_day: "none", allow_doubles: false,
+    long_run_day: 6,
+  });
+  const long = week.week.find((p) => p.kind === "long_run")!;
+  assert.notEqual(long.day, 6, "the day was already spoken for");
+  assert.ok(week.cost > 0, "and that is charged rather than hidden");
+});
+
+test("'no rest day, but keep one easy' is not seven hard days", () => {
+  const all = [0, 1, 2, 3, 4, 5, 6];
+  const slots = ["quality_run", "long_run", "easy_run", "easy_run", "hyrox",
+    "strength", "easy_run"] as const;
+  const easy = placeWeek({
+    slots: [...slots], available_days: all, commitments: [],
+    training_age: "intermediate", rest_day: "easy", allow_doubles: false,
+    long_run_day: null,
+  });
+  const byDay = new Map<number, number>();
+  for (const p of easy.week) byDay.set(p.day, (byDay.get(p.day) ?? 0) + 1);
+  const soloEasy = easy.week.filter((p) =>
+    p.kind === "easy_run" && !p.hard && byDay.get(p.day) === 1);
+  assert.ok(soloEasy.length > 0, "at least one day is only an easy run");
 });

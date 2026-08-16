@@ -73,7 +73,7 @@ async function main() {
     available_days: 6,
     days: [0, 1, 2, 3, 4, 5],
     allow_doubles: true,
-    want_rest_day: true,
+    rest_day: "full", long_run_day: null,
     variant: "full",
     max_hr: me.hr_max,
     // no benchmark has been run, so there is no anchor and no measurement

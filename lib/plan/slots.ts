@@ -32,6 +32,15 @@ export type SlotInput = {
   discipline: "doubles" | "singles" | "running";
   commitments: Commitment[];
   max_hard: number;
+  /**
+   * How many quality runs the athlete asked for, from the difficulty dial.
+   *
+   * The dial did nothing at all in this generator: difficulty was read only by
+   * the older one, so an athlete who chose Hard and an athlete who chose Steady
+   * were given the same week. A second quality run is a difficulty setting, which
+   * is why the spare-slot scores below refuse to hand one out on their own.
+   */
+  quality_target?: number;
 };
 
 export type SlotPlan = { counts: Record<SlotKind, number>; slots: SlotKind[]; flags: string[] };
@@ -125,6 +134,25 @@ export function allocateSlots(x: SlotInput): SlotPlan {
     }
   }
 
+  /*
+   * The quality run the difficulty asked for, if the week can hold it.
+   *
+   * Taken from easy running rather than added on top: the session count is the
+   * athlete's answer, and difficulty changes what is inside the week, not its
+   * size.
+   */
+  const wantQuality = Math.max(1, x.quality_target ?? 1);
+  while (counts.quality_run < wantQuality) {
+    // Easy running first, then the second Hyrox session, then a second strength
+    // day. Never the long run, and never the last of anything.
+    const from: SlotKind | null = counts.easy_run > 0 ? "easy_run"
+      : counts.hyrox > 1 ? "hyrox"
+      : counts.strength > 1 ? "strength"
+      : null;
+    if (!from) break;
+    counts[from]--; counts.quality_run++;
+  }
+
   // --- hard days ----------------------------------------------------------
   //
   // The budget governs. A quality run is always in the week, so the Hyrox
@@ -167,6 +195,14 @@ export const PENALTY = {
   longRunTooSoonAfterQuality: 6,
   strengthBeforeLongRun: 5,
   noRestDay: 4,
+  /*
+   * Below the physiological penalties on purpose.
+   *
+   * A long run on the wrong day is an inconvenience; a long run the day after a key
+   * session is a session done badly. When the two conflict the athlete's Sunday
+   * loses, and the week says it broke a preference.
+   */
+  longRunOffPreferredDay: 3,
 };
 
 /** Penalties halve at advanced and quarter at elite: a stronger athlete
@@ -179,8 +215,17 @@ export type PlaceInput = {
   available_days: number[];      // 0 = Monday
   commitments: Commitment[];
   training_age: string;
-  want_rest_day: boolean;
+  /**
+   * What the athlete asked for on the seventh day.
+   *
+   * Not a boolean, because the answer is not one: "no rest day" and "no rest day
+   * but keep one of them easy" are different weeks, and the second is what most
+   * people mean. `none` is the athlete who did not have to be asked.
+   */
+  rest_day: "full" | "easy" | "none";
   allow_doubles: boolean;
+  /** the day the athlete wants their long run on, 0 = Monday */
+  long_run_day: number | null;
 };
 
 /** Score a candidate week. Lower is better. */
@@ -205,7 +250,29 @@ export function score(week: Placed[], x: PlaceInput): number {
   if (long != null && (byDay.get(long - 1) ?? []).some((p) => p.kind === "strength")) {
     cost += PENALTY.strengthBeforeLongRun;
   }
-  if (x.want_rest_day && byDay.size >= 7) cost += PENALTY.noRestDay;
+  if (x.rest_day === "full" && byDay.size >= 7) cost += PENALTY.noRestDay;
+  /*
+   * "Train every day, but keep one of them easy."
+   *
+   * Satisfied by any day carrying nothing but an easy run — not by a light day
+   * that still holds a strength session, which is what an athlete asking for this
+   * is trying to avoid.
+   */
+  if (x.rest_day === "easy" && byDay.size >= 7) {
+    const hasEasyDay = [...byDay.values()]
+      .some((v) => v.length === 1 && v[0].kind === "easy_run" && !v[0].hard);
+    if (!hasEasyDay) cost += PENALTY.noRestDay;
+  }
+  /*
+   * The long run on the day that was asked for.
+   *
+   * A preference rather than a hard rule: a fixed commitment on that day, or a
+   * key session that has to sit two days clear of it, can still win — and when
+   * they do, placeWeek says so rather than moving it silently.
+   */
+  if (x.long_run_day != null && long != null && long !== x.long_run_day) {
+    cost += PENALTY.longRunOffPreferredDay;
+  }
 
   return cost * scale;
 }
@@ -229,9 +296,27 @@ export function placeWeek(x: PlaceInput): { week: Placed[]; cost: number; flags:
     }
   }
 
+  /*
+   * The long run goes on the day it was asked for, before anything else is spread.
+   *
+   * Placed first because everything else is arranged around it — which is what the
+   * question means. If that day is already taken by a fixed commitment the slot
+   * falls back into the spread and score() charges for it.
+   */
+  const wanted = x.long_run_day;
+  const placeLong = wanted != null && days.includes(wanted)
+    && !week.some((p) => p.day === wanted) && x.slots.includes("long_run");
+  // Taken out of the pool, not filtered out of one half of it: the long run is not
+  // in HARD, so filtering the hard list left a second copy to be placed again.
+  const rest = [...x.slots];
+  if (placeLong) {
+    week.push({ day: wanted!, kind: "long_run", hard: HARD.includes("long_run") });
+    rest.splice(rest.indexOf("long_run"), 1);
+  }
+
   // hard sessions first, spread as far apart as the week allows
-  const hard = x.slots.filter((s) => HARD.includes(s));
-  const easy = x.slots.filter((s) => !HARD.includes(s));
+  const hard = rest.filter((s) => HARD.includes(s));
+  const easy = rest.filter((s) => !HARD.includes(s));
   const taken = new Set<number>(week.map((p) => p.day));
 
   const spread = (n: number) => {
