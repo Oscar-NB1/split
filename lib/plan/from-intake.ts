@@ -1,5 +1,6 @@
 import { addDays, mondayOf, today } from "../dates";
 import { standardsFor, type Intake } from "../intake";
+import { dialFor } from "./volume-dial";
 import type { Absence } from "./intake-rules";
 import type { Commitment } from "./slots";
 import type { Goal } from "./allocate";
@@ -111,6 +112,8 @@ export type Extra = {
    * elite Hyrox tiers are unreachable, because both require a race.
    */
   hyrox_races?: number;
+  /** how far the athlete has nudged their weekly volume, in 5% steps */
+  volume_feel_delta?: number;
   /**
    * A measured average run split from a race in this block, where one exists.
    *
@@ -176,7 +179,15 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     // Only a logged benchmark is a measurement. Strava volume is a measurement
     // of volume, not of pace, and the two are not interchangeable.
     confidence: extra.measured ? "measured" : "estimated",
-    volume_dial: VOLUME_DIAL[x.volume] ?? 1,
+    /*
+     * What they asked for at intake, times what they have said since.
+     *
+     * The dial describes the volume they wanted before they had run a week of it; the
+     * steps come from "too short" and "too long" on their actual runs. Multiplied rather
+     * than replaced, so an athlete who chose Aggressive and then found it easy ends up
+     * above Aggressive rather than back at it.
+     */
+    volume_dial: (VOLUME_DIAL[x.volume] ?? 1) * dialFor(extra.volume_feel_delta ?? 0),
     /*
      * The difficulty dial, which this generator was ignoring entirely — Steady and
      * Hard produced the same week, and only the older generator's copy read it.

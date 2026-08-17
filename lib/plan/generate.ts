@@ -53,6 +53,13 @@ export type Params = ResolveInput & {
    */
   longest_run_km?: number | null;
   /**
+   * How far the athlete has nudged their weekly volume, in steps of 5%.
+   *
+   * The dial they set at intake describes what they wanted before they had run a week of
+   * it. This is what they have said since, from "too short" and "too long" on their runs.
+   */
+  volume_feel_delta?: number;
+  /**
    * The station loads for the division the athlete entered.
    *
    * A station without a weight is half an instruction, and the half it leaves out is

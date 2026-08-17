@@ -3,6 +3,12 @@ import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { badRequest, notFound, route } from "@/lib/http";
 import { applyLengthFeel } from "@/lib/strength-apply";
+import { applyRunFeel } from "@/lib/volume-apply";
+
+/** The kinds whose length is about weekly volume rather than exercise count. */
+const RUN_KINDS = new Set([
+  "easy_run", "long_run", "quality_run", "run_easy", "run_long", "run_intervals",
+]);
 import { isUuid } from "@/lib/plan";
 import { parseSteps, parseStrength, repCount } from "@/lib/prescription";
 import { describe, loadNote, startingLoad } from "@/lib/plan/exercises";
@@ -309,6 +315,14 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
        */
       let said: string | null = null;
       if (feel && s.kind === "strength") said = await applyLengthFeel(me.id, feel);
+      /*
+       * And on a run, the same report moves the weekly volume.
+       *
+       * The dial was answered once at intake and never revisited, so an athlete finding
+       * week 3 easy had no way to say it. Same two-in-a-row rule as the strength session's
+       * length, pointed at the weekly curve instead of the accessory count.
+       */
+      else if (feel && RUN_KINDS.has(s.kind)) said = await applyRunFeel(me.id);
 
       return NextResponse.json({ ok: true, said });
     }

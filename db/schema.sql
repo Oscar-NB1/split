@@ -1080,3 +1080,12 @@ alter table session_sets add column if not exists rpe int;
 -- name rather than a rename: it becomes the headline and the title drops to the subline,
 -- because "3 × 8 min" tells an athlete what they are about to do and nothing about why.
 alter table planned_sessions add column if not exists purpose text;
+
+-- The volume dial, moved by what the athlete says about their runs (2026-08-17).
+--
+-- "Too short" and "too long" were read only by the strength session, where they add or
+-- remove an accessory. A runner finding week 3 easy had no way to say so: the volume dial
+-- is set once at intake and never revisited. Same rule, pointed at the weekly curve —
+-- two consecutive reports in the same direction move it one step, clamped, and the moves
+-- are recomputed from the whole history rather than incremented.
+alter table plan_templates add column if not exists volume_feel_delta int not null default 0;

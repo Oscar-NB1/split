@@ -35,8 +35,8 @@ export async function rememberDay(userId: string): Promise<number> {
   // plan they build will read it.
   if (!row) return 0;
 
-  const [tpl] = await sql<{ id: string }[]>`
-    select id from plan_templates
+  const [tpl] = await sql<{ id: string; volume_feel_delta: number }[]>`
+    select id, volume_feel_delta from plan_templates
      where athlete_id = ${userId} and active order by start_date desc limit 1
   `;
   if (!tpl) return 0;
@@ -67,6 +67,8 @@ export async function rememberDay(userId: string): Promise<number> {
     measured: intake.benchmark === "logged",
     hyrox_races: races + (intake.pastRaces?.length ?? 0),
     measured_race_run_split_s: measured.run_split_s,
+    // What their runs have said about the volume, since they answered the dial.
+    volume_feel_delta: tpl.volume_feel_delta,
   });
   /*
    * The learned days, on top of the answers.

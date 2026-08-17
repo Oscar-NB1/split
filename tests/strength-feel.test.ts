@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { MAX_DELTA, deltaFrom, sayDelta } from "../lib/strength-feel";
+import { MAX_STEPS, dialFor } from "../lib/plan/volume-dial";
 import { liftsFor, resizeStrength, strengthTarget } from "../lib/plan/strength";
 import { warmupFor } from "../lib/warmup";
 import { parseStrength } from "../lib/prescription";
@@ -126,4 +127,38 @@ test("legacy session kinds still get the right warm-up", () => {
   assert.deepEqual(warmupFor("run_intervals"), warmupFor("quality_run"));
   assert.deepEqual(warmupFor("run_long"), warmupFor("long_run"));
   assert.deepEqual(warmupFor("run_easy"), warmupFor("easy_run"));
+});
+
+// --- the same rule, pointed at weekly volume ------------------------------------
+
+test("the volume dial moves in 5% steps and is clamped", () => {
+  /*
+   * "Too short" and "too long" were read only by the strength session. A runner who found
+   * week 3 easy had no way to say so: the dial is answered once at intake and never
+   * revisited for fifteen weeks.
+   */
+  assert.equal(dialFor(0), 1);
+  assert.ok(Math.abs(dialFor(1) - 1.05) < 1e-9);
+  assert.ok(Math.abs(dialFor(-1) - 0.95) < 1e-9);
+  assert.equal(dialFor(9), dialFor(MAX_STEPS), "clamped up");
+  assert.equal(dialFor(-9), dialFor(-MAX_STEPS), "and down");
+});
+
+test("running volume follows the same two-in-a-row rule as strength", () => {
+  /*
+   * Deliberately the same function. The argument for two-in-a-row and for clamping is
+   * identical whether the thing being adjusted is a set of calf raises or a fortnight of
+   * running, and two copies of that reasoning would drift apart.
+   */
+  assert.equal(deltaFrom(["short"]), 0, "one good run is a good day");
+  assert.equal(deltaFrom(["short", "short"]), 1);
+  assert.equal(deltaFrom(["long", "long"]), -1);
+  assert.equal(deltaFrom(["short", "right", "short"]), 0, "'about right' clears the run");
+});
+
+test("a 5% step is small enough to be worth taking", () => {
+  // On a 50 km week that is 2.5 km — a fortnight of easy running, not a new plan.
+  const week = 50;
+  assert.ok(week * dialFor(1) - week <= 3, `${(week * dialFor(1) - week).toFixed(1)} km`);
+  assert.ok(week * dialFor(2) - week <= 6, "and two steps is still inside a sane ramp");
 });
