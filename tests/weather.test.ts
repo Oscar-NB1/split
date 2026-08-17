@@ -100,11 +100,17 @@ test("adverse is a higher bar than 'it cost something'", () => {
   assert.equal(wasAdverse(6), true);
 });
 
-test("the forecast horizon is respected, and beyond it is labelled", () => {
+test("beyond the forecast horizon there is nothing to say, so nothing is said", () => {
+  /*
+   * This used to fall back to the same calendar day averaged over five years. A
+   * five-year mean is not a prediction about this November: an athlete reading "7°C on
+   * race day" three months out plans around it, and the "historically" label does not
+   * survive the glance — the number is what they remember.
+   */
   const today = new Date("2026-08-17T09:00:00Z");
   assert.equal(beyondHorizon("2026-08-20", today), false, "three days out is a forecast");
   assert.equal(beyondHorizon("2026-08-31", today), false, "a fortnight out still is");
-  assert.equal(beyondHorizon("2026-11-29", today), true, "race day is not");
+  assert.equal(beyondHorizon("2026-11-29", today), true, "race day is not, so it shows nothing");
 });
 
 // --- one session, if it swept ---------------------------------------------------

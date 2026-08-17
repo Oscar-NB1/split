@@ -141,9 +141,11 @@ export default function Strategy() {
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
               textTransform: "uppercase", color: INK55 }}>
-              {/* A forecast and a climate average are different claims, and the
-                  label is the only thing that keeps them apart. */}
-              {race.conditions.typical ? "Race day, historically" : "Race day forecast"}
+              {/* Only ever a real forecast. This used to fall back to a five-year
+                  average for the date, labelled as one — but the label does not
+                  survive the glance, and what an athlete remembers is the number. The
+                  card is simply absent until the race is inside the horizon. */}
+              Race day forecast
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)" }}>
               {race.conditions.headline}

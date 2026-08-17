@@ -38,16 +38,6 @@ export type Forecast = {
   cost_s: number;
   /** what to say about it, in one sentence */
   headline: string;
-  /**
-   * Whether this is a forecast or what that day is usually like.
-   *
-   * A forecast reaches sixteen days. A race is booked months out, which is exactly
-   * when an athlete wants to know what they are training for — so beyond the horizon
-   * this becomes the same calendar day averaged over recent years. It is labelled,
-   * because "23°C on race day" and "usually about 23°C on that date" are different
-   * claims and only one of them is a forecast.
-   */
-  typical?: boolean;
 };
 
 export type Verdict = "fine" | "warm" | "hot" | "cold" | "wet" | "windy";
@@ -230,8 +220,6 @@ export type DaySky = {
   wind_kmh: number;
   /** what the conditions cost a pace target, so a hard day can be flagged */
   cost_s: number;
-  /** true where this is the climate for the date rather than a forecast */
-  typical?: boolean;
 };
 
 /**
@@ -241,9 +229,8 @@ export type DaySky = {
  * somebody opens their week, which is the sort of thing that makes a screen feel slow
  * for no reason. Open-Meteo takes a date range, so this takes one.
  *
- * Days beyond the forecast horizon are simply absent rather than filled from the
- * climate: a week strip is about what is coming, and "usually 12°C" next to six real
- * forecasts would read as a seventh forecast.
+ * Days it has no forecast for are simply absent — the strip shows an icon for the days
+ * that are known and a gap for the rest. Nothing is ever filled in from a past year.
  */
 export async function forecastWeek(
   lat: number, lon: number, from: string, to: string,
@@ -330,81 +317,6 @@ export function beyondHorizon(date: string, today = new Date()): boolean {
 }
 
 /**
- * What that calendar day is usually like, from the reanalysis archive.
- *
- * The same date across the last five complete years, averaged. Five is enough to
- * stop one freak year deciding what an athlete packs, and short enough to describe
- * the climate they will actually race in rather than the one from a decade ago.
- *
- * Reported with `typical: true` so nothing downstream can present it as a forecast.
- */
-export async function typicalFor(
-  lat: number, lon: number, date: string,
-): Promise<Forecast | null> {
-  const md = date.slice(5);
-  const thisYear = Number(date.slice(0, 4));
-  // ERA5 lags by about five days, so the current year is never one of them
-  const years = [1, 2, 3, 4, 5].map((n) => thisYear - n);
-
-  const days: NonNullable<ReturnType<typeof reduceDay>>[] = [];
-  for (const y of years) {
-    const on = `${y}-${md}`;
-    const q = new URLSearchParams({
-      latitude: lat.toFixed(3), longitude: lon.toFixed(3),
-      hourly: HOURLY, start_date: on, end_date: on, timezone: "auto",
-    });
-    try {
-      const r = await fetch(`https://archive-api.open-meteo.com/v1/archive?${q}`, {
-        // A past day never changes. Cached for a week so a race screen opened
-        // daily for four months is five requests, not six hundred.
-        next: { revalidate: 604_800 },
-      });
-      if (!r.ok) continue;
-      const one = reduceDay(((await r.json()) as { hourly?: Hourly }).hourly, on);
-      if (one) days.push(one);
-    } catch {
-      // one missing year is not a reason to have no answer
-    }
-  }
-  if (days.length === 0) return null;
-
-  const avg = (pick: (d: (typeof days)[number]) => number) =>
-    days.reduce((s, d) => s + pick(d), 0) / days.length;
-  const base = {
-    temp_c: Math.round(avg((d) => d.temp_c) * 10) / 10,
-    feels_c: Math.round(avg((d) => d.feels_c) * 10) / 10,
-    humidity: Math.round(avg((d) => d.humidity)),
-    wind_kmh: Math.round(avg((d) => d.wind_kmh)),
-    gust_kmh: Math.round(avg((d) => d.gust_kmh)),
-    rain_mm: Math.round(avg((d) => d.rain_mm) * 10) / 10,
-  };
-  const cost_s = conditionsCost(base);
-  const verdict = verdictFor(base);
-  return {
-    date, ...base, cost_s, verdict, typical: true,
-    /*
-     * One sentence, not two.
-     *
-     * Stitching the forecast headline on the end produced "Usually about 7°C on this
-     * date… 7°C and settled", which says the temperature twice and reads like two
-     * systems talking over each other. What an athlete wants from a date four months
-     * out is the number, the feel, and whether it changes how they should train.
-     */
-    headline: [
-      `Usually about ${Math.round(base.temp_c)}°C on this date`,
-      Math.abs(base.feels_c - base.temp_c) >= 3
-        ? ` — feels more like ${Math.round(base.feels_c)}°C with the wind` : "",
-      `, averaged over the last ${days.length} years.`,
-      cost_s >= 6
-        ? ` Warm enough to plan for: expect about ${cost_s} s/km on race pace, and train some sessions in the heat.`
-        : verdict === "cold"
-          ? " Plan the warm-up and what you take off at the start line."
-          : " Nothing in the climate to plan around.",
-    ].join(""),
-  };
-}
-
-/**
  * One day's forecast, from Open-Meteo.
  *
  * Averaged across the hours a session is plausibly in — 6am to 9pm — rather than
@@ -416,14 +328,19 @@ export async function forecast(
   lat: number, lon: number, date: string,
 ): Promise<Forecast | null> {
   /*
-   * Beyond the forecast horizon, what that day is usually like.
+   * Beyond the forecast horizon, nothing.
    *
-   * Sixteen days is as far as any forecast reaches, and a race is booked months out —
-   * which is precisely when an athlete wants to know whether they are training for a
-   * cold morning or a hot one. Past the horizon this hands over to the archive and
-   * says so, rather than returning nothing for every date that matters most.
+   * This used to fall back to the same calendar day averaged over the last five
+   * years, labelled as a climate average. It is still the wrong thing to show: an
+   * athlete reading "7°C on race day" three months out will plan around it, and the
+   * label does not survive the glance — what they remember is the number. A five-year
+   * mean is not a prediction about this November, and a screen that offers one is
+   * inviting somebody to pack for a day nobody has forecast yet.
+   *
+   * So the card is absent until the race is inside sixteen days, and then it is a
+   * real forecast.
    */
-  if (beyondHorizon(date)) return typicalFor(lat, lon, date);
+  if (beyondHorizon(date)) return null;
 
   const q = new URLSearchParams({
     latitude: lat.toFixed(3), longitude: lon.toFixed(3),

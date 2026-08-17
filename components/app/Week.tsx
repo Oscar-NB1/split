@@ -140,20 +140,24 @@ export default function Week({
     setDay(t >= monday && t < addDays(monday, 7) ? dow(t) : 0);
   }, [monday]);
 
+  /*
+   * The week's weather, in one request — and above the loading guard, with every
+   * other hook.
+   *
+   * It was below it, which is a hooks-order violation: on the first render `data` is
+   * null, the component returns early and this hook never runs; when the week arrives
+   * it does, React sees more hooks than last time, and the whole app dies with a
+   * client-side exception. Hooks cannot sit after a conditional return, and the
+   * argument here does not need `data` anyway — the dates come from `monday`, which
+   * is a prop.
+   */
+  const sky = useSky(weekDates(monday)[0], weekDates(monday)[6]);
+
   if (!data) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
   const uid = coaching ?? me.id;
   const all = [...data.sessions, ...data.unplanned].filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
-  /*
-   * The week's weather, in one request.
-   *
-   * Seven emoji on the strip is the fastest way to read a week — you see the wet
-   * Thursday before you have read a word — and it is one round trip because
-   * Open-Meteo takes a date range. Absent silently: a week strip with six icons and a
-   * gap is better than a week strip that waited for a third party.
-   */
-  const sky = useSky(dates[0], dates[6]);
   // Someone with no plan of their own is not "before the block" — there is no
   // block. Showing the other athlete's rebuild weeks and 55:00 goal as hers was
   // the bug this closes.
