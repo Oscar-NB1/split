@@ -182,6 +182,9 @@ const weekToDays = (w: GeneratedWeek): TemplateDay[] =>
       day: s.day,
       kind: String(s.kind),
       title: titleOf(s),
+      // The headline, where the plan has one. Carried beside the title, never instead of
+      // it: the title is what gets parsed.
+      purpose: s.purpose ?? undefined,
       minutes: minutes(s),
       target: target(s),
       coach_note: note(s, w),

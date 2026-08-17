@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { continuousRun, easyHyrox, hyroxSession, qualityRun, readRung } from "../lib/plan/session";
 import { EASY_MAX_KM, generate } from "../lib/plan/generate";
+import { summariseStrength } from "../lib/plan/exercises";
 import { paramsFrom } from "../lib/plan/from-intake";
 import type { Intake } from "../lib/intake";
 
@@ -127,7 +128,7 @@ test("an easy run says one thing, and a Hyrox session is a list of things to do"
   const transitions = shapeOf("Hyrox · transitions");
   const half = shapeOf("Hyrox · half simulation");
   assert.notEqual(compromised, transitions);
-  assert.match(compromised, /600m|800m|1000m/, "long runs off heavy stations");
+  assert.match(compromised, /[5-9]00m|1000m/, "long runs off heavy stations");
   assert.match(transitions, /200m/, "short runs, many changeovers");
   assert.doesNotMatch(transitions, /rest between rounds/, "and no rest in transitions");
   assert.match(half, /1000m/, "race distances in a simulation");
@@ -287,9 +288,9 @@ test("somebody who cannot run yet is not given four times eight hundred metres",
   const walker = hyroxSession("Hyrox · compromised running", 380, 4, kit, 1, loads,
     "doesnt_run");
 
-  assert.match(runner.target, /600m|800m|1000m/, "a runner gets a real run");
+  assert.match(runner.target, /[5-9]00m|1000m/, "a runner gets a real run");
   assert.match(walker.target, /200m/, "short enough to run without stopping");
-  assert.doesNotMatch(walker.target, /600m|800m|1000m/);
+  assert.doesNotMatch(walker.target, /[5-9]00m|1000m/);
   assert.ok(walker.km < runner.km, `${walker.km} km against ${runner.km} km`);
 
   /*
@@ -318,17 +319,27 @@ test("a race-specific session builds across the block", () => {
    * that a different colour of shirt is a different outfit.
    */
   const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
-  const at = (phase: string, wk: number) =>
+  const at = (phase: string, wk: number, progress: number) =>
     hyroxSession("Hyrox · compromised running", 310, 4, kit, wk + 1, null,
-      "runs_regularly", phase, wk);
+      "runs_regularly", phase, wk, progress);
 
-  const early = at("base", 0);
-  const mid = at("build", 1);
-  const late = at("specific", 1);
+  const early = at("base", 0, 0);
+  const mid = at("build", 1, 0.5);
+  const late = at("specific", 1, 1);
 
-  assert.match(early.target, /600m/, "the run starts shorter");
-  assert.match(mid.target, /800m/);
-  assert.match(late.target, /1000m/, "and finishes at a kilometre");
+  /*
+   * A hundred metres at a time, not two hundred at a phase boundary. Five hundred metres
+   * is run at a speed nobody holds for a kilometre, so the block's job is to extend the
+   * distance while the pace survives — and it arrives in steps an athlete can absorb.
+   */
+  assert.match(early.target, /500m/, "it starts at 500 m");
+  assert.match(mid.target, /800m/, "halfway is 800 m");
+  assert.match(late.target, /1000m/, "and it finishes at a kilometre");
+  const steps = [0, 0.2, 0.4, 0.6, 0.8, 1]
+    .map((pr) => Number(/(\d+)m Z3/.exec(at("build", 1, pr).target)?.[1]));
+  steps.forEach((m, i) => {
+    if (i > 0) assert.ok(m - steps[i - 1] <= 100, `${steps[i - 1]} → ${m} is too big a jump`);
+  });
   assert.ok(early.km < mid.km && mid.km < late.km,
     `${early.km} → ${mid.km} → ${late.km} km`);
   assert.ok(early.minutes < late.minutes);
@@ -368,4 +379,19 @@ test("the stations change between rounds rather than repeating one", () => {
   assert.ok(new Set(names).size >= 3,
     `only ${new Set(names).size} distinct stations in ${names.length}: ${names.join(", ")}`);
   assert.doesNotMatch(s.target, /^- \dx$/m, "no repeat count where the rounds differ");
+});
+
+test("a strength card says what the session trains, not what its first line is", () => {
+  /*
+   * The card showed "Back squat 3×8 rest 120s rpe 7" — one sixth of the session, which
+   * next to a set count reads as though the whole thing were three sets of a squat.
+   */
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const line = summariseStrength(parseStrength(strengthTarget("build", 2, kit)));
+  assert.match(line, /exercises/);
+  assert.match(line, /sets/);
+  assert.doesNotMatch(line, /rpe|rest \d/i, "no prescription detail in a summary");
+  assert.ok(/legs|hinge|single-leg|pulling|pressing/i.test(line), line);
+  // Two different sessions read differently.
+  assert.notEqual(line, summariseStrength(parseStrength(strengthTarget("build", 3, kit))));
 });

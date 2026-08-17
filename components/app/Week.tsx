@@ -5,6 +5,7 @@ import { kindColour, kindLabel, weekDates } from "@/lib/coach";
 import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
 import { prescribedPace } from "@/lib/signals";
 import { parseStrength } from "@/lib/prescription";
+import { summariseStrength } from "@/lib/plan/exercises";
 import type { Session, User, WeekData } from "./Shell";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -77,6 +78,16 @@ function workLine(target: string | null | undefined): string {
       .trim();
     return `${n} × ${work}`;
   }
+  /*
+   * A strength session says what it trains and how big it is.
+   *
+   * Not its first line: "Back squat 3×8 rest 120s rpe 7" describes one sixth of the
+   * session, and next to a set count it reads as though the whole thing were three sets
+   * of a squat.
+   */
+  const lifts = parseStrength(target);
+  if (lifts.length > 1) return summariseStrength(lifts);
+
   // A single-block session — an easy or long run — says itself.
   const first = lines.find((l) => l && !/warm up/i.test(l));
   return (first ?? "").replace(/\bZ[1-5]\b/, "").replace(/@\s*/, "at ")
@@ -99,10 +110,8 @@ function metrics(s: Session): [string, string, string] {
     const sets = lifts.reduce((n, l) => n + (l.sets || 0), 0);
     return [
       `${s.planned_minutes ?? 40} min`,
-      done ? "logged"
-        : lifts.length
-          ? `${lifts.length} exercises · ${sets} sets`
-          : "",
+      // The counts are in the line above now, so this says what is left to say.
+      done ? "logged" : sets ? `${sets} sets` : "",
       "",
     ];
   }
@@ -431,11 +440,20 @@ export default function Week({
                       : s.status === "unplanned" ? "Off plan" : "Planned"}
                   </span>
                 </div>
+                {/*
+                  * The purpose is the headline, where the plan wrote one.
+                  *
+                  * "3 × 8 min" is an accurate name and a useless one: it says what you
+                  * are about to do and nothing about why, so the only sessions with
+                  * meaning are the ones you already understood. The prescription drops to
+                  * the line underneath, where it is still exactly as checkable.
+                  */}
                 <div style={{ fontFamily: "var(--display)", fontSize: 18, fontWeight: 700,
-                  lineHeight: 1.2, letterSpacing: "-.01em" }}>{s.title}</div>
-                {s.target && (
+                  lineHeight: 1.2, letterSpacing: "-.01em" }}>{s.purpose || s.title}</div>
+                {(s.purpose || s.target) && (
                   <div style={{ fontSize: 12, color: INK55, lineHeight: 1.45 }}>
-                    {workLine(s.target)}
+                    {[s.purpose ? s.title : null, workLine(s.target)]
+                      .filter(Boolean).join(" · ")}
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 12, fontSize: 12, fontWeight: 600 }}>

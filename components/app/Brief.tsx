@@ -15,7 +15,7 @@ export type SessionDetail = {
     planned_minutes: number | null; target: string | null; coach_note: string | null;
     status: string; actual_minutes: number | null; significance: string | null;
     slot: string | null; activity_id: string | null; display_name: string;
-    effort_points: number | null;
+    effort_points: number | null; purpose?: string | null;
     /** who programmed it — the note it carries is a message from them */
     author_name?: string | null; author_avatar?: string | null;
   };
@@ -439,13 +439,20 @@ export default function Brief({
           {s.slot ? ` · ${s.slot}` : ""}
           {s.user_id !== meId ? ` · ${s.display_name}` : ""}
         </div>
+        {/*
+          * The purpose is the headline. "3 × 8 min" tells an athlete what they are about
+          * to do and nothing about why — and the prescription is a line away, where it is
+          * still exactly as checkable.
+          */}
         <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
-          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 8 }}>{s.title}</div>
+          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 8 }}>
+          {s.purpose || s.title}
+        </div>
         <div style={{ fontSize: 13, color: "var(--ink-55)", marginTop: 6 }}>
           {/* The kind, in the app's words. It said "Hyrox" for anything that was
               not a run or a lift, so an interval session read as Hyrox. */}
-          {kindLabel(s.kind)}
-          {d.reps > 0 ? ` · ${d.reps} reps` : ""}
+          {[s.purpose ? s.title : null, kindLabel(s.kind),
+            d.reps > 0 ? `${d.reps} reps` : null].filter(Boolean).join(" · ")}
         </div>
 
         {s.planned_minutes && (

@@ -1072,3 +1072,11 @@ create table if not exists day_preferences (
 -- percentage table. Nullable: an athlete who logs weight and reps and nothing else
 -- still gets progression, just with less to go on.
 alter table session_sets add column if not exists rpe int;
+
+-- What a session is for (2026-08-17).
+--
+-- `title` is the prescription — "3 × 8 min" — and it is parsed: prescribedPace() reads
+-- the pace out of it and the calibration engine reads that. So the purpose is a second
+-- name rather than a rename: it becomes the headline and the title drops to the subline,
+-- because "3 × 8 min" tells an athlete what they are about to do and nothing about why.
+alter table planned_sessions add column if not exists purpose text;

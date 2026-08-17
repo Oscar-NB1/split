@@ -30,7 +30,7 @@ export const GET = route(async (req: NextRequest) => {
            -- lets the sheet offer the detail view, and only when there is one
            s.activity_id,
            -- what makes the day worth arriving fresh for, and which half of it
-           s.significance, s.slot
+           s.significance, s.slot, s.purpose
     from planned_sessions s
     left join activities a on a.id = s.activity_id
     where s.planned_date >= ${ws} and s.planned_date < ${end} and s.status <> 'moved'

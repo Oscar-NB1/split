@@ -2,6 +2,7 @@ import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, otherRung, rungFor } from "./ladders";
+import { hyroxKindFor } from "./zone-budget";
 import {
   continuousRun, easyHyrox, hyroxClass, hyroxSession, longRun, qualityRun,
   type LongShape,
@@ -9,6 +10,7 @@ import {
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { applyBRaces } from "./braces";
 import { whyFor } from "./why";
+import { purposeFor } from "./purpose";
 import { type Anchor, prescribe } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
 import { type PhaseName, type Week, skeleton } from "./skeleton";
@@ -108,6 +110,14 @@ export type Session = {
   note_text?: string;
   /** why this session, in this week — the first thing the session screen shows */
   why_text?: string;
+  /**
+   * What the session is for, in the athlete's terms — the headline above the
+   * prescription.
+   *
+   * Separate from `label`, which is parsed: `prescribedPace` reads a pace out of the
+   * title and calibration reads that, so this is a second name rather than a rename.
+   */
+  purpose?: string;
   /** how long it takes, from what is in it rather than from its distance */
   minutes?: number;
   /** true when this is the athlete's own session, scheduled around rather than prescribed */
@@ -245,10 +255,25 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * compromised running, transitions, a half or full simulation — and it
      * progresses with the phase, so the name says what week of the block it is.
      */
-    const hyroxRungAt = stations ? rungFor("L6", p.running_base, inPhase, w.phase) : null;
-    const hyroxRung = hyroxRungAt?.label ?? null;
-    // The second one in a week is deliberately a different rung of the same ladder.
-    const hyroxRung2 = hyroxRungAt ? otherRung("L6", hyroxRungAt.rung) : null;
+    /*
+     * Which race-specific session, from what the phase is for — not from a counter.
+     *
+     * The rung came off a ladder that climbed by week, so the *kind* of session was
+     * decided by arithmetic: transitions appeared in the base phase because the counter
+     * had reached them, and a simulation could arrive before there was anything to
+     * simulate. Each of the four trains something different and each belongs somewhere,
+     * which is a statement about phases rather than about week numbers.
+     */
+    const hyroxRung = stations ? hyroxKindFor(w.phase, inPhase, true) : null;
+    /*
+     * A second one in the same week is the other half of the phase's mix.
+     *
+     * Never the same session twice — and never a full simulation as the second, because
+     * a week holding two race-specific sessions cannot afford one of them to be a race.
+     */
+    const hyroxRung2 = stations
+      ? hyroxKindFor(w.phase, inPhase + 1, false)
+      : null;
 
     // the benchmark replaces ONE quality run, not every one of them
     let benchTaken = false;
@@ -446,7 +471,10 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         const built = hyroxSession(
           s.label, easyPace, 4, kitFrom(p.equipment), w.n, p.standards, p.running_base,
           // The session grows with the block, the same way the interval ladders do.
-          String(w.phase), inPhase);
+          String(w.phase), inPhase,
+          // How far through the block this week is, so the compromised run extends a
+          // hundred metres at a time rather than jumping at a phase boundary.
+          adjusted.length > 1 ? (w.n - 1) / (adjusted.length - 1) : 0);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title) s.label = built.title;
         if (built.note) s.note_text = built.note;
@@ -591,6 +619,29 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         easyCeilingHr: p.max_hr ? Math.round(p.max_hr * 0.76) : null,
       });
       if (why) s.why_text = why;
+      /*
+       * And the headline: what the session is for, rather than what it contains.
+       *
+       * "3 × 8 min" is accurate and useless — it tells an athlete what they are about to
+       * do and nothing about why, so the only sessions with meaning are the ones they
+       * already understood. The prescription becomes the subline.
+       *
+       * The label is untouched: it is parsed for the pace target, and the calibration
+       * engine reads that.
+       */
+      /*
+       * The session's own ladder, not the week's first one.
+       *
+       * A Hard week holds two quality runs from two different ladders, and reading the
+       * week's primary gave the second one the first one's name: "5 × 1000 m" at race
+       * pace was labelled "Raising your ceiling", which is the threshold session's
+       * purpose.
+       */
+      const from = String(s.kind) === "quality_run" ? (s.ladder ?? ladder) : undefined;
+      const purpose = purposeFor(String(s.kind), w.phase, {
+        ladder: from, label: s.label ?? "",
+      });
+      if (purpose) s.purpose = purpose;
     }
 
     return {

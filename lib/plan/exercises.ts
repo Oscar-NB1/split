@@ -223,3 +223,46 @@ export function startingLoad(
 export const loadNote = (perHand: boolean): string =>
   `A starting point from your bodyweight${perHand ? ", per hand" : ""} — not a target. `
   + "If the last rep of the first set is comfortable, put it up.";
+
+/**
+ * A strength session in one line: what it trains, then how much of it.
+ *
+ * The card was showing the first line of the prescription — "Back squat 3×8 rest 120s
+ * rpe 7" — which describes one sixth of the session and reads, next to "3 lifts", as
+ * though the whole thing were three sets of a squat. Naming the first exercise tells an
+ * athlete nothing about whether they have twenty minutes of work ahead of them or fifty.
+ *
+ * What they want at a glance is what it does to them and how big it is.
+ */
+const PATTERN_WORD: Partial<Record<Pattern, string>> = {
+  squat: "legs", hinge: "hinge", single_leg: "single-leg",
+  press: "pressing", pull: "pulling", carry: "carries", grip: "grip",
+  core: "core", calf: "calves",
+};
+
+export function summariseStrength(
+  lifts: { name: string; sets: number; reps: number }[],
+): string {
+  if (lifts.length === 0) return "";
+  const sets = lifts.reduce((n, l) => n + (l.sets || 0), 0);
+  const size = `${lifts.length} exercises · ${sets} sets`;
+
+  /*
+   * The heavy movements only, and at most three of them.
+   *
+   * Every session ends with grip and core, so listing those adds nothing that
+   * distinguishes one session from another — and a line naming all six patterns is a
+   * list rather than a description.
+   */
+  const words: string[] = [];
+  for (const l of lifts.slice(0, 4)) {
+    const w = PATTERN_WORD[describe(l.name)?.pattern ?? "core"];
+    if (w && !words.includes(w)) words.push(w);
+  }
+  const what = words.slice(0, 3);
+  if (what.length === 0) return size;
+  const said = what.length === 1
+    ? what[0]
+    : `${what.slice(0, -1).join(", ")} and ${what[what.length - 1]}`;
+  return `${said.charAt(0).toUpperCase()}${said.slice(1)} · ${size}`;
+}

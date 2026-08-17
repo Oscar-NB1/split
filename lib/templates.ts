@@ -24,6 +24,13 @@ export type TemplateDay = {
   significance?: string;
   /** AM | PM, for the days that carry two sessions. */
   slot?: string;
+  /**
+   * What the session is for, as the headline above the prescription.
+   *
+   * `title` stays the prescription because it is parsed — the pace target is read out of
+   * it — so this is a second name rather than a rename.
+   */
+  purpose?: string;
 };
 
 export type Rules = {
@@ -294,10 +301,10 @@ export async function materialise(templateId: string) {
       const rows = await sql<{ id: string }[]>`
         insert into planned_sessions
           (user_id, author_id, planned_date, title, kind, planned_minutes, target,
-           coach_note, significance, slot, source, source_ref)
+           coach_note, significance, slot, purpose, source, source_ref)
         select ${tpl.athlete_id}, ${tpl.author_id}, ${date}, ${d.title}, ${d.kind},
                ${minutes}, ${target}, ${note}, ${d.significance ?? null},
-               ${d.slot ?? null}, 'template', ${ref}
+               ${d.slot ?? null}, ${d.purpose ?? null}, 'template', ${ref}
         where not exists (
           select 1 from planned_sessions
           where user_id = ${tpl.athlete_id} and source = 'template' and source_ref = ${ref}
@@ -315,6 +322,7 @@ export async function materialise(templateId: string) {
         await sql`
           update planned_sessions set
             title = ${d.title}, kind = ${d.kind}, planned_minutes = ${minutes},
+            purpose = ${d.purpose ?? null},
             target = ${target}, coach_note = ${note},
             significance = ${d.significance ?? null}
           where user_id = ${tpl.athlete_id} and source = 'template'
@@ -381,11 +389,11 @@ async function materialiseRaces(
       const rows = await sql<{ id: string }[]>`
         insert into planned_sessions
           (user_id, author_id, planned_date, title, kind, planned_minutes, target,
-           coach_note, significance, slot, source, source_ref)
+           coach_note, significance, slot, purpose, source, source_ref)
         select ${tpl.athlete_id}, ${tpl.author_id}, ${date}, ${d.title}, ${d.kind},
                ${minutesFor(d, planWeek, 1, rules)}, ${d.target ?? null},
                ${d.coach_note ?? null}, ${d.significance}, ${d.slot ?? null},
-               'template', ${ref}
+               ${d.purpose ?? null}, 'template', ${ref}
         where not exists (
           select 1 from planned_sessions
           where user_id = ${tpl.athlete_id} and source = 'template' and source_ref = ${ref}

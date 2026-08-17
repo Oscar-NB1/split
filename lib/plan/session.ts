@@ -365,6 +365,31 @@ function stepOf(phase?: string | null, weekInPhase = 0): number {
 }
 
 /**
+ * The compromised run, from 500 m to a kilometre, a hundred metres at a time.
+ *
+ * Three settings across fifteen weeks is not periodisation — it is three sessions, each
+ * repeated five times. And the reason it matters is the pace: five hundred metres is run
+ * at a speed nobody could hold for a kilometre, so the block's job is to extend the
+ * distance while the pace survives. Jumping 600 → 800 → 1000 asks for two hundred metres
+ * more at the same pace on one particular Saturday, which is where a session stops being
+ * completed.
+ *
+ * A hundred metres at a time, twice a fortnight, is the same total progression arriving
+ * in steps an athlete can actually absorb — and it is what a coach writes.
+ *
+ * `progress` is how far through the block this week is, 0 to 1.
+ */
+export const COMPROMISED_START_M = 500;
+export const COMPROMISED_TARGET_M = 1000;
+
+export function compromisedRunM(progress: number): number {
+  const p = Math.max(0, Math.min(1, progress));
+  const span = COMPROMISED_TARGET_M - COMPROMISED_START_M;
+  // Rounded to 100 m: an athlete does not run 683 metres, and a track does not have it.
+  return COMPROMISED_START_M + Math.round((span * p) / 100) * 100;
+}
+
+/**
  * The shape, and how it grows.
  *
  * It did not. Week 1's compromised running was week 14's — 4 × 800 m off two stations,
@@ -380,7 +405,7 @@ function stepOf(phase?: string | null, weekInPhase = 0): number {
  *                        The changeover is the session, so more changeovers is harder.
  *   simulations          already at race distances, so the rest comes out instead.
  */
-function shapeOf(label: string, step = 0): HyroxShape {
+function shapeOf(label: string, step = 0, progress = 0): HyroxShape {
   const l = label.toLowerCase();
   const pick = <T,>(a: T[]): T => a[Math.min(step, a.length - 1)];
 
@@ -405,7 +430,11 @@ function shapeOf(label: string, step = 0): HyroxShape {
     };
   }
   return {
-    runM: pick([600, 800, 1000]), perRound: 2, rounds: pick([3, 4, 4]),
+    /*
+     * The distance comes from the block's progress rather than the phase's step, so it
+     * moves a hundred metres at a time instead of two hundred at a phase boundary.
+     */
+    runM: compromisedRunM(progress), perRound: 2, rounds: pick([3, 4, 4]),
     rest: pick([90, 90, 60]), raceDose: false,
     cue: "Long runs off heavy stations. The station is there to wreck your legs; the run is the session, and it should be held at the pace on your card.",
   };
@@ -418,9 +447,12 @@ export function hyroxSession(
   /** which phase this week is in, and how far into it — the session grows with both */
   phase?: string | null,
   weekInPhase = 0,
+  /** how far through the whole block this week is, 0 to 1 */
+  progress = 0,
 ): Built {
   const k = kit ?? { barbell: true, kettlebells: true, rig: true, sled: true };
-  const shape = forBeginner(shapeOf(label, stepOf(phase, weekInPhase)), base);
+  const shape = forBeginner(
+    shapeOf(label, stepOf(phase, weekInPhase), progress), base);
   const need = shape.perRound * shape.rounds;
   /*
    * No prescribed weight for a beginner.

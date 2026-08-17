@@ -137,3 +137,68 @@ export function ladderMix(
  * and that claim should survive somebody renaming a ladder.
  */
 export const z5Share = (phase: PhaseName): number => ZONE_BUDGET[phase]?.z5 ?? 0;
+
+/**
+ * Which race-specific session a phase should be doing, and how often.
+ *
+ * The rung came off a ladder that climbed by week, so the *kind* of session was decided
+ * by arithmetic rather than by what the weeks were for: transitions turned up in the base
+ * phase because the counter had reached them, and compromised running kept appearing in
+ * the specific weeks because the alternation sent it there.
+ *
+ * Each of the four trains something different and each belongs somewhere:
+ *
+ *   base      almost all compromised running. The skill being learned is running on
+ *             wrecked legs, and it is the foundation the other three stand on. No
+ *             simulations: there is nothing yet to simulate.
+ *   build     compromised running still leads, transitions arrive. Changeover speed is
+ *             worth practising once the running off a station is not itself the problem.
+ *   specific  transitions lead and the first simulations appear. The work is now shaped
+ *             like race day rather than like the qualities race day needs.
+ *   taper     one half simulation at most, and only early in the phase. A full one
+ *             inside three weeks of a race costs more than it teaches.
+ */
+export const HYROX_MIX: Record<PhaseName, Record<string, number>> = {
+  base:     { compromised: 0.85, transitions: 0.15, half: 0, full: 0 },
+  build:    { compromised: 0.55, transitions: 0.35, half: 0.10, full: 0 },
+  specific: { compromised: 0.30, transitions: 0.35, half: 0.20, full: 0.15 },
+  taper:    { compromised: 0.50, transitions: 0.35, half: 0.15, full: 0 },
+};
+
+const HYROX_LABEL: Record<string, string> = {
+  compromised: "compromised running",
+  transitions: "transitions",
+  half: "half simulation",
+  full: "full simulation",
+};
+
+/**
+ * The session for one week, chosen deterministically from the phase's mix.
+ *
+ * Largest remainder over a cycle of ten, cycled by the week within the phase — the same
+ * method the ladder mix uses, so the same input always produces the same plan and a
+ * phase of four weeks at 55/35/10 gives two, one and one rather than whatever a draw
+ * happens to produce.
+ */
+export function hyroxKindFor(
+  phase: PhaseName, weekInPhase: number, canSimulate = true,
+): string {
+  const mix = Object.entries(HYROX_MIX[phase] ?? HYROX_MIX.base)
+    .filter(([k, w]) => w > 0 && (canSimulate || (k !== "half" && k !== "full")));
+  if (mix.length === 0) return HYROX_LABEL.compromised;
+
+  const total = mix.reduce((n, [, w]) => n + w, 0);
+  const size = 10;
+  const counts = mix.map(([k, w]) => [k, (w / total) * size] as [string, number]);
+  const whole = counts.map(([k, n]) => [k, Math.floor(n)] as [string, number]);
+  let placed = whole.reduce((n, [, c]) => n + c, 0);
+  const remainders = counts
+    .map(([, n], i) => [i, n - Math.floor(n)] as [number, number])
+    .sort((a, b) => b[1] - a[1]);
+  for (let i = 0; placed < size; i += 1, placed += 1) {
+    whole[remainders[i % remainders.length][0]][1] += 1;
+  }
+  const cycle: string[] = [];
+  whole.forEach(([k, n]) => { for (let i = 0; i < n; i += 1) cycle.push(k); });
+  return HYROX_LABEL[cycle[weekInPhase % cycle.length]] ?? HYROX_LABEL.compromised;
+}

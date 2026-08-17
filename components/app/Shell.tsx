@@ -35,6 +35,8 @@ export type Session = {
   planned_minutes: number | null; target: string | null; coach_note: string | null;
   status: string; actual_minutes: number | null; skip_reason: string | null;
   effort_points: number | null; source: string; avg_hr: number | null;
+  /** what the session is for — the headline, where the plan wrote one */
+  purpose?: string | null;
   distance_m: number | null; activity_name: string | null; activity_id: string | null;
   slot?: string | null;
   significance?: string | null;
