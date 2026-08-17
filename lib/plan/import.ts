@@ -232,14 +232,32 @@ function run(detail: string, name: string): { target: string; km: number; minute
   if (hr) notes.push(`Keep it under ${hr[1]} bpm.`);
 
   if (emb) {
+    /*
+     * Embedded blocks are written out one at a time rather than as a repeat.
+     *
+     * A repeat block in this syntax runs until a warm-up or cool-down closes it, so
+     * "- 3x / - 1km Z3 / - 7km Z2" is read by the app as three lots of 1 km AND 7 km — an
+     * 18 km long run that the session screen showed as 32. Written explicitly there is
+     * nothing to absorb: each block and each float is its own line, and the total is the
+     * total.
+     *
+     * The float between blocks is a kilometre. "3 × 1 km" separates them, otherwise it would
+     * say 3 km, and a kilometre is the conventional read — it is the only number here that is
+     * this module's rather than the author's, and it is taken out of the easy body so the run
+     * still totals what was written.
+     */
     const n = Number(emb[1]), each = Number(emb[2]), bp = emb[3], from = Number(emb[4]);
-    const work = n * each;
-    const tail = km1(km - from - work);
+    const FLOAT = 1;
+    const floats = n - 1;
+    const tail = km1(km - from - n * each - floats * FLOAT);
     if (tail < 0) return null;
-    lines.push(`- ${doseKm(from)} ${easy}${pace ? ` @ ${pace}/km` : ""}`);
-    lines.push(`- ${n}x`);
-    lines.push(`- ${doseKm(each)} Z3 @ ${bp}/km`);
-    if (tail >= 0.4) lines.push(`- ${doseKm(tail)} ${easy}${pace ? ` @ ${pace}/km` : ""}`);
+    const at = pace ? ` @ ${pace}/km` : "";
+    lines.push(`- ${doseKm(from)} ${easy}${at}`);
+    for (let i = 0; i < n; i += 1) {
+      lines.push(`- ${doseKm(each)} Z3 @ ${bp}/km`);
+      if (i < n - 1) lines.push(`- ${doseKm(FLOAT)} ${easy} float${at}`);
+    }
+    if (tail >= 0.4) lines.push(`- ${doseKm(tail)} ${easy}${at}`);
   } else if (last) {
     const block = Number(last[1]);
     const body = km1(km - block);

@@ -17,6 +17,34 @@ import { type Imported, type ImportedWeek, weekKm } from "./import";
  * plan is worse than a failed import, because the athlete cannot tell which weeks are which.
  */
 
+const km1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * A prescription's distance, read exactly as the app reads it — repeats expanded, and the
+ * `m`-under-60-is-minutes rule the rest of the app applies.
+ */
+function readKm(target: string): number {
+  let km = 0;
+  for (const g of parseSteps(target)) {
+    for (const st of g.items) {
+      const m = /^(\d+(?:\.\d+)?)\s*(km|k|m|min|s|sec|mi)\b/i.exec(st.dose.trim());
+      if (!m) continue;
+      const n = Number(m[1]), unit = m[2].toLowerCase();
+      const paceAll = [...(st.pace ?? "").matchAll(/(\d{1,2}):([0-5]\d)/g)]
+        .map((x) => Number(x[1]) * 60 + Number(x[2]));
+      const pace = paceAll.length ? paceAll.reduce((a, b) => a + b, 0) / paceAll.length : 0;
+      let d = 0;
+      if (unit === "km" || unit === "k") d = n;
+      else if (unit === "mi") d = n * 1.609;
+      else if (unit === "m") d = n < 60 ? (pace ? (n * 60) / pace : 0) : n / 1000;
+      else if (unit === "min") d = pace ? (n * 60) / pace : 0;
+      else d = pace ? n / pace : 0;
+      km += d * g.repeat;
+    }
+  }
+  return km;
+}
+
 /** Only these reach a session. Anything else in a document is a problem, not a row. */
 const KINDS = new Set([
   "quality_run", "easy_run", "long_run", "hyrox", "easy_hyrox", "strength", "race",
@@ -85,6 +113,28 @@ export function check(
         ? parseStrength(s.target).length > 0
         : parseSteps(s.target).some((g) => g.items.length > 0);
       if (!readable) problems.push(`${where}: the app cannot read "${s.title}" — ${s.target}`);
+
+      /*
+       * And what the app makes of it must match what this module meant.
+       *
+       * The check below compared the document against `s.km`, which is this module's own
+       * intention — so a target the app reads differently passed silently. It did: an embedded
+       * block long run was written with a repeat marker and a tail after it, which the reader
+       * folds into the repeat, and an 18 km run became 32 on the session screen while the
+       * import reported the week as exact.
+       *
+       * Measuring the prescription the way the app will is the only version of this check
+       * worth having.
+       */
+      if (s.kind !== "strength" && s.km > 0) {
+        const asRead = km1(readKm(s.target));
+        if (Math.abs(asRead - s.km) > 0.3) {
+          problems.push(
+            `${where}: "${s.title}" is meant to be ${s.km} km and the app reads it as `
+            + `${asRead} km — ${JSON.stringify(s.target)}`,
+          );
+        }
+      }
     }
 
     /* The author's own arithmetic, against this module's reading of it. */
