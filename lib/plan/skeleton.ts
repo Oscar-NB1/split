@@ -20,7 +20,11 @@ export type Week = {
 };
 
 const DELOAD = 0.70;
-const TAPER = [0.75, 0.45]; // last-1, last
+export const TAPER = [0.75, 0.45]; // last-1, last
+
+/** Which taper factor a week gets, or null where it is not a taper week. */
+export const taperFactor = (n: number, length: number): number | null =>
+  (n > length - TAPER.length ? TAPER[TAPER.length - (length - n) - 1] ?? null : null);
 
 /**
  * Where the down weeks go.

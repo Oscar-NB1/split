@@ -14,7 +14,7 @@ import { whyFor } from "./why";
 import { purposeFor } from "./purpose";
 import { type Anchor, prescribe, sharpen } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
-import { type PhaseName, type Week, skeleton } from "./skeleton";
+import { type PhaseName, type Week, skeleton, taperFactor } from "./skeleton";
 import { type Commitment, type SlotKind, allocateSlots, placeWeek } from "./slots";
 import { type PlanWeek, type Violation, soften, validate } from "./validate";
 
@@ -213,6 +213,13 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
   flags.push(...absenceFlags);
 
   const awayWeeks = new Set(adjusted.filter((w) => w.reason?.startsWith("Away")).map((w) => w.n));
+  /*
+   * What each week actually came to, in order, so the taper has something true to
+   * measure against. Filled as the weeks are built; taper weeks come last, so by the
+   * time one is reached its reference already exists.
+   */
+  const written: number[] = [];
+
   const benchmarks = new Set(
     benchmarkWeeks(p.length, (n) => awayWeeks.has(n), p.benchmark !== false),
   );
@@ -233,10 +240,22 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       quality_target: p.quality_target, phase: w.phase,
       /*
        * Alternating weeks, from the block's own count rather than a setting: every
-       * other loading week absorbs. The deload weeks are already light, so they are
-       * left out of the alternation rather than being made lighter again.
+       * other loading week absorbs.
+       *
+       * A down week absorbs too, which it did not before. The reasoning was that deload
+       * weeks are already light and did not need making lighter again — true of their
+       * volume and false of their hard days. Week 7 came out with two quality sessions in
+       * it, and now also carries the timed long run, so a week whose entire job is
+       * absorption was the week with three hard days in it. Lower volume around the same
+       * hard sessions is not a down week; it is a normal week with fewer easy kilometres.
+       *
+       * A taper week absorbs for the same reason, more obviously: week 14 was carrying three
+       * hard days against two in the loading weeks it was meant to be a taper from. A taper
+       * keeps intensity and drops work — it does not add a hard day.
+       *
+       * Which leaves three hard days only in the odd loading weeks, where they belong.
        */
-      absorb: !w.deload && !w.taper && w.n % 2 === 0,
+      absorb: Boolean(w.deload) || Boolean(w.taper) || w.n % 2 === 0,
     });
     for (const f of slotPlan.flags) flags.push({ code: "slots", message: f });
 
@@ -281,7 +300,44 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       + runSlots.easy_run * EASY_MAX_KM
       + (runSlots.quality_run + (benchmarks.has(w.n) ? 1 : 0)) * 12;
     const asked = Math.round(w.km * 10) / 10;
-    const runnable = Math.max(3, Math.min(asked, Math.round(capacity * 10) / 10));
+    let runnable = Math.max(3, Math.min(asked, Math.round(capacity * 10) / 10));
+
+    /*
+     * A taper comes off what the athlete has actually been running.
+     *
+     * The curve's taper factors multiply `working`, which climbs whether or not the weeks
+     * below it can carry the climb. His block reached a prescribed peak of 56 km in week 9
+     * and then the specific phase — where a second Hyrox session takes a running slot —
+     * capped weeks 10 to 13 at 36 to 40. `working` knew none of that and kept going, so
+     * 0.75 of it made week 14 a 45 km "taper": bigger than any of the four weeks before
+     * it, and the last hard week of the block was the taper.
+     *
+     * You cannot taper upwards. The reference is the mean of the last three loading weeks
+     * as prescribed — the mean rather than the peak, because tapering off a single spike
+     * nine weeks back describes a block the athlete did not do — and it can only ever
+     * lower the week, never raise it.
+     */
+    const factor = taperFactor(w.n, p.length);
+    if (factor != null && written.length >= 2) {
+      const recent = written.slice(-3);
+      const base = recent.reduce((n, k) => n + k, 0) / recent.length;
+      const ceiling = Math.round(base * factor * 10) / 10;
+      if (ceiling < runnable) {
+        /*
+         * Flagged once, on the first taper week it changes, and only when the curve was
+         * genuinely higher. Two flags saying the same thing about consecutive weeks is
+         * noise, and "not the 24.3 km the curve had reached" is nonsense on a week where
+         * the curve was already below the ceiling.
+         */
+        if (asked > ceiling && !flags.some((f) => f.code === "taper_reference")) {
+          flags.push({
+            code: "taper_reference",
+            message: `Your taper comes off the ${Math.round(base)} km you have actually been running rather than the ${asked} km the curve had climbed to — the specific weeks were capped by how many runs are in them, and you cannot taper upwards.`,
+          });
+        }
+        runnable = Math.max(3, ceiling);
+      }
+    }
     /*
      * And where the sessions' own minimums exceed the week, there are too many sessions.
      *
@@ -345,7 +401,30 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * run yet was handed threshold intervals in week one.
      */
     const ladder = ladderFor(w.phase, inPhase, stations, p.running_base);
-    const rung = rungFor(ladder, p.running_base, inPhase, w.phase, w.n - 1);
+    /*
+     * A down week steps the interval work back, not just the easy running.
+     *
+     * The rung climbed on the block week and knew nothing about the skeleton's down
+     * weeks, so week 7 — a deload — carried the two hardest quality sessions in the
+     * block: 3 × 15 min at threshold and 5 × 2000 m. The volume came down around them
+     * and the hard sessions did not, which makes a down week a normal week with fewer
+     * easy kilometres. That is not a down week, and the absorption it exists for never
+     * happened.
+     *
+     * So a deload holds the rung where it was the week before. Same session shape,
+     * genuinely less of it, and the climb resumes the week after — nothing is lost from
+     * the progression because the ladder is indexed on the block week either way.
+     */
+    const rungWeek = w.deload ? Math.max(0, w.n - 2) : w.n - 1;
+    /*
+     * Held on both counters, not just the block week.
+     *
+     * The rung climbs on the week within the phase as well as on a block-week floor, so
+     * holding one of the two still produced a step up: week 6 got 2 × 15 min and week 7,
+     * the down week, got 3 × 15.
+     */
+    const rungInPhase = w.deload ? Math.max(1, inPhase - 1) : inPhase;
+    const rung = rungFor(ladder, p.running_base, rungInPhase, w.phase, rungWeek);
     /*
      * The Hyrox session is named as well.
      *
@@ -418,7 +497,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       const second = isQuality && qualitySeen++ > 0;
       const thisLadder = second ? secondLadder : ladder;
       const thisRung = second
-        ? rungFor(secondLadder, p.running_base, inPhase, w.phase, w.n - 1)
+        ? rungFor(secondLadder, p.running_base, rungInPhase, w.phase, rungWeek)
         : rung;
       const isBench = benchmarks.has(w.n) && isQuality && !benchTaken;
       if (isBench) benchTaken = true;
@@ -501,18 +580,30 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
        * next — at the same volume, differently spent.
        */
       const absorbWeek = !w.deload && !w.taper && w.n % 2 === 0;
-      const shape: LongShape = !p.long_run_pace || !absorbWeek ? "steady"
+      /*
+       * The timed long run: the down week's test, and the down week only.
+       *
+       * It fired on `w.n % 4 === 0` while the down week came from the skeleton on its own
+       * schedule, so the hardest single session in the block — a 19.5 km run held at
+       * threshold — landed on weeks 4 and 8, the two biggest volume weeks. Nobody chose
+       * that; the two cycles simply never agreed.
+       *
+       * Moving it to the down week was right and did nothing, because `absorbWeek`
+       * already excluded deloads and the call below forced `steady` on any easing week —
+       * so the branch was unreachable and the shape has not existed since. Written out
+       * properly this time: the down week is where the volume is already low and the legs
+       * are already fresh, which is what a test wants, and it is where he asked for it —
+       * "I would always align the down week with the test week".
+       *
+       * Not in base, where there is nothing to measure yet, and not in a taper, where
+       * there is nothing to prove. Not for somebody who has not asked for pace in their
+       * long run either.
+       */
+      const testWeek = Boolean(w.deload) && !w.taper && p.long_run_pace
+        && (w.phase === "build" || w.phase === "specific");
+      const shape: LongShape = testWeek ? "timed"
+        : !p.long_run_pace || !absorbWeek ? "steady"
         : (p.quality_target ?? 1) < 2 ? "finish"
-        /*
-         * A timed long run belongs in the down week, not on a peak.
-         *
-         * It fired on `w.n % 4 === 0` while the down week came from the skeleton on its
-         * own schedule, so the hardest single session in the block — a 19.5 km run held
-         * at threshold, 97 minutes in Z3 — landed on weeks 4 and 8, which are the two
-         * biggest volume weeks of the block. Nobody chose that; the two cycles simply
-         * never agreed. Drop the volume, then test.
-         */
-        : w.deload ? "timed"
         : "blocks";
       const steady = Math.round(cvPace * 1.12);
       /*
@@ -564,8 +655,13 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
           message: `Week ${w.n}: you have run ${known} km before, but a ${Math.round(w.km)} km week cannot carry that in one session — the long run is held at ${km.toFixed(1)} km. Your weekly volume is the limiter, not your long run.`,
         });
       }
+      /*
+       * A taper flattens the long run; a down week does not, when the down week is the
+       * test. `easing` covers both and used to overrule the shape for both, which is what
+       * made the timed run unreachable.
+       */
       const built = longRun(
-        km, easyPace, steady, easing ? "steady" : shape, String(w.phase));
+        km, easyPace, steady, w.taper ? "steady" : shape, String(w.phase));
       long.km = built.km;
       long.target_text = built.target;
       long.minutes = built.minutes;
@@ -579,7 +675,15 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         // No single session may exceed 40% of the week — the bound the plan asserts
         // against itself, applied where the session is built rather than checked
         // after the fact.
-        const built = qualityRun(s.label, cvPace, easyPace, w.km * 0.38, inPhase,
+        /*
+         * `rungInPhase`, not `inPhase`: reps grow inside a rung as well as between them.
+         *
+         * Holding the rung on a down week was not enough — week 6 got 4 × 8 min and week 7,
+         * the down week, got 5 × 8 min, because the rep count climbs on the week within the
+         * phase independently of which rung it is. The same progression counter has to be
+         * held in both places or the down week quietly adds a rep.
+         */
+        const built = qualityRun(s.label, cvPace, easyPace, w.km * 0.38, rungInPhase,
           s.ladder ?? "L4");
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title && kind === "quality_run") s.label = built.title;
@@ -787,6 +891,8 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       });
       if (purpose) s.purpose = purpose;
     }
+
+    if (!w.taper) written.push(prescribed || w.km);
 
     return {
       ...w, allocation, benchmark: benchmarks.has(w.n), sessions,
