@@ -1,12 +1,12 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fmt } from "@/lib/dates";
 import { hms, pace, ROLE_LABEL, type Segment } from "@/lib/analysis";
 import { kindColour, kindLabel } from "@/lib/coach";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
 
-const TEAL = "#0A8FB0", NAVY_D = "#0E2740";
+const TEAL = "#0A8FB0", NAVY_D = "#0E2740", NAVY = "#12314D";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
 const OFF = "var(--off)", PAPER = "var(--paper)", LINE = "var(--line)";
 
@@ -170,13 +170,21 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
         * about. One bar per segment, the target as a line across it, and the
         * colour is simply which side of the line the bar landed on.
         */}
-      {prescribed && live.length > 1
-        && live.some((sg) => sg.avg_speed_ms) && (
+      {/*
+        * Shown whenever the run had reps in it, target or no target.
+        *
+        * This was gated on `prescribed`, which comes from the linked planned session's
+        * title — so an interval session Strava had not matched to a plan, or one whose
+        * title carries no pace, hid the chart entirely. "Did I hold an even pace across
+        * eight reps" is worth answering on its own; the target is what turns it into
+        * "did I hold the right one", and it is drawn when there is one.
+        */}
+      {live.filter((sg) => sg.role === "work" && sg.avg_speed_ms).length > 1 && (
         <div style={band}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-            <span style={caps}>Pace against target</span>
+            <span style={caps}>{prescribed ? "Pace against target" : "Pace per rep"}</span>
             <span style={{ fontSize: 11, color: INK55 }}>
-              target {pace(1000 / prescribed)} /km
+              {prescribed ? `target ${pace(1000 / prescribed)} /km` : "no target on this one"}
             </span>
           </div>
           <PaceChart segments={live} prescribed={prescribed} />
@@ -334,7 +342,53 @@ function HrChart({
       });
   }, [segments, endT]);
 
+  /*
+   * Scrubbing: the rate at the moment you are pointing at.
+   *
+   * A trace tells you the shape of a session and refuses to tell you a number, which is
+   * the one thing anybody looks at a heart-rate graph to find out — "how high did that
+   * fourth rep actually get". Pointer events rather than mouse or touch handlers, so a
+   * finger drag and a mouse hover are the same code path.
+   */
+  const [at, setAt] = useState<number | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
+  const vals = series.hr;
+
+  const read = (clientX: number) => {
+    const r = box.current?.getBoundingClientRect();
+    if (!r || r.width === 0) return;
+    const frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    setAt(Math.round(frac * Math.max(0, vals.length - 1)));
+  };
+
+  const bpm = at != null ? vals[at] : null;
+  const secs = at != null && vals.length > 1
+    ? Math.round((at / (vals.length - 1)) * endT) : null;
+  const cursorX = at != null && vals.length > 1
+    ? (at / (vals.length - 1)) * 330 : null;
+  const clock = (t: number) => `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
+
   return (
+    <div ref={box} style={{ position: "relative", touchAction: "pan-y" }}
+      onPointerDown={(e) => read(e.clientX)}
+      onPointerMove={(e) => { if (e.buttons || e.pointerType === "touch") read(e.clientX); }}
+      onPointerLeave={() => setAt(null)}
+      onPointerUp={() => { /* the readout stays until they point somewhere else */ }}>
+      {bpm != null && cursorX != null && (
+        /*
+         * Placed by percentage and clamped, so the callout stays inside the card at both
+         * ends rather than being cut off on the rep everybody wants to read — the last one.
+         */
+        <div style={{
+          position: "absolute", top: -2, zIndex: 2, pointerEvents: "none",
+          left: `${Math.max(6, Math.min(94, (cursorX / 330) * 100))}%`,
+          transform: "translateX(-50%)",
+          background: NAVY, color: "#fff", borderRadius: 7, padding: "4px 8px",
+          fontSize: 11, fontWeight: 700, whiteSpace: "nowrap",
+        }}>
+          {bpm} bpm{secs != null ? ` · ${clock(secs)}` : ""}
+        </div>
+      )}
     <svg viewBox="0 0 330 100" preserveAspectRatio="none" style={{ width: "100%", height: 100 }}>
       {bands.map((b) => (
         <rect key={b.key} x={b.x} y={0} width={b.w} height={100} fill={b.fill} />
@@ -349,7 +403,11 @@ function HrChart({
       <line x1="0" y1="65" x2="330" y2="65" stroke="rgba(18,49,77,.09)" />
       <path d={area} fill="rgba(10,143,176,.16)" />
       <path d={line} fill="none" stroke={TEAL} strokeWidth="1.7" />
+      {cursorX != null && (
+        <line x1={cursorX} y1={0} x2={cursorX} y2={100} stroke={NAVY} strokeWidth="1" />
+      )}
     </svg>
+    </div>
   );
 }
 
@@ -637,8 +695,8 @@ function PaceChart({
   segments, prescribed,
 }: {
   segments: Segment[];
-  /** target pace, in metres per second */
-  prescribed: number;
+  /** target pace in metres per second, or null when the run has no prescription */
+  prescribed: number | null;
 }) {
   const reps = useMemo(
     () => segments
@@ -652,7 +710,16 @@ function PaceChart({
   );
   if (reps.length === 0) return null;
 
-  const target = 1000 / prescribed;
+  /*
+   * Without a target, the set's own average is the reference line.
+   *
+   * The chart's job is to show whether the reps were even and where they drifted, and
+   * that question has an answer with no prescription at all — the line just means "your
+   * own average" instead of "what you were asked for", which the caption says.
+   */
+  const target = prescribed
+    ? 1000 / prescribed
+    : reps.reduce((n, r) => n + r.secPerKm, 0) / reps.length;
   // The scale spans the target and every rep, with a little air, so the target
   // line is never at the very edge where it cannot be read against anything.
   const all = [target, ...reps.map((r) => r.secPerKm)];
@@ -695,7 +762,7 @@ function PaceChart({
         })}
       </div>
       <span style={{ fontSize: 9, color: INK40, textAlign: "center" }}>
-        seconds per kilometre against target, per rep
+        seconds per kilometre against {prescribed ? "target" : "your own average"}, per rep
       </span>
     </div>
   );
