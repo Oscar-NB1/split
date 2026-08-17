@@ -15,6 +15,8 @@ export type SessionDetail = {
     status: string; actual_minutes: number | null; significance: string | null;
     slot: string | null; activity_id: string | null; display_name: string;
     effort_points: number | null;
+    /** who programmed it — the note it carries is a message from them */
+    author_name?: string | null; author_avatar?: string | null;
   };
   steps: StepGroup[];
   reps: number;
@@ -431,17 +433,34 @@ export default function Brief({
 
       {why && (
         <div style={{ padding: "16px 18px 0" }}>
+          {/*
+            * A message from whoever programmed the week, and it looks like one.
+            *
+            * It was an information icon over "WHY THIS SESSION MATTERS" and three
+            * sentences — a block of text arriving above the session, at the moment an
+            * athlete is least inclined to read a block of text. A face, a name and two
+            * sentences is a note from a coach, which is what it actually is.
+            */}
           <div style={{ background: "var(--paper)", border: "1px solid var(--line)",
-            borderRadius: "var(--r-card)", padding: "15px 16px",
-            display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ width: 18, height: 18, borderRadius: 5, background: "var(--teal-tint2)",
-                color: "var(--teal)", fontSize: 10, fontWeight: 800,
-                display: "flex", alignItems: "center", justifyContent: "center" }}>i</span>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em",
-                textTransform: "uppercase" }}>Why this session matters</span>
+            borderRadius: "var(--r-card)", padding: "14px 16px",
+            display: "flex", gap: 11, alignItems: "flex-start" }}>
+            {s.author_avatar
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={s.author_avatar} alt="" width={30} height={30}
+                style={{ width: 30, height: 30, borderRadius: "50%", objectFit: "cover",
+                  flex: "none" }} />
+              : <span style={{ width: 30, height: 30, borderRadius: "50%", flex: "none",
+                background: "var(--teal)", color: "#fff", fontSize: 12, fontWeight: 800,
+                display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {(s.author_name ?? "C").trim().charAt(0).toUpperCase()}
+              </span>}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em",
+                textTransform: "uppercase", color: "var(--ink-40)" }}>
+                {s.author_name ? `${s.author_name.split(" ")[0]} · your coach` : "Your coach"}
+              </span>
+              <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-70)" }}>{why}</div>
             </div>
-            <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-70)" }}>{why}</div>
           </div>
         </div>
       )}

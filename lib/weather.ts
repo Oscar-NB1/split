@@ -156,8 +156,8 @@ export function headlineFor(f: {
  */
 export const wasAdverse = (cost: number): boolean => cost >= 6;
 
-const HOURLY =
-  "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,wind_speed_10m,wind_gusts_10m";
+const HOURLY = "temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,"
+  + "wind_speed_10m,wind_gusts_10m,weather_code,cloud_cover";
 
 /** The hours a session is plausibly in. Nobody trains at 3am, and the daily
  *  maximum would call an evening run hot because the afternoon was. */
@@ -167,7 +167,116 @@ type Hourly = {
   time?: string[]; temperature_2m?: number[]; relative_humidity_2m?: number[];
   apparent_temperature?: number[]; precipitation?: number[];
   wind_speed_10m?: number[]; wind_gusts_10m?: number[];
+  weather_code?: number[]; cloud_cover?: number[];
 };
+
+/**
+ * What the sky looks like, which is a different question from what it costs.
+ *
+ * `verdict` answers "does this change my session" — heat, wind, cold. This answers
+ * "what am I walking out into", and an athlete glancing at their week wants the
+ * second: seven days, seven icons, no reading.
+ *
+ * From the WMO code Open-Meteo reports, with cloud cover breaking the tie between a
+ * clear morning and a grey one — codes 0 to 3 are all nominally "clear to overcast"
+ * and the difference between them is exactly what somebody wants to see.
+ */
+export type Sky =
+  | "clear" | "mostly_clear" | "partly_cloudy" | "cloudy"
+  | "rain" | "storm" | "snow" | "fog";
+
+export function skyFor(code: number | null, cloud: number | null, rainMm = 0): Sky {
+  const c = code ?? -1;
+  // Order matters: a thunderstorm is also raining, and snow is also precipitation.
+  if (c >= 95) return "storm";
+  if ((c >= 71 && c <= 77) || (c >= 85 && c <= 86)) return "snow";
+  if ((c >= 51 && c <= 67) || (c >= 80 && c <= 82) || rainMm >= 1) return "rain";
+  if (c === 45 || c === 48) return "fog";
+  const cover = cloud ?? 0;
+  if (cover < 20) return "clear";
+  if (cover < 50) return "mostly_clear";
+  if (cover < 80) return "partly_cloudy";
+  return "cloudy";
+}
+
+/**
+ * The emoji for a sky, which is what the design asks for and what actually renders.
+ *
+ * Not an SVG and not a text glyph. The first version of the weather card used
+ * typographic symbols and one of them — U+224B for wind — is missing from Inter and
+ * from most system fallbacks, so it drew an empty box. Emoji come from the platform's
+ * own colour font, so they are the one category of icon that cannot fail to render,
+ * and on a week strip seven of them read faster than seven drawings.
+ */
+export const SKY_EMOJI: Record<Sky, string> = {
+  clear: "\u2600\uFE0F",
+  mostly_clear: "\uD83C\uDF24\uFE0F",
+  partly_cloudy: "\u26C5",
+  cloudy: "\u2601\uFE0F",
+  rain: "\uD83C\uDF27\uFE0F",
+  storm: "\u26C8\uFE0F",
+  snow: "\u2744\uFE0F",
+  fog: "\uD83C\uDF2B\uFE0F",
+};
+
+/** One day of a week strip: enough to draw an icon and say the temperature. */
+export type DaySky = {
+  date: string;
+  sky: Sky;
+  emoji: string;
+  temp_c: number;
+  feels_c: number;
+  rain_mm: number;
+  wind_kmh: number;
+  /** what the conditions cost a pace target, so a hard day can be flagged */
+  cost_s: number;
+  /** true where this is the climate for the date rather than a forecast */
+  typical?: boolean;
+};
+
+/**
+ * A whole week in one request.
+ *
+ * Seven days as seven calls would be seven round trips to a third party every time
+ * somebody opens their week, which is the sort of thing that makes a screen feel slow
+ * for no reason. Open-Meteo takes a date range, so this takes one.
+ *
+ * Days beyond the forecast horizon are simply absent rather than filled from the
+ * climate: a week strip is about what is coming, and "usually 12°C" next to six real
+ * forecasts would read as a seventh forecast.
+ */
+export async function forecastWeek(
+  lat: number, lon: number, from: string, to: string,
+): Promise<DaySky[]> {
+  const q = new URLSearchParams({
+    latitude: lat.toFixed(3), longitude: lon.toFixed(3),
+    hourly: HOURLY, start_date: from, end_date: to, timezone: "auto",
+  });
+  let json: { hourly?: Hourly };
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?${q}`, {
+      next: { revalidate: 3600 },
+    });
+    if (!r.ok) return [];
+    json = await r.json();
+  } catch {
+    return [];
+  }
+
+  const days = [...new Set((json.hourly?.time ?? []).map((t) => t.slice(0, 10)))];
+  const out: DaySky[] = [];
+  for (const date of days) {
+    const d = reduceDay(json.hourly, date);
+    if (!d) continue;
+    const sky = skyFor(d.code, d.cloud, d.rain_mm);
+    out.push({
+      date, sky, emoji: SKY_EMOJI[sky],
+      temp_c: d.temp_c, feels_c: d.feels_c, rain_mm: d.rain_mm,
+      wind_kmh: d.wind_kmh, cost_s: conditionsCost(d),
+    });
+  }
+  return out;
+}
 
 /** The training-hours average of one day's hourly series. */
 function reduceDay(h: Hourly | undefined, day?: string) {
@@ -185,7 +294,25 @@ function reduceDay(h: Hourly | undefined, day?: string) {
   const sum = (a?: number[]) => a
     ? hours.reduce((s, i) => s + (a[i] ?? 0), 0) : 0;
 
+  /*
+   * The dominant code across the training hours, not the day's worst.
+   *
+   * A single thundery hour at 3pm should not make a Tuesday evening run a storm —
+   * but it should not be averaged away either, since a code is a category and the
+   * mean of two categories is not a category. The most frequent one wins, with the
+   * highest code breaking a tie, because the more severe reading is the safer one to
+   * show somebody deciding what to wear.
+   */
+  const codes = h.weather_code ? hours.map((i) => h.weather_code?.[i] ?? 0) : [];
+  const tally = new Map<number, number>();
+  for (const c of codes) tally.set(c, (tally.get(c) ?? 0) + 1);
+  const code = codes.length
+    ? [...tally.entries()].sort((a, b) => (b[1] - a[1]) || (b[0] - a[0]))[0][0]
+    : null;
+
   return {
+    code,
+    cloud: h.cloud_cover ? Math.round(mean(h.cloud_cover)) : null,
     temp_c: Math.round(mean(h.temperature_2m) * 10) / 10,
     feels_c: Math.round(mean(h.apparent_temperature) * 10) / 10,
     humidity: Math.round(mean(h.relative_humidity_2m)),

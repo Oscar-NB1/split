@@ -14,6 +14,7 @@ type Row = {
   status: string; actual_minutes: number | null; skip_reason: string | null;
   effort_points: number | null; source: string; significance: string | null;
   slot: string | null; activity_id: string | null; display_name: string;
+  author_name: string | null; author_avatar: string | null;
 };
 
 /**
@@ -33,8 +34,19 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     select p.id, p.user_id, p.planned_date::text as planned_date, p.title, p.kind,
            p.planned_minutes, p.target, p.coach_note, p.status, p.actual_minutes,
            p.skip_reason, p.effort_points, p.source, p.significance, p.slot,
-           p.activity_id, u.display_name
-      from planned_sessions p join users u on u.id = p.user_id
+           p.activity_id, u.display_name,
+           /*
+            * Who wrote the session, for the note it carries.
+            *
+            * The "why this session matters" card is a message from whoever programmed
+            * the week, and it should look like one — a name and a face rather than an
+            * information icon. Left-joined because a session an athlete added
+            * themselves has no author.
+            */
+           a.display_name as author_name, a.avatar_url as author_avatar
+      from planned_sessions p
+      join users u on u.id = p.user_id
+      left join users a on a.id = p.author_id
      where p.id = ${id} limit 1
   `;
   if (!s) throw notFound("No such session.");

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   beyondHorizon, coldCost, conditionsCost, headlineFor, heatCost, verdictFor,
-  wasAdverse, windCost,
+  wasAdverse, windCost, skyFor, SKY_EMOJI,
 } from "../lib/weather";
 import { read, repRead, type Signal } from "../lib/signals";
 
@@ -250,4 +250,36 @@ test("a run of sessions moves the plan by the least of them, not the average", (
   assert.equal(r.streak, 3, "three on the same side of the band");
   assert.equal(r.shift, -1, "−2 × 0.6, rounded — the binding session");
   assert.ok(r.trend < -4, `the trend is still reported as ${r.trend}`);
+});
+
+// --- what the sky looks like ----------------------------------------------------
+
+test("the sky comes from the WMO code, with cloud cover breaking the tie", () => {
+  /*
+   * Codes 0–3 are all nominally "clear to overcast" and the difference between them
+   * is exactly what somebody glancing at their week wants to see, so cloud cover
+   * decides it.
+   */
+  assert.equal(skyFor(0, 5), "clear");
+  assert.equal(skyFor(1, 35), "mostly_clear");
+  assert.equal(skyFor(2, 65), "partly_cloudy");
+  assert.equal(skyFor(3, 95), "cloudy");
+});
+
+test("severity wins over cloud: a storm is not a cloudy day", () => {
+  // A thunderstorm is also raining and snow is also precipitation, so the order
+  // these are tested in is the whole correctness of it.
+  assert.equal(skyFor(95, 90), "storm");
+  assert.equal(skyFor(73, 90), "snow");
+  assert.equal(skyFor(63, 90), "rain");
+  assert.equal(skyFor(48, 90), "fog");
+  // and measurable rain overrides a code that did not mention it
+  assert.equal(skyFor(3, 90, 2.5), "rain");
+});
+
+test("every sky has an emoji, because a missing one renders as nothing", () => {
+  for (const s of ["clear", "mostly_clear", "partly_cloudy", "cloudy", "rain",
+    "storm", "snow", "fog"] as const) {
+    assert.ok(SKY_EMOJI[s] && SKY_EMOJI[s].length > 0, s);
+  }
 });

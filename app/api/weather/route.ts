@@ -3,7 +3,7 @@ import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { badRequest, route } from "@/lib/http";
 import { decodePolyline } from "@/lib/analysis";
-import { forecast } from "@/lib/weather";
+import { forecast, forecastWeek } from "@/lib/weather";
 
 /**
  * The forecast for a session, where the athlete trains.
@@ -19,9 +19,19 @@ import { forecast } from "@/lib/weather";
  */
 export const GET = route(async (req: Request) => {
   const me = await requireUser();
-  const date = new URL(req.url).searchParams.get("date");
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw badRequest("Which day? Send date=YYYY-MM-DD.");
+  const q = new URL(req.url).searchParams;
+  const date = q.get("date");
+  const from = q.get("from");
+  const to = q.get("to");
+  const iso = (v: string | null) => Boolean(v && /^\d{4}-\d{2}-\d{2}$/.test(v));
+  /*
+   * One day for a session, or a range for the week strip.
+   *
+   * A week as seven calls would be seven round trips to a third party every time
+   * somebody opens their week. Open-Meteo takes a range, so this does too.
+   */
+  if (!iso(date) && !(iso(from) && iso(to))) {
+    throw badRequest("Which day? Send date=YYYY-MM-DD, or from= and to= for a week.");
   }
 
   /*
@@ -51,7 +61,12 @@ export const GET = route(async (req: Request) => {
 
   const lat = Math.round(first[0] * 100) / 100;
   const lon = Math.round(first[1] * 100) / 100;
-  const f = await forecast(lat, lon, date);
+  if (from && to) {
+    const days = await forecastWeek(lat, lon, from, to);
+    return NextResponse.json({ days, source: days.length ? "Open-Meteo" : null });
+  }
+
+  const f = await forecast(lat, lon, date!);
 
   return NextResponse.json({
     forecast: f,

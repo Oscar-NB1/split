@@ -7,6 +7,31 @@ import { prescribedPace } from "@/lib/signals";
 import type { Session, User, WeekData } from "./Shell";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+type DaySky = {
+  date: string; sky: string; emoji: string; temp_c: number; feels_c: number;
+  rain_mm: number; wind_kmh: number; cost_s: number;
+};
+
+/** The week's forecast, keyed by date. Empty until it arrives, and on failure. */
+function useSky(from: string, to: string): Record<string, DaySky> {
+  const [days, setDays] = useState<Record<string, DaySky>>({});
+  useEffect(() => {
+    let live = true;
+    setDays({});
+    fetch(`/api/weather?from=${from}&to=${to}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!live) return;
+        const out: Record<string, DaySky> = {};
+        for (const d of (j?.days ?? []) as DaySky[]) out[d.date] = d;
+        setDays(out);
+      })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [from, to]);
+  return days;
+}
 /** Small numbers read better as words in a headline. */
 const COUNT: Record<number, string> = {
   0: "No", 1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven",
@@ -120,6 +145,15 @@ export default function Week({
   const uid = coaching ?? me.id;
   const all = [...data.sessions, ...data.unplanned].filter((s) => s.user_id === uid);
   const dates = weekDates(monday);
+  /*
+   * The week's weather, in one request.
+   *
+   * Seven emoji on the strip is the fastest way to read a week — you see the wet
+   * Thursday before you have read a word — and it is one round trip because
+   * Open-Meteo takes a date range. Absent silently: a week strip with six icons and a
+   * gap is better than a week strip that waited for a third party.
+   */
+  const sky = useSky(dates[0], dates[6]);
   // Someone with no plan of their own is not "before the block" — there is no
   // block. Showing the other athlete's rebuild weeks and 55:00 goal as hers was
   // the bug this closes.
@@ -301,6 +335,12 @@ export default function Week({
                   {DAYS[i]}
                 </span>
                 <span style={{ fontSize: 15, fontWeight: 700 }}>{fmt(d, { day: "numeric" })}</span>
+                {/* One glyph per day. Reserved height whether or not the forecast
+                    arrived, so the strip does not jump when it does. */}
+                <span style={{ fontSize: 13, lineHeight: 1, height: 14 }}
+                  title={sky[d] ? `${Math.round(sky[d].temp_c)}°C` : undefined}>
+                  {sky[d]?.emoji ?? ""}
+                </span>
                 <span style={{ display: "flex", gap: 2, height: 5, alignItems: "center" }}>
                   {has.slice(0, 3).map((s) => (
                     <span key={s.id} style={{ width: 5, height: 5, borderRadius: "50%",
@@ -319,9 +359,20 @@ export default function Week({
           <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
             textTransform: "uppercase", color: INK55 }}>
             {fmt(dates[day], { weekday: "long", day: "numeric", month: "long" })}
+            {sky[dates[day]] && (
+              <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600,
+                marginLeft: 8, fontSize: 12 }}>
+                {sky[dates[day]].emoji} {Math.round(sky[dates[day]].temp_c)}°
+              </span>
+            )}
           </div>
-          <span style={{ fontSize: 11, color: INK55 }}>
+          <span style={{ fontSize: 11, color: INK55, textAlign: "right" }}>
             {dayList.length === 0 ? "Rest day" : `${dayList.length} session${dayList.length > 1 ? "s" : ""}`}
+            {/* Said only when it differs enough to matter — "feels 19°" beside 19° is
+                noise, and the number that changes how you dress is the second one. */}
+            {sky[dates[day]] && Math.abs(sky[dates[day]].feels_c - sky[dates[day]].temp_c) >= 2 && (
+              <><br />feels {Math.round(sky[dates[day]].feels_c)}°</>
+            )}
           </span>
         </div>
 

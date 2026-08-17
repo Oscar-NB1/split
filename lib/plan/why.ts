@@ -43,10 +43,16 @@ const PHASE_WHY: Record<string, string> = {
 };
 
 /**
- * The paragraph.
+ * The message.
  *
- * Three sentences at most: what it builds, why it is today, and what a good one
- * looks like. Longer than that and nobody reads it before a session.
+ * Two sentences. It was three, and three is a paragraph — a block of text that
+ * arrives above the session an athlete is about to do, at the moment they are
+ * least inclined to read a block of text. It is a note from their coach, and a
+ * coach says the thing that changes what you do today and stops.
+ *
+ * What went: the sentence explaining the phase, which is on the week screen and
+ * does not need repeating per session, and the roll-call of the week's other hard
+ * days, which the week screen also shows.
  */
 export function whyFor(c: WhyContext): string | null {
   const others = c.hardDays.filter((d) => d !== c.day);
@@ -56,59 +62,47 @@ export function whyFor(c: WhyContext): string | null {
   switch (c.kind) {
     case "quality_run":
       return [
-        `${phase} This is the session the plan reads to decide what to prescribe next, so the pace on the card matters more than the effort you feel like giving.`,
-        `Hold the prescribed pace from the first rep — if rep one is the fastest of the set, the session failed even if the average looks right.`,
-        others.length
-          ? `${list(others)} ${others.length === 1 ? "is" : "are"} the other hard ${others.length === 1 ? "day" : "days"}; everything between them is meant to be easy enough to make this possible.`
-          : "It is the only hard day this week, which is why it is worth doing properly.",
+        "Hold the prescribed pace from the first rep — if rep one is the fastest of the set, the session failed even if the average looks right.",
+        "Every rep is read against the target, so this is the session that decides what you get prescribed next.",
       ].join(" ");
 
     case "long_run":
-      return [
-        `Durability is what decides the back half of a Hyrox, and this is the only session that trains it.`,
-        `The distance is the point in the base weeks; later the blocks inside it are, because switching pace on tired legs is exactly what the race asks for.`,
-        toGo <= 3
-          ? "It comes down from here — the work is banked, and arriving fresh is worth more than one more long Sunday."
-          : "It grows across the block and then stops at 22 km: past that it costs more in recovery than it returns.",
-      ].join(" ");
+      return toGo <= 3
+        ? "Durability decides the back half of a Hyrox, and this is the session that trains it. It comes down from here — arriving fresh is worth more than one more long Sunday."
+        : "Durability decides the back half of a Hyrox, and this is the session that trains it. Start slower than feels right; the last 5 km is the part that counts.";
 
     case "easy_run":
       return [
-        `Easy days are what make ${list(others.length ? others : c.hardDays)} possible. That is their whole job.`,
+        `Easy days are what make ${list(others.length ? others : c.hardDays)} possible — that is their whole job.`,
         c.easyCeilingHr
-          ? `Keep it under ${c.easyCeilingHr} bpm. Drifting above it is the most common way a good plan quietly stops working — the hard days arrive tired and neither kind of session does what it was written to do.`
-          : `It should feel too slow. Drifting up in pace is the most common way a good plan quietly stops working.`,
-        `The aerobic return is better at this pace, and it is the volume here — not the intervals — that raises what you can hold on race day.`,
+          ? `Keep it under ${c.easyCeilingHr} bpm; drifting above it is the most common way a good plan quietly stops working.`
+          : "It should feel too slow. Drifting up in pace is how a good plan quietly stops working.",
       ].join(" ");
 
     case "hyrox":
       return [
-        `Running off a station is not the same skill as running, and this is where it is trained. ${phase}`,
-        `Keep the run efforts at the pace on your card rather than all-out: the point is what you can hold after the station, not what you can produce once.`,
-        `Time your transitions even if nobody is asking you to. Roxzone is where a minute and a half hides in a race.`,
+        "Running off a station is a different skill from running, and this is where it is trained — hold the pace on your card rather than going all-out.",
+        "Time your transitions even if nobody asks you to. A minute and a half hides in the roxzone.",
       ].join(" ");
 
     case "easy_hyrox":
       return [
-        `Aerobic work on the two machines that make up a quarter of your station time, with none of the impact of another eight kilometres of running.`,
-        `It is meant to be genuinely easy — if you cannot hold a conversation, it has turned into a session it was not supposed to be.`,
-        `A class will not do this for you. A class is never easy.`,
+        "Aerobic work on the machines that are a quarter of your station time, without another eight kilometres on your legs.",
+        "Genuinely easy: if you cannot hold a conversation, it has become a session it was not meant to be.",
       ].join(" ");
 
     case "strength":
       return [
-        `The sled, the lunges and the carries are where a race is lost by people who can run. This is what stops that happening to you.`,
+        "The sled, the lunges and the carries are where a race is lost by people who can run.",
         String(c.phase) === "build"
-          ? "Heaviest set of the week. Leave the last one in the tank and come back on Thursday able to run."
+          ? "Heaviest sets of the week — leave the last one in the tank and come back able to run."
           : "Load matters less than the positions. Move well and get out.",
-        `It is scheduled away from your hard running days on purpose — do not move it next to one.`,
       ].join(" ");
 
     case "benchmark":
       return [
-        `This is a measurement, not a workout. Every pace target in the plan afterwards is written from what it says.`,
-        `Run it honestly: hard enough to be true, complete enough to be comparable. A test you paced conservatively produces a plan that is conservative for the next fifteen weeks.`,
-        `Press the lap button at every boundary and the rest is worked out for you.`,
+        "A measurement, not a workout: every pace target after this is written from what it says, so pace it honestly.",
+        "Press the lap button at every boundary and the rest is worked out for you.",
       ].join(" ");
 
     case "race":
