@@ -8,6 +8,7 @@ import {
   type LongShape,
 } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
+import { type TrainingConstraint, sayConstraints } from "./constraints";
 import { applyBRaces } from "./braces";
 import { whyFor } from "./why";
 import { purposeFor } from "./purpose";
@@ -37,6 +38,14 @@ export type Params = ResolveInput & {
   quality_target?: number;
   /** what the athlete said they can reach, for the strength lifts */
   equipment?: string[];
+  /**
+   * What they are training around, as they confirmed it.
+   *
+   * Only ever confirmed constraints get this far. They can remove or substitute a movement
+   * and nothing else — no constraint changes a volume, a pace or the shape of a week, because
+   * those are not conclusions to draw from a note about a knee.
+   */
+  constraints?: TrainingConstraint[];
   /** whether the station work is written out, attended as classes, or mixed */
   session_style?: "written" | "classes" | "mix";
   /** whether the long run carries a pace target */
@@ -626,8 +635,16 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
          * prescribed for this one" above a session the plan had told the athlete to
          * protect. Chosen from the equipment they said they can reach.
          */
-        s.target_text = strengthTarget(w.phase, w.n, kitFrom(p.equipment));
-        s.note_text = strengthNote(w.phase);
+        s.target_text = strengthTarget(w.phase, w.n, kitFrom(p.equipment), 0, p.constraints);
+        /*
+         * And the constraint said on the session rather than only on the profile.
+         *
+         * An athlete who opens their gym session and finds the split squat replaced should
+         * be able to see that it is because of what they told us. A substitution nobody
+         * explained reads as the plan having forgotten what it was doing.
+         */
+        const around = sayConstraints(p.constraints ?? []);
+        s.note_text = around ? `${strengthNote(w.phase)} ${around}` : strengthNote(w.phase);
       }
       /*
        * Easy runs are not counted here: they are sized from what is left, and

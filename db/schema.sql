@@ -1115,3 +1115,24 @@ create index if not exists week_rebuilds_lookup
 -- and an undo has to have somewhere to put it back. Reversing the diff would assume nothing
 -- else changed in between, and something usually has.
 alter table planned_sessions add column if not exists original_date date;
+
+-- What the athlete is training around (2026-08-17).
+--
+-- The intake has always asked "anything to train around?" and nothing read the answer — the
+-- profile screen said so out loud. This is where a reading of that text lands once the
+-- athlete has confirmed it, and confirmation is the point: reshaping somebody's block from a
+-- health note without asking would be the app making a judgement it is not entitled to make.
+--
+-- `source_text` is what the reading was made from, so an edited note invalidates a stale
+-- confirmation rather than silently keeping constraints from a niggle that has healed.
+--
+-- The text itself is health information about one person. It stays here and on their own
+-- screens; it is never logged and never leaves the app.
+create table if not exists training_constraints (
+  user_id      uuid primary key references users(id) on delete cascade,
+  source_text  text not null,
+  reading      jsonb not null default '{}',   -- what was proposed, and what could not be acted on
+  confirmed    jsonb not null default '[]',   -- only these reach the generator
+  confirmed_at timestamptz,
+  updated_at   timestamptz not null default now()
+);

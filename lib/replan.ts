@@ -61,6 +61,26 @@ export async function rememberDay(userId: string): Promise<number> {
   }));
   const { recent } = await recentFor(userId, conn?.ok ?? false);
   const measured = await measuredFor(userId);
+  /*
+   * What they confirmed they are training around.
+   *
+   * Only the confirmed column, and only while it is still about the note they have now:
+   * a niggle that healed gets edited out of the intake text, and constraints from the
+   * old text would go on removing training nobody needs removed.
+   */
+  const [around] = await sql<{ confirmed: unknown; stale: boolean }[]>`
+    select c.confirmed,
+           btrim(c.source_text) <> coalesce(
+             nullif(btrim(u.injury_notes), ''), nullif(btrim(i.injuries), ''), ''
+           ) as stale
+      from training_constraints c
+      join users u on u.id = c.user_id
+      left join athlete_intake i on i.user_id = c.user_id
+     where c.user_id = ${userId}
+  `;
+  const constraints = around && !around.stale
+    ? (around.confirmed as Parameters<typeof paramsFrom>[1]["constraints"]) ?? []
+    : [];
 
   const params = paramsFrom(intake, {
     recent, absences, max_hr: urow?.hr_max ?? null,
@@ -69,6 +89,7 @@ export async function rememberDay(userId: string): Promise<number> {
     measured_race_run_split_s: measured.run_split_s,
     // What their runs have said about the volume, since they answered the dial.
     volume_feel_delta: tpl.volume_feel_delta,
+    constraints,
   });
   /*
    * The learned days, on top of the answers.

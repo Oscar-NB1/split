@@ -6,6 +6,8 @@ import Mark from "./Mark";
 import Notifications from "./Notifications";
 import Away from "./Away";
 import type { User } from "./Shell";
+/* The same words the session note uses, so the tick and the session read as one feature. */
+import { saysWhat, type TrainingConstraint } from "@/lib/plan/constraints";
 
 const TEAL = "#0A8FB0", NAVY = "#12314D";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
@@ -280,16 +282,46 @@ const planRow: React.CSSProperties = {
   fontSize: 13, fontWeight: 600,
 };
 
+type Constraint = TrainingConstraint;
+type Reading = {
+  constraints: Constraint[];
+  unactionable: { quote: string; why: string }[];
+};
+
 /**
- * Anything to train around.
+ * Anything to train around, and what the plan does about it.
  *
- * Saved on blur rather than behind a button: it sits among sections that each
- * save themselves, and one form control with its own Save would be the odd one
- * out. Nothing parses it — the note under it says so, because an athlete who
- * writes down an injury will otherwise assume the plan has taken it in.
+ * This box used to end with an admission: "Nothing parses it automatically, so an injury
+ * that should stop a session still needs saying out loud." That was honest and it was also
+ * the app asking a question it then ignored — somebody who writes "left knee hates deep
+ * lunging" has said something specific, and the gym session went on prescribing split
+ * squats every week.
+ *
+ * It is now read, and then shown back before anything happens. The confirm step is not
+ * ceremony: this is health information, and a plan that quietly reshaped itself from a
+ * sentence in a text box would be making a call about somebody's body that it has no
+ * standing to make. They see their own words, see what follows, and tick what is right.
+ *
+ * What the plan can do is deliberately small — take a movement out and put a substitute in.
+ * Nothing here changes a volume, a pace or a week, and anything the vocabulary cannot
+ * express is said out loud rather than quietly producing no effect.
  */
 function Injuries({ notes }: { notes: string }) {
+  const [text, setText] = useState(notes);
   const [saved, setSaved] = useState<string | null>(null);
+  const [reading, setReading] = useState<Reading | null>(null);
+  const [confirmed, setConfirmed] = useState<Constraint[]>([]);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState<"read" | "apply" | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/constraints").then((r) => r.json()).then((j) => {
+      setConfirmed(j.confirmed ?? []);
+      setStale(Boolean(j.stale));
+    }).catch(() => {});
+  }, []);
 
   async function save(v: string) {
     if (v.trim() === notes.trim()) return;
@@ -300,18 +332,143 @@ function Injuries({ notes }: { notes: string }) {
     setSaved(r.ok ? "Saved." : "That did not save.");
   }
 
+  async function read() {
+    setBusy("read"); setDone(null);
+    /* Read what is in the box, not what was last saved — they may still be typing it. */
+    const r = await fetch("/api/constraints", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(null);
+    if (!r.ok) { setDone(j.error ?? "That did not go through."); return; }
+    setReading(j.reading ?? null);
+    /* Nothing pre-ticked. Agreeing to something has to be an action they took. */
+    setPicked(new Set());
+  }
+
+  async function apply() {
+    if (!reading) return;
+    setBusy("apply");
+    const r = await fetch("/api/constraints", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ constraints: reading.constraints.filter((_, i) => picked.has(i)) }),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(null);
+    if (!r.ok) { setDone(j.error ?? "That did not go through."); return; }
+    setConfirmed(j.confirmed ?? []); setReading(null); setStale(false);
+    setDone(j.note ?? null);
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      <span style={caps}>Injury history</span>
-      <textarea rows={4} defaultValue={notes}
-        onChange={() => setSaved(null)}
+      <span style={caps}>Anything to train around</span>
+      <textarea rows={4} value={text}
+        onChange={(e) => { setText(e.target.value); setSaved(null); }}
         onBlur={(e) => save(e.target.value)}
-        placeholder="Anything that should stop a session…"
+        placeholder="Old injuries, niggles, anything you are managing…"
         style={{ background: PAPER, border: `1px solid ${LINE}`, borderRadius: 12,
           padding: "13px 14px", fontSize: 14, lineHeight: 1.5, resize: "vertical",
           color: "var(--ink)" }} />
+
+      {/* What is already being worked around, so it is a fact on the screen and not a memory. */}
+      {confirmed.length > 0 && !reading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 5,
+          border: `1px solid ${LINE}`, borderRadius: 12, padding: "11px 13px" }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700 }}>
+            Your gym sessions currently leave out
+          </span>
+          {confirmed.map((c) => (
+            <span key={c.quote + (c.avoid_pattern ?? c.avoid_movement ?? "")}
+              style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
+              · {saysWhat(c)} — {c.because}
+            </span>
+          ))}
+          {stale && (
+            <span style={{ fontSize: 11.5, color: "#C07A3E", lineHeight: 1.5 }}>
+              You have changed this note since. Read it again so the plan matches what you
+              wrote.
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* The proposal: their words, what follows, and nothing ticked until they tick it. */}
+      {reading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 9,
+          border: `1px solid ${TEAL}`, borderRadius: 12, padding: "12px 13px" }}>
+          {reading.constraints.length === 0 && reading.unactionable.length === 0 && (
+            <span style={{ fontSize: 12.5, color: INK55, lineHeight: 1.5 }}>
+              Nothing in there that changes a session. Your plan stays as it is.
+            </span>
+          )}
+          {reading.constraints.length > 0 && (
+            <span style={{ fontSize: 11.5, fontWeight: 700 }}>
+              Tick what is right. Nothing changes until you do.
+            </span>
+          )}
+          {reading.constraints.map((c, i) => (
+            <button key={i} onClick={() => setPicked((p) => {
+              const n = new Set(p);
+              if (n.has(i)) n.delete(i); else n.add(i);
+              return n;
+            })} style={{ display: "flex", gap: 10, alignItems: "flex-start",
+              textAlign: "left", padding: "8px 0", color: "var(--ink)" }}>
+              <span aria-hidden="true" style={{ width: 18, height: 18, flex: "none",
+                marginTop: 2, borderRadius: 5, border: `1.5px solid ${picked.has(i) ? TEAL : LINE}`,
+                background: picked.has(i) ? TEAL : "transparent", color: "#fff",
+                fontSize: 12, display: "flex", alignItems: "center",
+                justifyContent: "center" }}>{picked.has(i) ? "✓" : ""}</span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
+                  Leave out {saysWhat(c)}
+                </span>
+                {/* Their words, quoted, so this reads as us having listened rather than decided. */}
+                <span style={{ fontSize: 11.5, color: INK55, lineHeight: 1.5 }}>
+                  You wrote “{c.quote}” — {c.because}.
+                </span>
+              </span>
+            </button>
+          ))}
+
+          {/* Said plainly, because a silent no-op reads like the plan took it in. */}
+          {reading.unactionable.map((u) => (
+            <span key={u.quote} style={{ fontSize: 11.5, color: "#C07A3E",
+              lineHeight: 1.5, borderTop: `1px solid ${LINE}`, paddingTop: 8 }}>
+              {u.why}
+            </span>
+          ))}
+
+          {reading.constraints.length > 0 && (
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setReading(null)} style={{ padding: "10px 14px",
+                fontSize: 12.5, fontWeight: 700, color: INK55 }}>
+                Not now
+              </button>
+              <button onClick={apply} disabled={busy === "apply"}
+                style={{ flex: 1, padding: "10px 0", borderRadius: 999, background: NAVY,
+                  color: "#fff", fontSize: 12.5, fontWeight: 700,
+                  opacity: busy === "apply" ? .6 : 1 }}>
+                {busy === "apply" ? "Rebuilding your sessions…"
+                  : picked.size === 0 ? "Work around nothing" : `Work around ${picked.size}`}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!reading && (
+        <button onClick={read} disabled={busy === "read" || text.trim().length < 3}
+          style={{ alignSelf: "flex-start", padding: "9px 14px", borderRadius: 999,
+            border: `1px solid ${LINE}`, fontSize: 12, fontWeight: 700, color: NAVY,
+            opacity: busy === "read" || text.trim().length < 3 ? .5 : 1 }}>
+          {busy === "read" ? "Reading…" : confirmed.length ? "Read this again" : "See what the plan can work around"}
+        </button>
+      )}
+
       <span style={{ fontSize: 10, color: INK40, lineHeight: 1.5 }}>
-        {saved ?? "Read by whoever writes your week. Nothing parses it automatically, so an injury that should stop a session still needs saying out loud."}
+        {done ?? saved ?? "The plan can take a movement out and put a substitute in. It cannot judge an injury — if something hurts in a way that should stop a session, stop the session and speak to someone qualified."}
       </span>
     </div>
   );

@@ -1,4 +1,6 @@
 import type { PhaseName } from "./skeleton";
+import { applyToLifts, type TrainingConstraint } from "./constraints";
+import { describe } from "./exercises";
 
 /**
  * The strength session: what a Hyrox actually costs the body, lifted.
@@ -104,6 +106,7 @@ const ACCESSORY_REST = 60;
  */
 export function liftsFor(
   phase: PhaseName, week: number, kit: Kit, accessories = 0,
+  constraints: TrainingConstraint[] = [],
 ): Lift[] {
   const s = SCHEME[phase] ?? SCHEME.base;
   const a = week % 2 === 1;
@@ -214,15 +217,28 @@ export function liftsFor(
     : [squat, singleLeg, press, hinge];
   const tail = [grip, core, ...extra];
   const keep = Math.max(0, Math.min(tail.length, 2 + Math.round(accessories)));
-  return [...compounds, ...tail.slice(0, keep)];
+  /*
+   * Then what the athlete told us they cannot do, swapped out — last, so the session is
+   * chosen on its merits first and adjusted after.
+   *
+   * Substituted rather than dropped: taking the single-leg work out because a knee hurts
+   * leaves two hundred metres of race lunges untrained, which is the thing that ends races.
+   * Something that trains the same quality with the offending demand removed is a session;
+   * a hole is not.
+   */
+  return applyToLifts(
+    [...compounds, ...tail.slice(0, keep)], constraints,
+    (name) => describe(name)?.pattern ?? null,
+  );
 }
 
 /** The lifts as the app's strength syntax, one per line. */
 export function strengthTarget(
   phase: PhaseName, week: number, kit: Kit, accessories = 0,
+  constraints: TrainingConstraint[] = [],
 ): string {
   const rpe = rpeFor(phase);
-  return liftsFor(phase, week, kit, accessories)
+  return liftsFor(phase, week, kit, accessories, constraints)
     // Accessories carry no RPE: "face pull at RPE 8" is not a thing anybody should do.
     .map((l) => `${l.name} ${l.sets}x${l.reps} rest ${l.rest}s`
       + (l.rest >= 90 ? ` rpe ${rpe}` : ""))

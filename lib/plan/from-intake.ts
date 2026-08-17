@@ -9,6 +9,7 @@ import type { RecentRunning, RunningBase, TrainingAge } from "./resolve";
 import { hyroxToAge, olderOf } from "./resolve";
 import { anchorFromFiveK, anchorFromGoal, anchorFromRaceSplit } from "./paces";
 import { deriveVariant, type Access, type Kit, type RunAttachment } from "./variant";
+import type { TrainingConstraint } from "./constraints";
 
 /**
  * The intake form, translated into generator parameters.
@@ -125,6 +126,14 @@ export type Extra = {
    * Seconds per kilometre. Undefined means nothing in this block has measured it.
    */
   measured_race_run_split_s?: number | null;
+  /**
+   * What the athlete is training around, as they confirmed it.
+   *
+   * Never read straight from the intake's injury text: a reading of that text is a proposal
+   * until they agree to it, and only the agreed version is passed here. See
+   * ./constraints for why the vocabulary can only remove and substitute.
+   */
+  constraints?: TrainingConstraint[];
 };
 
 export function paramsFrom(x: Intake, extra: Extra): Params {
@@ -255,6 +264,7 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     variant: deriveVariant({ kit, access, run_attachment }),
     /** the equipment answers as given, for the strength prescription */
     equipment: x.equipment ?? [],
+    constraints: extra.constraints ?? [],
     /*
      * Whether the station work is written out or attended.
      *
