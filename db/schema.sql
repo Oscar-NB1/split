@@ -1034,3 +1034,14 @@ alter table plan_templates add column if not exists pace_shift_at timestamptz;
 -- Clamped in code to ±2. Two reports in the same direction move it; one does not,
 -- because a single bad Tuesday is a bad Tuesday and not a prescription error.
 alter table plan_templates add column if not exists strength_accessories_delta int not null default 0;
+
+-- Which capture a capability row came from (2026-08-17).
+--
+-- Correcting a mistyped race result has to replace what that race wrote, and
+-- nothing else. Without a reference back to the capture, the only options are to
+-- append (leaving the wrong value racing the right one through the hierarchy) or
+-- to delete by field (throwing away what a benchmark or the target race proved).
+-- Null for the seeded quiz answers, which have no capture behind them.
+alter table capabilities add column if not exists source_ref uuid;
+create index if not exists capabilities_source_ref on capabilities (source_ref)
+  where source_ref is not null;

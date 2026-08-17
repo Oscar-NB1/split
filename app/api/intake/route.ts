@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
+import { measuredFor } from "@/lib/race/measured";
 import { requireUser } from "@/lib/session";
 import { HttpError, badRequest, route } from "@/lib/http";
 import { materialise } from "@/lib/templates";
@@ -410,6 +411,14 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
     select count(*)::int as races from races where user_id = ${me.id}
   `;
   const { recent } = await recentFor(me.id, conn?.ok ?? false);
+  /*
+   * And what a race inside this block has measured, where one has been run.
+   *
+   * Read here rather than in the generator because the generator is pure. Only
+   * fields whose usability verdict passed come back, so a doubles where the
+   * partner set the pace contributes its roxzone and not its running.
+   */
+  const measured = await measuredFor(me.id);
   const absences = (await sql<{ from_date: string; to_date: string; kind: string }[]>`
     select from_date::text as from_date, to_date::text as to_date, kind
       from absences where user_id = ${me.id}
@@ -423,6 +432,7 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
     measured: intake.benchmark === "logged",
     // A race on file and a race typed into the intake are the same race.
     hyrox_races: races + (intake.pastRaces?.length ?? 0),
+    measured_race_run_split_s: measured.run_split_s,
   });
   const built = buildPlan(params);
   const tpl0 = toTemplate(built, urow?.hr_max ?? null);

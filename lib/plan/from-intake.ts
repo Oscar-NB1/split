@@ -111,6 +111,17 @@ export type Extra = {
    * elite Hyrox tiers are unreachable, because both require a race.
    */
   hyrox_races?: number;
+  /**
+   * A measured average run split from a race in this block, where one exists.
+   *
+   * The intake's past-race step is what the athlete remembered when they signed up.
+   * A B-race they have since run is the same measurement taken later, by the app,
+   * with a usability verdict attached — so it outranks the remembered one, and only
+   * reaches here at all if `fieldUsability` judged the run paces undistorted.
+   *
+   * Seconds per kilometre. Undefined means nothing in this block has measured it.
+   */
+  measured_race_run_split_s?: number | null;
 };
 
 export function paramsFrom(x: Intake, extra: Extra): Params {
@@ -210,7 +221,7 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
      * effort — which is where it was falling for everybody, including athletes who
      * had typed in a 5 km time, so no session carried a pace at all.
      */
-    anchor: anchorFor(x),
+    anchor: anchorFor(x, extra.measured_race_run_split_s),
     commitments: commitmentsOf(x),
     absences: extra.absences,
     exclusions: [],
@@ -240,8 +251,16 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
  * aspiration it is. Every source states itself on the session, so a target built
  * from a goal is never mistaken for one built from a measurement.
  */
-function anchorFor(x: Intake): ReturnType<typeof anchorFromFiveK> {
-  return anchorFromRaceSplit(raceRunSplit(x))
+function anchorFor(x: Intake, measuredSplit?: number | null): ReturnType<typeof anchorFromFiveK> {
+  /*
+   * A race run inside this block beats the one they remembered at signup.
+   *
+   * Both are race splits, so both take the same path — but this one was measured
+   * rather than recalled, and it describes the athlete as they are now rather than
+   * as they were before the block started.
+   */
+  return anchorFromRaceSplit(measuredSplit ?? null)
+    ?? anchorFromRaceSplit(raceRunSplit(x))
     ?? anchorFromFiveK(fiveKSeconds(x))
     ?? anchorFromGoal(x.goal === "Target a time" && x.goalMin
       ? Math.round(x.goalMin * 60) : null);
