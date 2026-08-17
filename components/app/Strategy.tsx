@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { mmss } from "@/lib/prescription";
 import { SEED, TARGET, type Segment, totals } from "@/lib/strategy";
+import type { Forecast } from "@/lib/weather";
 
 const TEAL = "#0A8FB0", LIME = "#C6FF5B", LIME_D = "#AAEA42", NAVY = "#12314D", NAVY_D = "#0E2740";
 const TEAL_T2 = "var(--teal-tint2)";
@@ -24,6 +25,17 @@ export default function Strategy() {
   const [exportState, setExportState] = useState<"idle" | "sending" | "sent">("idle");
   const [connected, setConnected] = useState<boolean | null>(null);
   const [exportedAt, setExportedAt] = useState<string | null>(null);
+  /*
+   * The race this is for, from the athlete's own block.
+   *
+   * The header said "Race strategy · 28 Nov" and "Hyrox Doubles" in the markup, and
+   * the target pill said 56:30 — one athlete's race, printed for everyone. All three
+   * are properties of whose plan is open.
+   */
+  const [race, setRace] = useState<{
+    date: string | null; goal: number | null; doubles: boolean; saved: boolean;
+    conditions: Forecast | null;
+  }>({ date: null, goal: null, doubles: true, saved: false, conditions: null });
   const [error, setError] = useState<string | null>(null);
   // nothing is written until the athlete actually changes something, so opening
   // the screen and leaving does not turn the plan's numbers into "their" plan
@@ -36,6 +48,11 @@ export default function Strategy() {
       const j = await r.json();
       setRows(j.segments); setRoxEach(j.rox_seconds);
       setConnected(j.intervals_connected); setExportedAt(j.exported_at);
+      setRace({
+        date: j.race_date ?? null, goal: j.goal_seconds ?? null,
+        doubles: j.doubles !== false, saved: !!j.saved,
+        conditions: j.conditions ?? null,
+      });
       loaded.current = true;
     });
   }, []);
@@ -56,7 +73,14 @@ export default function Strategy() {
   }, []);
 
   const { runs: runTotal, stations: stationTotal, rox, finish } = totals(rows, roxEach);
-  const inside = finish <= TARGET;
+  /*
+   * Measured against their goal, not against a number in the source.
+   *
+   * An athlete whose goal is 1:15 was being told they were "over the 56:30 target"
+   * on a plan that hits their goal exactly.
+   */
+  const target = race.goal ?? TARGET;
+  const inside = finish <= target;
 
   const bump = (i: number, by: number) =>
     setRows((rs) => {
@@ -92,10 +116,48 @@ export default function Strategy() {
     <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
       <div>
         <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-          textTransform: "uppercase", color: "var(--teal)" }}>Race strategy · 28 Nov</div>
+          textTransform: "uppercase", color: "var(--teal)" }}>
+          Race strategy{race.date ? ` · ${new Date(`${race.date}T12:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" })}` : ""}
+        </div>
         <div style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
-          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 5 }}>Hyrox Doubles</div>
+          lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 5 }}>
+          Hyrox {race.doubles ? "Doubles" : "Singles"}
+        </div>
+        {!race.saved && race.goal && (
+          <div style={{ fontSize: 12, color: INK55, marginTop: 6, lineHeight: 1.5 }}>
+            {/* Where the numbers came from, before the athlete has touched any of
+                them. A plan that looks authored but was derived should say so. */}
+            These are starting splits, built from your {mmss(race.goal)} goal and the
+            shape of a Hyrox. Change any of them and they become yours.
+          </div>
+        )}
       </div>
+
+      {race.conditions && (
+        <div style={{ display: "flex", gap: 11, alignItems: "flex-start",
+          background: race.conditions.cost_s >= 6 ? "#FBF3DE" : PAPER,
+          border: `1px solid ${race.conditions.cost_s >= 6 ? "#E8C051" : LINE}`,
+          borderRadius: "var(--r-card)", padding: "13px 15px" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: ".1em",
+              textTransform: "uppercase", color: INK55 }}>
+              {/* A forecast and a climate average are different claims, and the
+                  label is the only thing that keeps them apart. */}
+              {race.conditions.typical ? "Race day, historically" : "Race day forecast"}
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)" }}>
+              {race.conditions.headline}
+            </div>
+            {race.conditions.cost_s >= 6 && (
+              <div style={{ fontSize: 12, color: INK55, lineHeight: 1.5 }}>
+                Worth planning the runs {race.conditions.cost_s} s/km slower than your
+                fresh pace and holding the stations. Going out at a pace the air will
+                not give back is the most common way a Hyrox falls apart.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={{ background: NAVY, borderRadius: "var(--r-card)", padding: 16,
         display: "flex", flexDirection: "column", gap: 12 }}>
@@ -109,7 +171,7 @@ export default function Strategy() {
           <span style={{ fontSize: 11, fontWeight: 700, borderRadius: "var(--r-pill)",
             padding: "6px 12px", background: inside ? TEAL_T2 : NAVY_D,
             color: inside ? TEAL : LIME }}>
-            {inside ? "Inside the 56:30 target" : "Over the 56:30 target"}
+            {inside ? `Inside your ${mmss(target)} goal` : `Over your ${mmss(target)} goal`}
           </span>
         </div>
         <div style={{ display: "flex", gap: 18, borderTop: "1px solid rgba(255,255,255,.15)",
