@@ -249,7 +249,42 @@ export function resolve(x: ResolveInput): Resolved {
    * discounting it again for the absence of a test penalises not having taken
    * one. A benchmark sharpens the paces; it does not license the volume.
    */
-  const start_volume = Math.max(3, Math.round(capped * 10) / 10);
+  /*
+   * With no numbers at all, week 1 starts well below the ceiling.
+   *
+   * An athlete who leaves both volume questions blank has told us there is no weekly
+   * volume worth reporting — and the bracket for "runs with walk breaks" is 22 km, which
+   * was being used as *both* the start and the ceiling. So a ten-week block came out
+   * flat: 22.4, 22.4, 23.3, 23.8, 22.4, 20.1, 20.1, 21.7. Ten weeks of the same week, for
+   * somebody whose whole problem is that they have never built up.
+   *
+   * No evidence means the bracket describes where they could get to, not where they are.
+   * Week 1 becomes 60% of it and the ceiling stays put, which is what creates the ramp the
+   * block is supposed to be.
+   *
+   * Only when there is genuinely nothing. One number of their own — measured or typed into
+   * the intake — is better evidence than this and is used instead.
+   */
+  /*
+   * And only where the self-report is itself low.
+   *
+   * An athlete who calls themselves marathon-competitive and skips the volume question
+   * has still given evidence — the description is the evidence, and their bracket is a
+   * fair reading of it. Somebody who runs with walk breaks and gives no numbers has told
+   * us twice that there is nothing to build on, and the bracket for that description is
+   * where the block should *end*, not where it starts.
+   */
+  const NEW_TO_RUNNING: RunningBase[] = ["doesnt_run", "walk_breaks", "5k_nonstop"];
+  const blank = NEW_TO_RUNNING.includes(running_base)
+    && x.recent?.peak_week_km == null && x.recent?.long_run_km == null;
+  const opening = blank ? Math.max(8, capped * 0.6) : capped;
+  if (blank) {
+    flags.push(
+      `You have not given a weekly volume or a longest run, so week 1 starts at ${
+        Math.round(opening * 10) / 10} km rather than at the ${Math.round(capped * 10) / 10} km your training history implies, and the block builds towards that instead. Give me either number and it will start where you actually are.`,
+    );
+  }
+  const start_volume = Math.max(3, Math.round(opening * 10) / 10);
 
   const dial = x.volume_dial ?? 1.0;
   // Not tiered by measurement either, for the same reason: the climb is what

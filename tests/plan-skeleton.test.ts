@@ -38,7 +38,19 @@ test("the running ceiling beats the base matrix — the case the brief names", (
   }));
   assert.equal(r.matrix_volume, 24, "what training age alone would have said");
   assert.equal(r.ceiling, 15);
-  assert.equal(r.start_volume, 15, "the ceiling wins");
+  /*
+   * The ceiling wins over the matrix — and with no volume answered at all, week 1 opens
+   * below even the ceiling and builds towards it. Somebody who runs with walk breaks and
+   * gives no numbers has said twice that there is nothing to build on; 15 km is where
+   * this block should end, not where it starts.
+   */
+  assert.ok(r.start_volume < 15 && r.start_volume >= 8,
+    `${r.start_volume} km against a ceiling of 15`);
+  assert.equal(resolve(base({
+    general_training_age: "advanced", running_base: "walk_breaks",
+    target_sessions: 5, available_days: 5, confidence: "measured",
+    recent: { peak_week_km: 15, long_run_km: 6, source: "reported" },
+  })).start_volume, 15, "one number of their own and the ceiling wins outright");
   assert.ok(r.flags.some((f) => /the running wins/.test(f)));
 });
 

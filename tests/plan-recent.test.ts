@@ -42,10 +42,31 @@ test("a peak week below the bracket is still the number used", () => {
   assert.ok(r.flags.some((f) => /rather than the .* the bracket suggested/.test(f)));
 });
 
-test("nothing recent falls back to the bracket rather than refusing", () => {
+test("nothing at all starts below the bracket and builds towards it", () => {
+  /*
+   * The bracket was being used as both the start and the ceiling, so an athlete who left
+   * both volume questions blank got a flat block — ten weeks of the same week, for
+   * somebody whose whole problem is that they have never built up. With no evidence the
+   * bracket describes where they could get to, not where they are.
+   */
+  /*
+   * The discount applies to somebody new to running, not to anyone who skipped a question:
+   * an athlete who calls themselves marathon-competitive has given evidence in the
+   * description itself.
+   */
+  const bracket = 15;
   for (const recent of [null, undefined, strava(null, null)]) {
-    assert.equal(resolve(base({ recent })).start_volume, BASE_MATRIX.advanced[6]);
+    const r = resolve(base({ recent, running_base: "walk_breaks" }));
+    assert.ok(r.start_volume < bracket, `${r.start_volume} against a bracket of ${bracket}`);
+    assert.ok(r.start_volume >= bracket * 0.55, "and not so low it is a different athlete");
+    assert.ok(r.peak_ceiling > r.start_volume, "so there is somewhere to build to");
+    assert.ok(r.flags.some((f) => /have not given a weekly volume/.test(f)),
+      "and it says why rather than being quietly cautious");
   }
+  // One number of their own is better evidence, and is used instead.
+  assert.equal(
+    resolve(base({ recent: strava(bracket, 8), running_base: "walk_breaks" })).start_volume,
+    bracket);
 });
 
 // -------------------------------------------- the long run caps, it never lifts

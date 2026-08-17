@@ -184,7 +184,27 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     quality_target: DIFFICULTY[x.difficulty]?.quality ?? 1,
     long_run_pace: DIFFICULTY[x.difficulty]?.longRunPace ?? true,
     allow_doubles: (x.allowDoubles ?? "").startsWith("Yes"),
-    recent: extra.recent,
+    /*
+     * Their own numbers, where the file has none.
+     *
+     * `recentFor` returns a measured or Strava-surveyed week and nothing else, so an
+     * athlete without a connected account arrived at the resolver with `recent: null` —
+     * even though the intake asks for a peak week and a longest run directly. The
+     * resolver then fell back to the training-age bracket for *both* the start and the
+     * ceiling, which is why Sarah's ten-week block came out flat at 22 km: the bracket
+     * was describing where she could get to and being used as where she was.
+     *
+     * Same hierarchy as everywhere else: a record beats a memory, a memory beats nothing.
+     * `source: "reported"` is what tells the resolver not to let a typed number raise the
+     * ceiling the way a measured one may.
+     */
+    recent: extra.recent ?? (x.peakWeekKm || x.longestRunKm
+      ? {
+        peak_week_km: x.peakWeekKm ?? null,
+        long_run_km: x.longestRunKm ?? null,
+        source: "reported" as const,
+      }
+      : null),
     /*
      * Measured first, then what they told us.
      *
