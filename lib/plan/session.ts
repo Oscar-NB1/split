@@ -318,6 +318,38 @@ type HyroxShape = {
   cue: string;
 };
 
+/**
+ * What the shape becomes for somebody who cannot yet run it.
+ *
+ * The shapes above describe an athlete who runs. Handed to somebody who does not, four
+ * by eight hundred metres at threshold off a heavy sled is not a hard session — it is an
+ * impossible one, and the honest response to it is to stop training rather than to fail
+ * it every Saturday.
+ *
+ * The skill being trained still matters: running on legs that have just done something
+ * heavy is exactly what a beginner needs to meet early, and it does not need to be
+ * eight hundred metres to teach it. So the runs come down to what they can hold, the
+ * round count comes down with them, and the load stops being a race weight — because
+ * "25 m sled push at 152 kg" to somebody in their first month is how people get hurt.
+ */
+function forBeginner(shape: HyroxShape, base?: string | null): HyroxShape {
+  if (base !== "doesnt_run" && base !== "walk_breaks") return shape;
+  const walker = base === "doesnt_run";
+  return {
+    ...shape,
+    // Short enough to run without stopping, which is the only distance worth setting.
+    runM: walker ? 200 : 300,
+    perRound: Math.min(shape.perRound, 2),
+    rounds: Math.min(shape.rounds, walker ? 3 : 4),
+    // Rest, always, and enough of it. Continuous work is a later problem.
+    rest: Math.max(shape.rest, walker ? 120 : 90),
+    raceDose: false,
+    cue: walker
+      ? "Run the 200 m if you can and walk it if you cannot — either is the session. The stations are the point at this stage, and the running is there so that carrying fatigue into it stops being a surprise. Work at a weight you could do twice as many reps of."
+      : "Short runs so you can run all of them, rather than long ones you would have to walk. Keep the stations light enough that the running afterwards still happens — the weight comes later in the block, and the habit comes now.",
+  };
+}
+
 function shapeOf(label: string): HyroxShape {
   const l = label.toLowerCase();
   if (/full simulation/.test(l)) {
@@ -346,13 +378,23 @@ function shapeOf(label: string): HyroxShape {
 
 export function hyroxSession(
   label: string, paceS: number, _rounds = 4, kit?: Kit, week = 1, loads?: Loads | null,
+  /** their running base, because the shapes above assume somebody who runs */
+  base?: string | null,
 ): Built {
   const k = kit ?? { barbell: true, kettlebells: true, rig: true, sled: true };
-  const shape = shapeOf(label);
+  const shape = forBeginner(shapeOf(label), base);
   const need = shape.perRound * shape.rounds;
+  /*
+   * No prescribed weight for a beginner.
+   *
+   * `loads` is the division's race weight, which is the right number for somebody
+   * training for that division and the wrong one for somebody in their first month.
+   * Without it the station reads "25 m sled push" and the cue says how to pick a load.
+   */
+  const useLoads = base === "doesnt_run" || base === "walk_breaks" ? null : loads;
   const stations = shape.raceDose
-    ? raceOrder(k, loads).slice(0, shape.perRound)
-    : stationsFor(k, need, week, loads);
+    ? raceOrder(k, useLoads).slice(0, shape.perRound)
+    : stationsFor(k, need, week, useLoads);
 
   /*
    * The warm-up is cardio, not necessarily running.

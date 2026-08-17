@@ -267,3 +267,47 @@ test("an athlete with no history is not given a long run out of nowhere", () => 
   const long = w1.sessions.find((s) => String(s.kind) === "long_run");
   assert.ok((long?.km ?? 0) <= w1.km * 0.45, `${long?.km} km of a ${w1.km} km week`);
 });
+
+test("somebody who cannot run yet is not given four times eight hundred metres", () => {
+  /*
+   * The session shapes describe an athlete who runs. Handed to somebody who does not,
+   * 4 × 800 m at threshold off a race-weight sled is not a hard session — it is an
+   * impossible one, and the honest response to an impossible session is to stop
+   * training rather than to fail it every Saturday.
+   *
+   * The skill still matters: meeting fatigue before a run is exactly what a beginner
+   * needs early, and it does not take eight hundred metres to teach it.
+   */
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const loads = {
+    sled_push_total_kg: 152, sled_pull_total_kg: 103,
+    farmers_kg: 24, lunge_kg: 20, wall_ball_kg: 6,
+  };
+  const runner = hyroxSession("Hyrox · compromised running", 380, 4, kit, 1, loads,
+    "runs_regularly");
+  const walker = hyroxSession("Hyrox · compromised running", 380, 4, kit, 1, loads,
+    "doesnt_run");
+
+  assert.match(runner.target, /800m/);
+  assert.match(walker.target, /200m/, "short enough to run without stopping");
+  assert.doesNotMatch(walker.target, /800m/);
+  assert.ok(walker.km < runner.km, `${walker.km} km against ${runner.km} km`);
+
+  /*
+   * And no race weight. "25 m sled push at 152 kg" to somebody in their first month is
+   * how people get hurt; the cue tells them how to pick a load instead.
+   */
+  assert.match(runner.target, /152 kg/);
+  assert.doesNotMatch(walker.target, /kg/, "no prescribed weight for a beginner");
+  assert.match(walker.note ?? "", /walk it if you cannot/i);
+
+  // Rest, and enough of it. Continuous work is a later problem.
+  assert.match(walker.target, /120s Z1 rest/);
+});
+
+test("a simulation is not prescribed to somebody who cannot run it", () => {
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const sim = hyroxSession("Hyrox · full simulation", 380, 4, kit, 1, null, "doesnt_run");
+  assert.doesNotMatch(sim.target, /1000m/, "no kilometre repeats");
+  assert.ok(sim.km <= 2, `${sim.km} km of running in a beginner's simulation`);
+});
