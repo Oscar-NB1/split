@@ -14,9 +14,21 @@ export type Availability = "full" | "am" | "pm" | "none";
 export type DayAvailability = { day: number; available: Availability };
 
 export type SessionAction = {
-  day: number;
+  /**
+   * Which day the session is on now. Optional, because it is often the one thing the athlete
+   * does not say: "I would rather do my easy run today" names the session and the destination
+   * and leaves where it currently sits to be looked up.
+   */
+  day?: number;
   session_type?: string;
-  action: "skip" | "move" | "shorten";
+  /**
+   * `swap` exchanges this session with whatever sits on `to_day`.
+   *
+   * A plain move would put two sessions on one day and leave the other empty, which is not what
+   * anybody means by rearranging a week. Where the destination is free a swap is just a move,
+   * so this is the safer of the two to reach for.
+   */
+  action: "skip" | "move" | "shorten" | "swap";
   to_day?: number;
   to_slot?: "AM" | "PM";
 };
@@ -110,13 +122,40 @@ export function rebuildWeek(week: WeekSession[], c: Constraints = {}): Rebuilt {
 
   // Explicit instructions first: the athlete asking for something outranks inference.
   for (const a of c.session_actions ?? []) {
-    const target = open.find((s) => s.day === a.day
-      && (!a.session_type || s.kind === a.session_type));
+    /*
+     * Found by day, by kind, or by both. A day on its own picks whatever is on it; a kind on
+     * its own finds the session wherever it currently is, which is what a sentence that names
+     * the session and not its day is asking for.
+     */
+    const target = open.find((s) => (a.day == null || s.day === a.day)
+      && (!a.session_type || s.kind === a.session_type)
+      && !s.logged);
     if (!target) continue;
+
     if (a.action === "skip") {
       dropped.push({ ...target, why: "you asked to skip it" });
       open = open.filter((s) => s !== target);
-    } else if (a.action === "move" && a.to_day != null) {
+      continue;
+    }
+
+    if ((a.action === "move" || a.action === "swap") && a.to_day != null) {
+      const from = target.day;
+      if (a.to_day === from) continue;
+
+      if (a.action === "swap") {
+        /*
+         * Everything on the destination day comes back the other way — a day's worth, not one
+         * session, because a Tuesday holding an easy run and a kickboxing class is a Tuesday
+         * and the whole point is that the two days trade places. A logged session never moves;
+         * it has already happened.
+         */
+        for (const other of open) {
+          if (other === target || other.day !== a.to_day || other.logged) continue;
+          moved.push({ id: other.id, from: other.day, to: from });
+          other.day = from;
+        }
+      }
+      moved.push({ id: target.id, from, to: a.to_day });
       target.day = a.to_day;
       if (a.to_slot) target.slot = a.to_slot;
     }

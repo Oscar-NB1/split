@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { badRequest, route } from "@/lib/http";
 import { isDateString } from "@/lib/plan";
+import { prescribedKm } from "@/lib/prescription";
 import { today } from "@/lib/dates";
 import { parseWeekWith } from "@/lib/plan/parse-week-llm";
 import { rebuildWeek, type WeekSession } from "@/lib/plan/rebuild";
@@ -40,9 +41,16 @@ async function weekOf(userId: string, monday: string) {
      order by planned_date, slot nulls first
   `;
   const dayOf = (d: string) => (new Date(`${d}T12:00:00Z`).getUTCDay() + 6) % 7;
-  /** Distance from the prescription, which is the only place it is stated per session. */
-  const km = (t: string | null) => [...(t ?? "").matchAll(/([\d.]+)km/g)]
-    .reduce((n, m) => n + Number(m[1]), 0);
+  /*
+   * Distance from the prescription, through the app's own reader.
+   *
+   * A local regex for "Xkm" summed only the steps written in kilometres, so his 8 km threshold
+   * session — a warm-up and a cool-down in km with 3 × 8 min of work between them — came back
+   * as 2.8 km. Every number in a rebuild preview is computed from this, so the summary told him
+   * a week was thirty kilometres when it was thirty-eight, and the sentence about what a
+   * rebuild costs was the least trustworthy thing on the screen.
+   */
+  const km = (t: string | null) => prescribedKm(t);
   return rows.map((r): WeekSession & { date: string; title: string } => ({
     id: r.id,
     date: r.planned_date,
@@ -104,7 +112,12 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
    * is not — same shape either way, and the week is rebuilt by the same deterministic code
    * from whichever set of constraints comes back.
    */
-  const { by, ...parsed } = await parseWeekWith(raw, week);
+  /*
+   * Today's index goes in, because "today" is the commonest word in these sentences and a pure
+   * parser cannot know what day it is.
+   */
+  const todayDay = (new Date(`${today().slice(0, 10)}T12:00:00Z`).getUTCDay() + 6) % 7;
+  const { by, ...parsed } = await parseWeekWith(raw, week, todayDay);
   const out = rebuildWeek(week.map((s) => ({ ...s })), parsed);
 
   /*

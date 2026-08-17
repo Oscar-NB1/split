@@ -79,3 +79,43 @@ test("a list of days is not read as a range", () => {
   assert.equal(av(p, 3), "none");
   assert.equal(av(p, 2), undefined, "Wednesday is untouched");
 });
+
+/**
+ * Rearranging, which is the commonest thing anybody wants from this and the one thing the
+ * vocabulary could not say.
+ *
+ * It could skip, shorten and mark a day unavailable. A session that simply belongs on a
+ * different day had no expression, so "I would rather do my easy run today" came back as no
+ * change at all — the engine could always perform the swap; the reading was missing.
+ */
+
+test("bringing a session forward is a swap, not a move", () => {
+  const p = parseWeek("I'd rather do my easy run today and move the quality session.", 0);
+  assert.equal(p.session_actions?.length, 1, "one exchange, not two half-moves");
+  const a = p.session_actions![0];
+  assert.equal(a.action, "swap");
+  assert.equal(a.session_type, "easy_run");
+  assert.equal(a.to_day, 0, "today, which the caller had to supply");
+  assert.equal(a.day, undefined, "where it currently sits is looked up, not guessed");
+});
+
+test("two named days trade places", () => {
+  const p = parseWeek("Swap Monday and Tuesday.");
+  assert.deepEqual(p.session_actions, [{ day: 0, action: "swap", to_day: 1 }]);
+});
+
+test("a named destination is read from the sentence", () => {
+  const p = parseWeek("Move my long run to Saturday.");
+  assert.deepEqual(p.session_actions, [{ session_type: "long_run", action: "swap", to_day: 5 }]);
+});
+
+test("today means nothing unless the caller says what day it is", () => {
+  /* The parser is pure. Without the day, "today" is a word rather than a destination. */
+  const p = parseWeek("I'd rather do my easy run today.");
+  assert.equal(p.session_actions?.length ?? 0, 0);
+});
+
+test("skipping is still skipping", () => {
+  const p = parseWeek("Skip the Hyrox class on Wednesday.", 0);
+  assert.deepEqual(p.session_actions, [{ day: 2, session_type: "hyrox", action: "skip" }]);
+});

@@ -46,16 +46,17 @@ const SCHEMA = {
         type: "object",
         additionalProperties: false,
         properties: {
-          day: { type: "integer", minimum: 0, maximum: 6 },
+          day: { type: "integer", minimum: 0, maximum: 6,
+            description: "where the session is now; omit when the athlete did not say" },
           session_type: {
             type: "string",
             enum: ["quality_run", "easy_run", "long_run", "hyrox", "easy_hyrox", "strength"],
           },
-          action: { type: "string", enum: ["skip", "move", "shorten"] },
+          action: { type: "string", enum: ["skip", "move", "shorten", "swap"] },
           to_day: { type: "integer", minimum: 0, maximum: 6 },
           to_slot: { type: "string", enum: ["AM", "PM"] },
         },
-        required: ["day", "action"],
+        required: ["action"],
       },
     },
     week_intent: {
@@ -96,7 +97,8 @@ Rules, in order of how often they are got wrong:
 4. A range ("Wed to Fri") is every day inclusive. A list ("Tue and Thu") is only those days.
 5. Return AT MOST ONE ambiguity, and only when genuinely unresolvable — a named session with two candidates in the week and no day given. If two things are unclear, resolve the bigger one and leave the smaller. Never ask about something you can infer.
 6. "I need to keep X" is week_intent.protect, not an action. "Shorter week", "take it easy" is reduce_volume.
-7. confidence is "low" when much of the sentence was not understood. It is not a veto — the athlete approves everything anyway.
+7. REARRANGING IS A SWAP, NOT A MOVE. "I would rather do my easy run today and the quality later" means those two sessions trade places — emit one action with action: "swap", session_type of the session being brought forward, and to_day of the day it should land on. Moving it would leave two sessions on one day and a hole where it came from. Where the destination day is empty a swap behaves as a move, so prefer swap. Omit the day field when the athlete did not say where the session currently is; it will be found by its type.
+8. confidence is "low" when much of the sentence was not understood. It is not a veto — the athlete approves everything anyway.
 
 Days are 0 = Monday through 6 = Sunday.`;
 
@@ -120,10 +122,10 @@ export function usable(v: unknown): v is Parsed {
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 export async function parseWeekWith(
-  raw: string, week: WeekSession[] = [],
+  raw: string, week: WeekSession[] = [], todayDay?: number,
 ): Promise<Parsed & { by: "model" | "rules" }> {
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { ...parseWeek(raw), by: "rules" };
+  if (!key) return { ...parseWeek(raw, todayDay), by: "rules" };
 
   /*
    * The week itself goes in as context.
@@ -132,6 +134,10 @@ export async function parseWeekWith(
    * one Hyrox session in the week — so giving the model the sessions removes most of the
    * questions it would otherwise have to ask.
    */
+  const when = todayDay != null
+    ? `Today is ${["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"][todayDay]} (day ${todayDay}).\n\n`
+    : "";
+
   const context = week.length
     ? `This week's sessions:\n${week.map((s) =>
       `- ${DAY[s.day]}${s.slot ? ` ${s.slot}` : ""}: ${s.label} (${s.kind})${
@@ -152,14 +158,14 @@ export async function parseWeekWith(
        * format removes that class of failure instead of parsing around it.
        */
       output_config: { format: { type: "json_schema", schema: SCHEMA } },
-      messages: [{ role: "user", content: `${context}\n\nThe athlete says: "${raw}"` }],
+      messages: [{ role: "user", content: `${when}${context}\n\nThe athlete says: "${raw}"` }],
     });
 
     const text = res.content
       .filter((b): b is Anthropic.TextBlock => b.type === "text")
       .map((b) => b.text).join("");
     const parsed = JSON.parse(text) as unknown;
-    if (!usable(parsed)) return { ...parseWeek(raw), by: "rules" };
+    if (!usable(parsed)) return { ...parseWeek(raw, todayDay), by: "rules" };
     return { ...parsed, by: "model" };
   } catch (e) {
     /*
@@ -167,6 +173,6 @@ export async function parseWeekWith(
      * same thing: use the parser that cannot fail. The athlete never sees which one ran.
      */
     console.error("[rebuild] model parse failed, using rules:", (e as Error).message);
-    return { ...parseWeek(raw), by: "rules" };
+    return { ...parseWeek(raw, todayDay), by: "rules" };
   }
 }

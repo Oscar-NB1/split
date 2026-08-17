@@ -83,7 +83,7 @@ export type Parsed = Constraints & {
  * available — people self-correct mid-sentence, and the naive read produces a contradiction
  * rather than an answer. Clauses are applied in order into a map, so the last word wins.
  */
-export function parseWeek(raw: string): Parsed {
+export function parseWeek(raw: string, todayDay?: number): Parsed {
   const text = (raw ?? "").trim();
   const availability = new Map<number, Availability>();
   const actions: SessionAction[] = [];
@@ -132,6 +132,50 @@ export function parseWeek(raw: string): Parsed {
     }
 
     const kind = kindIn(clause);
+
+    /*
+     * Moving a session, and swapping two.
+     *
+     * The commonest thing anybody wants from this — "I would rather do my easy run today and
+     * the quality tomorrow" — was the one thing the vocabulary could not say. It could skip,
+     * it could shorten, and it could mark a day unavailable; a session that simply belongs on
+     * a different day had no expression, so a request to rearrange came back as no change at
+     * all.
+     *
+     * The engine could always do it: two moves produce a swap. It was the reading that was
+     * missing.
+     */
+    const swap = /\bswap\b|\bswitch\b|\bexchange\b|\bthe other way\b/.test(l);
+    const wants = /\b(rather|prefer|instead|swap|switch|move|do)\b/.test(l);
+    const toDay = /\b(?:to|on)\s+(mon|tues?|wed|thur?s?|fri|sat|sun)[a-z]*\b/i.exec(clause);
+    /* "today" only means something when the caller has said which day today is. */
+    const today = /\btoday\b/.test(l) && todayDay != null ? todayDay : null;
+
+    /* "Swap Monday and Tuesday": two named days trade places. */
+    if (swap && days.length === 2) {
+      understood += 1;
+      actions.push({ day: days[0], action: "swap", to_day: days[1] });
+      continue;
+    }
+
+    if (wants && kind && !/\bskip|drop|miss|not doing|cancel\b/.test(l)) {
+      const named = toDay ? DAYS[toDay[1].toLowerCase()] ?? null : null;
+      const to = today ?? named ?? (days.length === 1 ? days[0] : null);
+      if (to != null) {
+        understood += 1;
+        /*
+         * A swap rather than a move, so nothing doubles up.
+         *
+         * "I would rather do my easy run today" means today's session and the easy run trade
+         * places. Moving the easy run onto today would leave two sessions on one day and a hole
+         * where it came from, which is not what rearranging a week means — and where the
+         * destination is empty, a swap is a move anyway.
+         */
+        actions.push({ session_type: kind, action: "swap", to_day: to });
+        continue;
+      }
+    }
+
     if (kind && /\bskip|drop|miss|not doing|cancel|no\b/.test(l)) {
       understood += 1;
       const day = days[0] ?? dayIn(clause);

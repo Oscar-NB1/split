@@ -96,3 +96,51 @@ test("a protected session stays put, and the refusal says why", () => {
   assert.ok(r.sessions.some((s) => s.id === "h2"), "it is still there");
   assert.ok(r.refusals.some((f) => /protect/.test(f.why)), "and the refusal explains it");
 });
+
+test("a swap exchanges two days, and never doubles one up", () => {
+  /*
+   * The failure a plain move produces: two sessions on one day and a hole where one came from,
+   * which is not what anybody means by rearranging a week.
+   */
+  const week = [
+    { id: "q", day: 0, kind: "quality_run", label: "Threshold", km: 8, hard: true },
+    { id: "e", day: 1, kind: "easy_run", label: "Easy run", km: 7.5, hard: false },
+    { id: "k", day: 1, kind: "kickboxing", label: "Kickboxing", km: 0, hard: false, slot: "PM" },
+    { id: "l", day: 6, kind: "long_run", label: "Long run", km: 12, hard: false },
+  ] as never as Parameters<typeof rebuildWeek>[0];
+
+  const out = rebuildWeek(week.map((s) => ({ ...s })), {
+    day_availability: [], week_intent: {},
+    session_actions: [{ session_type: "easy_run", action: "swap", to_day: 0 }],
+  });
+  const on = (d: number) => out.sessions.filter((s) => s.day === d).map((s) => s.id).sort();
+  assert.deepEqual(on(0), ["e"], "the easy run comes forward");
+  assert.deepEqual(on(1), ["k", "q"], "and the quality goes back where it came from");
+  assert.equal(out.dropped.length, 0, "a rearrangement loses nothing");
+  assert.equal(out.moved.length, 2, "both halves of the exchange are recorded");
+});
+
+test("a session found by kind alone is found wherever it is", () => {
+  const week = [
+    { id: "l", day: 6, kind: "long_run", label: "Long run", km: 18, hard: false },
+    { id: "h", day: 5, kind: "hyrox", label: "Class", km: 5, hard: true },
+  ] as never as Parameters<typeof rebuildWeek>[0];
+  const out = rebuildWeek(week.map((s) => ({ ...s })), {
+    day_availability: [], week_intent: {},
+    session_actions: [{ session_type: "long_run", action: "swap", to_day: 5 }],
+  });
+  assert.equal(out.sessions.find((s) => s.id === "l")?.day, 5);
+  assert.equal(out.sessions.find((s) => s.id === "h")?.day, 6);
+});
+
+test("a logged session is never swapped away", () => {
+  const week = [
+    { id: "q", day: 0, kind: "quality_run", label: "Threshold", km: 8, hard: true, logged: true },
+    { id: "e", day: 1, kind: "easy_run", label: "Easy run", km: 7.5, hard: false },
+  ] as never as Parameters<typeof rebuildWeek>[0];
+  const out = rebuildWeek(week.map((s) => ({ ...s })), {
+    day_availability: [], week_intent: {},
+    session_actions: [{ session_type: "easy_run", action: "swap", to_day: 0 }],
+  });
+  assert.equal(out.sessions.find((s) => s.id === "q")?.day, 0, "it has already happened");
+});
