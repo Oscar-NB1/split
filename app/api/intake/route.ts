@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
+import { loadIntakeRow } from "@/lib/intake-store";
 import { measuredFor } from "@/lib/race/measured";
+import { prefsFor } from "@/lib/day-prefs";
 import { requireUser } from "@/lib/session";
 import { HttpError, badRequest, route } from "@/lib/http";
 import { materialise } from "@/lib/templates";
@@ -32,53 +34,14 @@ import { roleFrom } from "@/lib/plan/allocate";
  * nothing visible is indistinguishable from a form that did nothing.
  */
 
-type Row = Omit<Intake, "hasRace" | "raceDistance" | "raceDate" | "runningSelf"
-  | "paceMin" | "paceSec" | "paceUnknown" | "commitDay"
-  | "peakWeekKm" | "longestRunKm" | "volumeSource"
-  | "goal" | "goalMin" | "startDate" | "targetSessions" | "allowDoubles"
-  | "wantRestDay" | "sessionPref" | "hyroxExp" | "runDelta" | "stationDelta"
-  | "gymAccess"> & {
-  has_race: string; race_distance: string | null; race_date: string | null;
-  running_self: string; pace_min: number | null; pace_sec: number | null;
-  pace_unknown: boolean; commit_day: Record<string, Day[]>;
-  peak_week_km: number | null; longest_run_km: number | null;
-  volume_source: string | null; answers: Record<string, unknown> | null;
-  completed_at: string;
-};
-
-const toIntake = (r: Row): Intake => ({
-  hasRace: r.has_race as Intake["hasRace"],
-  discipline: r.discipline,
-  raceDistance: r.race_distance as Intake["raceDistance"],
-  raceDate: r.race_date,
-  role: r.role,
-  division: r.division,
-  base: r.base,
-  runningSelf: r.running_self as Intake["runningSelf"],
-  paceMin: r.pace_min, paceSec: r.pace_sec, paceUnknown: r.pace_unknown,
-  peakWeekKm: r.peak_week_km, longestRunKm: r.longest_run_km,
-  volumeSource: r.volume_source as Intake["volumeSource"],
-  // The reworked form's steps live in one jsonb column rather than eleven
-  // columns: they are answers, not relations, and nothing queries across them.
-  ...(extraAnswers(r.answers)),
-  days: r.days, commitments: r.commitments, freq: r.freq, commitDay: r.commit_day,
-  commitMode: (r.answers?.commitMode as Intake["commitMode"]) ?? {},
-  equipment: r.equipment, sled: r.sled,
-  injuries: r.injuries, volume: r.volume, difficulty: r.difficulty,
-  benchmark: r.benchmark,
-});
-
-const load = async (userId: string) => {
-  const [row] = await sql<Row[]>`
-    select has_race, discipline, race_distance, race_date::text as race_date, role,
-           division, base, running_self, pace_min, pace_sec, pace_unknown,
-           peak_week_km, longest_run_km, volume_source, answers, answers,
-           days, commitments, freq, commit_day, equipment, sled, injuries,
-           volume, difficulty, benchmark, completed_at::text as completed_at
-      from athlete_intake where user_id = ${userId}
-  `;
-  return row ?? null;
-};
+/*
+ * The row shape and the loader now live in lib/intake-store.ts.
+ *
+ * Not only this route's any more: anything that regenerates a plan needs the same
+ * answers, and they are not in one place — the early steps are columns and the
+ * reworked steps are a jsonb blob. Two readers would drift, and the way that drift
+ * shows up is a plan rebuilt from a half-populated Intake.
+ */
 
 /**
  * The option lists, served rather than hard-coded in the screens.
@@ -108,7 +71,7 @@ const OPTIONS = {
 
 export const GET = route(async () => {
   const me = await requireUser();
-  const row = await load(me.id);
+  const row = await loadIntakeRow(me.id);
   const [plan] = await sql<{ id: string; name: string; plan_state: string | null }[]>`
     select id, name, plan_state from plan_templates
      where athlete_id = ${me.id} and active limit 1
@@ -427,13 +390,25 @@ async function commit(meId: string, body: Record<string, unknown>): Promise<Resp
     type: a.kind as "no_training" | "some_access" | "normal",
   }));
 
-  const params = paramsFrom(intake, {
-    recent, absences, max_hr: urow?.hr_max ?? null,
-    measured: intake.benchmark === "logged",
-    // A race on file and a race typed into the intake are the same race.
-    hyrox_races: races + (intake.pastRaces?.length ?? 0),
-    measured_race_run_split_s: measured.run_split_s,
-  });
+  const params = {
+    ...paramsFrom(intake, {
+      recent, absences, max_hr: urow?.hr_max ?? null,
+      measured: intake.benchmark === "logged",
+      // A race on file and a race typed into the intake are the same race.
+      hyrox_races: races + (intake.pastRaces?.length ?? 0),
+      measured_race_run_split_s: measured.run_split_s,
+    }),
+    /*
+     * And the days they have taught the plan since.
+     *
+     * A rebuild would otherwise forget them: an athlete who moved strength to Mondays
+     * in September would find it back on a Wednesday the next time anything rebuilt
+     * their block, with no way to tell why. Applied on top of the answers rather than
+     * inside `paramsFrom`, which stays pure so a plan can be reproduced from its own
+     * stored inputs.
+     */
+    day_prefs: await prefsFor(me.id),
+  };
   const built = buildPlan(params);
   const tpl0 = toTemplate(built, urow?.hr_max ?? null);
   /*
@@ -673,9 +648,4 @@ const EXTRA_KEYS = [
 const extraOf = (i: Intake) =>
   Object.fromEntries(EXTRA_KEYS.map((k) => [k, i[k] ?? null]));
 
-/** Read back with a null for anything an older intake never had. */
-function extraAnswers(a: Record<string, unknown> | null) {
-  const out: Record<string, unknown> = {};
-  for (const k of EXTRA_KEYS) out[k] = a?.[k] ?? null;
-  return out as Pick<Intake, (typeof EXTRA_KEYS)[number]>;
-}
+/* Reading them back is lib/intake-store.ts — one reader, so the two cannot drift. */

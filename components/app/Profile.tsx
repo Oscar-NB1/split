@@ -55,6 +55,17 @@ export default function Profile({
     setTheme(t);
     document.documentElement.dataset.theme = t;
     localStorage.setItem("split-theme", t);
+    /*
+     * And the strip iOS paints around the home indicator.
+     *
+     * It reads `theme-color`, not the page background, so without this a dark app
+     * keeps a white band across the bottom of the installed PWA — the blank space
+     * that no amount of tab-bar padding could remove, because it is outside the
+     * document entirely.
+     */
+    document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+      if (!m.getAttribute("media")) m.setAttribute("content", t === "dark" ? "#0F2233" : "#F1F4F7");
+    });
   }
 
 

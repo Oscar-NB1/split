@@ -41,6 +41,14 @@ export type Params = ResolveInput & {
   long_run_pace?: boolean;
   /** 0 = Monday, or null for no preference */
   long_run_day: number | null;
+  /**
+   * Days the athlete has taught the plan, by session kind. 0 = Monday.
+   *
+   * Learned from them moving a session and saying "always", rather than asked for in
+   * the intake — the long run is the only one worth a question, and the rest are
+   * discovered by an athlete rearranging their own week.
+   */
+  day_prefs?: Partial<Record<string, number>>;
   discipline: "doubles" | "singles" | "running";
   goal: Goal;
   partner: { run_delta: number; station_delta: number } | null;
@@ -184,6 +192,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       commitments: p.commitments, training_age: r.training_age,
       rest_day: p.rest_day, allow_doubles: p.allow_doubles ?? false,
       long_run_day: p.long_run_day,
+      day_prefs: p.day_prefs,
     });
     for (const f of placed.flags) flags.push({ code: "placement", message: f });
 

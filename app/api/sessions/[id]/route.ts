@@ -5,6 +5,12 @@ import { pushSession, removeSession } from "@/lib/intervals";
 import { badRequest, notFound, route } from "@/lib/http";
 import { isDateString, isUuid, lighten, scaledTitle, SKIP_REASONS } from "@/lib/plan";
 import { onSkip } from "@/lib/rules";
+import { sayPref, setPref } from "@/lib/day-prefs";
+import { kindLabel } from "@/lib/coach";
+import { rememberDay } from "@/lib/replan";
+
+/** 0 = Monday, which is what the placer and every week screen use. */
+const weekdayOf = (iso: string): number => (new Date(`${iso}T12:00:00Z`).getUTCDay() + 6) % 7;
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -51,8 +57,29 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
       // `after` and not a floating promise: on serverless the runtime is frozen
       // the moment the response goes out, and the push would never happen
       after(() => pushSession(id).catch((e) => console.error("watch push", e)));
+      /*
+       * "And always on this day" — the move becomes a preference.
+       *
+       * Every one of these moves was already being recorded in session_changes and
+       * read by nobody, so an athlete who lifts on Mondays moved strength off
+       * Wednesday every week for fifteen weeks and the plan never noticed. Opt-in
+       * rather than inferred: three moves in a row is a pattern, but it is also
+       * possibly three busy Wednesdays, and guessing wrong reshapes their block.
+       *
+       * The preference is honoured on future weeks only — this week's move has
+       * already happened, and rewriting the days around it now would move sessions
+       * the athlete can see while they are looking at them.
+       */
+      let learned: string | null = null;
+      if (body.always === true) {
+        const weekday = weekdayOf(body.to_date);
+        await setPref(s.user_id, s.kind, weekday);
+        learned = sayPref(s.kind, weekday, kindLabel(s.kind));
+        after(() => rememberDay(s.user_id).catch((e) => console.error("day pref", e)));
+      }
+
       // a warning, never a block - she keeps agency, you keep visibility
-      return NextResponse.json({ ok: true, warning: warn });
+      return NextResponse.json({ ok: true, warning: warn, learned });
     }
 
     case "scale": {

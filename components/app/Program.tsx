@@ -6,6 +6,9 @@ import { weekOf } from "@/lib/block";
 import type { Session, User, WeekData } from "./Shell";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+/** Written out, because "always on Mon" reads like an abbreviation of a thought. */
+const DAYS_LONG = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays",
+  "Saturdays", "Sundays"];
 const TEAL = "#0A8FB0", LIME = "#C6FF5B", NAVY = "#12314D";
 const TEAL_T = "var(--teal-tint)", TEAL_T2 = "var(--teal-tint2)";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
@@ -40,6 +43,16 @@ export default function Program({
   const [dragging, setDragging] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /*
+   * The move the plan could learn from.
+   *
+   * Offered rather than inferred. Three moves in a row is a pattern, and it is also
+   * possibly three busy Wednesdays — guessing wrong reshapes somebody's block without
+   * being asked, which is worse than not learning at all.
+   */
+  const [offer, setOffer] = useState<{
+    id: string; kind: string; label: string; weekday: number;
+  } | null>(null);
 
   if (!data) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
@@ -57,18 +70,29 @@ export default function Program({
       body: JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) { setNote(j.error ?? "That didn't save."); return; }
-    setNote((j.warning as string) ?? null);
+    if (!r.ok) { setNote(j.error ?? "That didn't save."); return null; }
+    setNote((j.learned as string) ?? (j.warning as string) ?? null);
     reload();
+    return j as Record<string, unknown>;
   }
 
-  const moveTo = (i: number) => {
+  const moveTo = async (i: number) => {
     const id = dragging || moving;
     if (!id) return;
     const s = all.find((x) => x.id === id);
     setDragging(null); setDragOver(null); setMoving(null);
     if (!s || s.planned_date === dates[i]) return;
-    patch(id, { action: "move", to_date: dates[i] });
+    setOffer(null);
+    const ok = await patch(id, { action: "move", to_date: dates[i] });
+    /*
+     * Only offered for sessions the plan wrote.
+     *
+     * A commitment is already on a day the athlete chose — the plan schedules around
+     * it and has nothing to learn from them moving their own class.
+     */
+    if (ok && s.source === "template") {
+      setOffer({ id, kind: s.kind, label: kindLabel(s.kind), weekday: i });
+    }
   };
 
   const active = !!(moving || dragging);
@@ -85,9 +109,20 @@ export default function Program({
           {week ? `Week ${week.n} · ${fmt(monday, { day: "numeric", month: "long" })}`
             : fmt(monday, { day: "numeric", month: "long" })}
         </div>
-        <div style={{ fontSize: 12, color: INK55, marginTop: 8, lineHeight: 1.5 }}>
-          Hyrox doubles · 15 weeks to 28 Nov. Target 55:00–56:30 from 1:00:45.
-        </div>
+        {/* The athlete's own block. This line was one athlete's — "Hyrox doubles ·
+            15 weeks to 28 Nov. Target 55:00–56:30 from 1:00:45" — printed above
+            everybody's week, including the weeks of anyone with a different race. */}
+        {data.block && (
+          <div style={{ fontSize: 12, color: INK55, marginTop: 8, lineHeight: 1.5 }}>
+            {[
+              data.block.name,
+              data.block.race_date
+                ? `${data.block.weeks.length} weeks to ${fmt(data.block.race_date, { day: "numeric", month: "short" })}`
+                : null,
+              data.block.goal_label ? `target ${data.block.goal_label}` : null,
+            ].filter(Boolean).join(" · ")}
+          </div>
+        )}
       </div>
 
       {other && (
@@ -133,6 +168,33 @@ export default function Program({
       </div>
 
       {note && <div className="warnbox">{note}</div>}
+
+      {offer && (
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10,
+          background: TEAL_T2, border: `1px solid ${TEAL}`, borderRadius: "var(--r-card)",
+          padding: "12px 14px" }}>
+          <span style={{ fontSize: 12.5, lineHeight: 1.5, flex: 1, minWidth: 180 }}>
+            Moved. Should {offer.label.toLowerCase()} always be on {DAYS_LONG[offer.weekday]}?
+          </span>
+          <button onClick={async () => {
+            const o = offer;
+            setOffer(null);
+            /*
+             * Re-sent as the same move with `always`, rather than a separate
+             * endpoint: the day is already correct, so this is the athlete
+             * confirming what the move meant rather than making a second change.
+             */
+            await patch(o.id, { action: "move", to_date: dates[o.weekday], always: true });
+          }} style={{ padding: "8px 14px", borderRadius: "var(--r-pill)", fontSize: 12,
+            fontWeight: 700, background: NAVY, color: "#fff" }}>
+            Always
+          </button>
+          <button onClick={() => setOffer(null)} style={{ padding: "8px 12px", fontSize: 12,
+            fontWeight: 700, color: INK55 }}>
+            Just this week
+          </button>
+        </div>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {dates.map((date, i) => {

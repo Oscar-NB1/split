@@ -1045,3 +1045,21 @@ alter table plan_templates add column if not exists strength_accessories_delta i
 alter table capabilities add column if not exists source_ref uuid;
 create index if not exists capabilities_source_ref on capabilities (source_ref)
   where source_ref is not null;
+
+-- Days the athlete has taught the plan (2026-08-17).
+--
+-- The long run had a question in the intake and so it had a day; every other session
+-- landed wherever the weekly spread put it. An athlete who always lifts on a Monday
+-- got strength on a Wednesday for fifteen weeks and moved it by hand every week —
+-- which the app recorded, in session_changes, and learned nothing from.
+--
+-- Learned rather than asked: one row per kind, written when they move a session and
+-- say "always". A preference, not a rule — the placer charges for breaking it and a
+-- fixed commitment or the one-hard-session-a-day rule can still win.
+create table if not exists day_preferences (
+  athlete_id uuid not null references users(id) on delete cascade,
+  kind       text not null,
+  weekday    int  not null check (weekday between 0 and 6),   -- 0 = Monday
+  created_at timestamptz not null default now(),
+  primary key (athlete_id, kind)
+);

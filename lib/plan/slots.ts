@@ -391,6 +391,19 @@ export type PlaceInput = {
   allow_doubles: boolean;
   /** the day the athlete wants their long run on, 0 = Monday */
   long_run_day: number | null;
+  /**
+   * A preferred weekday for any other kind, 0 = Monday.
+   *
+   * The long run had a question in the intake and so it had a day; everything else
+   * landed wherever the spread put it, which is why an athlete who always lifts on a
+   * Monday had strength on a Wednesday for fifteen weeks and moved it by hand every
+   * week. These are learned rather than asked: they come from the athlete moving a
+   * session and saying "always".
+   *
+   * A preference, not a rule — exactly like the long run. A fixed commitment or the
+   * one-hard-session-a-day rule can still win, and when they do the week says so.
+   */
+  day_prefs?: Partial<Record<SlotKind, number>>;
 };
 
 /** Score a candidate week. Lower is better. */
@@ -448,6 +461,23 @@ export function score(week: Placed[], x: PlaceInput): number {
     cost += PENALTY.longRunOffPreferredDay;
   }
 
+  /*
+   * And every other kind the athlete has a preference for.
+   *
+   * Charged at the same rate as the long run, because it is the same kind of claim:
+   * somebody who told the app they lift on Mondays has said something about their
+   * week, and an arrangement that ignores it should have to be better on the rules
+   * that matter to win.
+   */
+  for (const [kind, day] of Object.entries(x.day_prefs ?? {})) {
+    if (day == null) continue;
+    const placed = week.filter((p) => p.kind === kind);
+    if (placed.length === 0) continue;
+    // Satisfied if any session of that kind is on the day — a week with two easy
+    // runs has kept the preference as soon as one of them lands there.
+    if (!placed.some((p) => p.day === day)) cost += PENALTY.longRunOffPreferredDay;
+  }
+
   return cost * scale;
 }
 
@@ -489,6 +519,25 @@ export function placeWeek(x: PlaceInput): { week: Placed[]; cost: number; flags:
   if (placeLong) {
     week.push({ day: wanted!, kind: "long_run", hard: HARD.includes("long_run") });
     rest.splice(rest.indexOf("long_run"), 1);
+  }
+
+  /*
+   * Then the kinds with a learned day, before the spread gets to them.
+   *
+   * Same order of business as the long run: a preference only means anything if it is
+   * honoured before the arrangement is decided, and the score charges for the ones
+   * that could not be. Skipped where the day is already occupied — the
+   * one-key-session-a-day rule outranks a preference, always.
+   */
+  for (const [kind, day] of Object.entries(x.day_prefs ?? {}) as [SlotKind, number][]) {
+    if (day == null || !days.includes(day)) continue;
+    const i = rest.indexOf(kind);
+    if (i < 0) continue;
+    const occupied = week.filter((p) => p.day === day);
+    const wouldClash = occupied.some((p) => p.hard) && HARD.includes(kind);
+    if (wouldClash || (occupied.length > 0 && !x.allow_doubles)) continue;
+    week.push({ day, kind, hard: HARD.includes(kind) });
+    rest.splice(i, 1);
   }
 
   // hard sessions first, spread as far apart as the week allows

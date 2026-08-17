@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   ALLOCATION, STATION_FLOOR, allocationFor, roleFrom,
 } from "../lib/plan/allocate";
-import { HYROX_RUN_CREDIT, allocateSlots, penaltyScale, placeWeek, type Commitment } from "../lib/plan/slots";
+import {
+  HYROX_RUN_CREDIT, allocateSlots, penaltyScale, placeWeek, score, type Commitment,
+} from "../lib/plan/slots";
 import { resolve, type ResolveInput } from "../lib/plan/resolve";
 import { skeleton } from "../lib/plan/skeleton";
 import { soften, validate, type PlanWeek } from "../lib/plan/validate";
@@ -359,4 +361,73 @@ test("an easy run is the one thing that may share a day", () => {
     const kinds = out.week.filter((p) => p.day === d).map((p) => String(p.kind));
     assert.ok(kinds.includes("easy_run"), `day ${d}: ${kinds.join(" + ")}`);
   }
+});
+
+// --- days the athlete has taught the plan --------------------------------------
+
+test("a learned day is honoured, like the long run's", () => {
+  /*
+   * The long run had a question in the intake and so it had a day; everything else
+   * landed wherever the spread put it. An athlete who always lifts on a Monday got
+   * strength on a Wednesday for fifteen weeks and moved it by hand every week.
+   */
+  const w = placeWeek({
+    slots: ["quality_run", "long_run", "easy_run", "strength", "hyrox"],
+    available_days: [0, 1, 2, 3, 4, 5, 6], commitments: [],
+    training_age: "intermediate", rest_day: "full", allow_doubles: false,
+    long_run_day: 6, day_prefs: { strength: 0 },
+  });
+  const strength = w.week.find((p) => p.kind === "strength");
+  assert.equal(strength?.day, 0, `strength landed on day ${strength?.day}`);
+  assert.equal(w.week.find((p) => p.kind === "long_run")?.day, 6, "and the long run kept Sunday");
+});
+
+test("a preference never beats one key session a day", () => {
+  /*
+   * The whole point of the placer. An athlete can ask for strength on the day their
+   * intervals are on and the answer is no — a preference is charged for, and the
+   * rules that protect the training are not negotiable.
+   */
+  const w = placeWeek({
+    slots: ["quality_run", "long_run", "strength"],
+    available_days: [0, 1], commitments: [],
+    training_age: "intermediate", rest_day: "none", allow_doubles: false,
+    long_run_day: 1, day_prefs: { strength: 1 },
+  });
+  const days = w.week.map((p) => `${p.kind}@${p.day}`).sort();
+  const onDay1 = w.week.filter((p) => p.day === 1 && p.hard);
+  assert.ok(onDay1.length <= 1, `two hard sessions on day 1: ${days.join(", ")}`);
+});
+
+test("a fixed commitment outranks a learned day", () => {
+  // Their Monday class is real and already on the calendar; the preference is a wish.
+  const w = placeWeek({
+    slots: ["quality_run", "long_run", "easy_run", "strength"],
+    available_days: [0, 1, 2, 3, 4, 5, 6],
+    commitments: [{
+      activity: "kickboxing", label: "Kickboxing", per_week: 1, fixed_days: [0],
+      intensity: "high", mode: "add", locked: true,
+    }],
+    training_age: "intermediate", rest_day: "full", allow_doubles: false,
+    long_run_day: 6, day_prefs: { strength: 0 },
+  });
+  assert.equal(w.week.filter((p) => p.day === 0).length, 1, "Monday still holds one thing");
+  assert.equal(w.week.find((p) => p.day === 0)?.kind, "kickboxing");
+});
+
+test("scoring charges for a preference it could not keep", () => {
+  const base = {
+    available_days: [0, 1, 2, 3, 4, 5, 6], commitments: [],
+    training_age: "intermediate" as const, rest_day: "full" as const,
+    allow_doubles: false, long_run_day: null,
+  };
+  const kept = score([
+    { day: 0, kind: "strength", hard: false },
+    { day: 3, kind: "quality_run", hard: true },
+  ], { ...base, slots: [], day_prefs: { strength: 0 } });
+  const broken = score([
+    { day: 2, kind: "strength", hard: false },
+    { day: 3, kind: "quality_run", hard: true },
+  ], { ...base, slots: [], day_prefs: { strength: 0 } });
+  assert.ok(broken > kept, `${broken} should cost more than ${kept}`);
 });

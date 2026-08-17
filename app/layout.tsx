@@ -32,7 +32,24 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#FFFFFF",
+  /*
+   * The colour iOS paints the strip the web view does not cover.
+   *
+   * With `viewport-fit=cover` and a translucent status bar, the area around the home
+   * indicator belongs to the OS, and it fills it with `theme-color` — not with the
+   * page background. A single white value meant a dark-themed app in the installed
+   * PWA had a white band across the bottom of the screen, which is exactly the
+   * "awkward blank space" it looks like. No amount of padding inside the tab bar
+   * touches it, because the strip is outside the document.
+   *
+   * Two values here so it is right from first paint. The app also has its own theme
+   * toggle, which the OS knows nothing about, so the script below keeps this in step
+   * with the athlete's choice rather than only with their phone's.
+   */
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F1F4F7" },
+    { media: "(prefers-color-scheme: dark)", color: "#0F2233" },
+  ],
   viewportFit: "cover",
   width: "device-width",
   initialScale: 1,
@@ -46,7 +63,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             means every dark-mode load flashes white first. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('split-theme');if(t==='dark')document.documentElement.dataset.theme='dark'}catch(e){}`,
+            /*
+             * The stored theme, and the OS strip's colour with it.
+             *
+             * `theme-color` is what iOS paints around the home indicator, so it has to
+             * follow the athlete's own toggle and not just their phone's setting —
+             * otherwise a dark app on a light phone shows a white band at the bottom.
+             * Set here, before first paint, and again by the toggle in Profile.
+             */
+            __html: `try{var t=localStorage.getItem('split-theme');var d=t==='dark'||(t!=='light'&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches);if(t==='dark')document.documentElement.dataset.theme='dark';var m=document.querySelector('meta[name=theme-color]:not([media])')||document.head.appendChild(Object.assign(document.createElement('meta'),{name:'theme-color'}));m.setAttribute('content',d?'#0F2233':'#F1F4F7')}catch(e){}`,
           }}
         />
       </head>
