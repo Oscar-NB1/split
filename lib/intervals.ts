@@ -277,6 +277,40 @@ export async function pushRacePlan(
  * athlete then has a connection that shows green and will never deliver a
  * workout, which is harder to diagnose than a refused paste.
  */
+/**
+ * The athlete id, from the key alone.
+ *
+ * Every path in this API is `/athlete/{id}/…`, so the id is genuinely needed — but nobody should
+ * have to go hunting for it in a URL. `0` is the API's own shorthand for "whoever this key
+ * belongs to", so one call resolves it, and the id it reports back is the one every later request
+ * uses.
+ *
+ * Returns null rather than throwing when the shorthand is not accepted. Then the form asks for
+ * the id, which is where this started — a lookup that fails should cost a question, not a
+ * connection.
+ */
+export async function resolveAthleteId(apiKey: string): Promise<string | null> {
+  for (const who of ["0", "me"]) {
+    try {
+      const res = await fetch(`${BASE}/athlete/${who}`, {
+        headers: { authorization: auth(apiKey) },
+      });
+      if (!res.ok) continue;
+      const body = await res.json() as { id?: unknown; athlete?: { id?: unknown } };
+      const id = body?.id ?? body?.athlete?.id;
+      /* Only an id that looks like one: the shorthand echoed back is not an answer. */
+      if (typeof id === "string" && /^i?\d+$/.test(id) && id !== who) {
+        return id.startsWith("i") ? id : `i${id}`;
+      }
+      if (typeof id === "number" && Number.isFinite(id)) return `i${id}`;
+    } catch {
+      /* Network trouble is the caller's problem to report, not this function's to guess at. */
+      return null;
+    }
+  }
+  return null;
+}
+
 export async function verifyIntervals(
   athleteId: string, apiKey: string,
 ): Promise<{ ok: true } | { ok: false; why: string }> {

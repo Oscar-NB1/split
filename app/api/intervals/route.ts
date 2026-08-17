@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
-import { pushUpcoming, verifyIntervals } from "@/lib/intervals";
+import { pushUpcoming, resolveAthleteId, verifyIntervals } from "@/lib/intervals";
 import { badRequest, route } from "@/lib/http";
 
 /**
@@ -36,8 +36,30 @@ export const GET = route(async () => {
 /** Store an intervals.icu API key + athlete id, then push the next 10 days. */
 export const POST = route(async (req: NextRequest) => {
   const me = await requireUser();
-  const { athlete_id, api_key } = await req.json();
-  if (!athlete_id || !api_key) throw badRequest("Athlete ID and API key are both needed.");
+  const body = await req.json();
+  const api_key = String(body?.api_key ?? "").trim();
+  if (!api_key) throw badRequest("The API key is needed.");
+
+  /*
+   * The athlete id is optional now, and looked up from the key when it is not given.
+   *
+   * It is in every path this API uses, so it is genuinely required — but it is buried in a URL
+   * and in a settings page, and asking somebody to find it when the key can answer for them is
+   * asking for a wrong number. Whatever they do paste is tolerated: a bare number, an i-prefixed
+   * one, or the whole URL they copied it out of.
+   */
+  const typed = String(body?.athlete_id ?? "").trim();
+  const fromTyped = /i?(\d{3,})/.exec(typed)?.[1];
+  const athlete_id = fromTyped
+    ? `i${fromTyped}`
+    : await resolveAthleteId(api_key);
+
+  if (!athlete_id) {
+    throw badRequest(
+      "That key works, but intervals.icu did not say which athlete it belongs to. Open "
+      + "intervals.icu, and the i-number in the page URL is your athlete ID — paste it in.",
+    );
+  }
 
   // Verified before anything is written. Storing first and pushing second meant a
   // mistyped key was saved and reported as connected — the push that would have

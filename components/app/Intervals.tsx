@@ -31,6 +31,7 @@ export default function Intervals() {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  const [needsId, setNeedsId] = useState(false);
 
   const load = () => fetch("/api/intervals").then((r) => r.json()).then(setS).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -43,7 +44,12 @@ export default function Intervals() {
     });
     const j = await r.json().catch(() => ({}));
     setBusy(false);
-    if (!r.ok) { setSaid(j.error ?? "That did not go through."); return; }
+    if (!r.ok) {
+      /* The one failure that is a question rather than a mistake. */
+      if (/which athlete/i.test(String(j.error))) setNeedsId(true);
+      setSaid(j.error ?? "That did not go through.");
+      return;
+    }
     /* The key is never held in the page after it has been sent. */
     setKey("");
     setSaid(j.pushed > 0
@@ -53,7 +59,9 @@ export default function Intervals() {
   }
 
   if (!s) return null;
-  const ready = athlete.trim().length > 0 && key.trim().length > 10;
+  /* The key alone is enough: the athlete id is looked up from it, and only asked for if that
+     lookup comes back empty. */
+  const ready = key.trim().length > 10;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -97,20 +105,29 @@ export default function Intervals() {
         <>
           <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.7,
             color: INK70, display: "flex", flexDirection: "column", gap: 4 }}>
-            <li>Open intervals.icu → Settings, and connect Garmin there first.</li>
-            <li>On the same page, scroll to <b>Developer Settings</b> for your API key.</li>
-            <li>Your athlete ID is the <span className="mono">i12345</span> in the page URL.</li>
+            <li>Open intervals.icu → <b>Settings</b>, and connect Garmin there first.</li>
+            <li>Same page, at the bottom: <b>Developer Settings</b>. Copy the API key.</li>
+            <li>That is all — the athlete ID comes from the key.</li>
           </ol>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <input value={athlete} onChange={(e) => setAthlete(e.target.value)}
-              placeholder="Athlete ID — i12345" aria-label="intervals.icu athlete ID"
-              style={{ borderRadius: 11, border: `1px solid ${LINE}`, padding: "12px 13px",
-                fontSize: 14, background: "var(--off)" }} />
             <input value={key} onChange={(e) => setKey(e.target.value)}
               type="password" placeholder="API key" aria-label="intervals.icu API key"
               autoComplete="off"
               style={{ borderRadius: 11, border: `1px solid ${LINE}`, padding: "12px 13px",
                 fontSize: 14, background: "var(--off)" }} />
+            {/*
+              * Only shown once the lookup has failed.
+              *
+              * Asking for a number buried in a URL when the key can answer for you is asking for
+              * a wrong number — so it is asked for second, and only when it has to be.
+              */}
+            {needsId && (
+              <input value={athlete} onChange={(e) => setAthlete(e.target.value)}
+                placeholder="Athlete ID — i12345, or paste the whole URL"
+                aria-label="intervals.icu athlete ID"
+                style={{ borderRadius: 11, border: `1px solid ${TEAL}`, padding: "12px 13px",
+                  fontSize: 14, background: "var(--off)" }} />
+            )}
           </div>
           <button onClick={connect} disabled={!ready || busy} style={{
             width: "100%", border: 0, borderRadius: "var(--r-pill)", padding: 15,
