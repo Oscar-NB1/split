@@ -153,6 +153,27 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
                   ${seed}, ${lift.reps || null})
           on conflict (session_id, ord, set_no) do nothing
         `;
+        /*
+         * And fill a box that is still empty.
+         *
+         * `do nothing` is what makes re-opening the screen harmless, and it is also why
+         * nothing ever appeared: the rows were created the first time he opened the
+         * session, before there was any estimate to seed them with, and every visit since
+         * has inserted nothing and updated nothing. His bodyweight was on file the whole
+         * time.
+         *
+         * Only untouched rows: no load logged, no reps changed from the prescription, not
+         * ticked off. A number the athlete has entered is theirs.
+         */
+        if (seed != null) {
+          await sql`
+            update session_sets set load_kg = ${seed}
+             where session_id = ${id} and ord = ${ord} and set_no = ${n}
+               -- A zero is an empty box somebody tapped, not a load.
+               and (load_kg is null or load_kg = 0) and not done
+               and (reps is null or reps = prescribed_reps)
+          `;
+        }
       }
     }
   }

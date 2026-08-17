@@ -99,14 +99,27 @@ export const PATCH = route(async (req: NextRequest) => {
     throw badRequest("That is not an image file.");
   }
 
+  /*
+   * Only the fields that were sent.
+   *
+   * Every column was written unconditionally, so a caller PATCHing one field wiped the
+   * rest — which made this endpoint unusable from anywhere except the full profile form,
+   * and the strength screen needs to ask for a bodyweight without also clearing a heart
+   * rate and a date of birth. `undefined` means "not mentioned"; an explicit null still
+   * clears, which is how the form empties a field.
+   */
+  const keep = <T,>(sent: boolean, value: T, column: string) =>
+    sent ? value : sql(column);
   await sql`
     update users set
       avatar_url = ${avatar === "unchanged" ? sql`avatar_url` : avatar},
-      hr_max = ${hr},
-      weight_kg = ${kg},
-      dob = ${b.dob || null},
-      injury_notes = ${b.injury_notes ?? null},
-      gender = ${typeof b.gender === "string" && b.gender.trim() ? b.gender.trim().slice(0, 40) : null},
+      hr_max = ${keep("hr_max" in b, hr, "hr_max")},
+      weight_kg = ${keep("weight_kg" in b, kg, "weight_kg")},
+      dob = ${keep("dob" in b, b.dob || null, "dob")},
+      injury_notes = ${keep("injury_notes" in b, b.injury_notes ?? null, "injury_notes")},
+      gender = ${keep("gender" in b,
+        typeof b.gender === "string" && b.gender.trim() ? b.gender.trim().slice(0, 40) : null,
+        "gender")},
       display_name = coalesce(${name}, display_name)
     where id = ${me.id}
   `;

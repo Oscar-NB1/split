@@ -167,7 +167,7 @@ export default function Strength({
                   </span>
 
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Step onClick={() => patch(st.id, { load_kg: Math.max(0, (st.load_kg ?? 0) - 2.5) })}>−</Step>
+                    <Step onClick={() => patch(st.id, { load_kg: Math.max(0, round((st.load_kg ?? 0) - STEP)) })}>−</Step>
                     <div style={{
                       flex: 1, textAlign: "center", padding: "7px 0", borderRadius: 9,
                       background: "var(--off)", display: "flex", flexDirection: "column", gap: 1,
@@ -181,7 +181,7 @@ export default function Strength({
                         </span>
                       )}
                     </div>
-                    <Step onClick={() => patch(st.id, { load_kg: (st.load_kg ?? 0) + 2.5 })}>+</Step>
+                    <Step onClick={() => patch(st.id, { load_kg: round((st.load_kg ?? 0) + STEP) })}>+</Step>
                   </div>
 
                   <input className="mono" inputMode="numeric" value={st.reps ?? ""}
