@@ -1,5 +1,6 @@
 import type { RunningBase } from "./resolve";
 import type { PhaseName } from "./skeleton";
+import { ladderMix } from "./zone-budget";
 
 /**
  * Stage 5: what the quality session actually is, week by week.
@@ -63,21 +64,33 @@ export const ENTRY: Record<RunningBase, Partial<Record<LadderId, number>>> = {
 };
 
 /**
- * Which ladder the quality slot draws from, by phase.
+ * Which ladder the quality slot draws from — derived, not typed.
  *
- * L5 is maintenance and never a focus: an athlete already running 400s at 3:39
- * needs threshold work, not more top end.
+ * This used to be four rows of hand-written proportions, and they contradicted the
+ * sentence above them: the comment said L5 was "maintenance and never a focus" while
+ * the table gave it forty per cent of the base phase. The distribution now comes
+ * from `ZONE_BUDGET` in zone-budget.ts, which states the same thing in the terms it
+ * can actually be argued about — how much of the hard work sits in each zone — so
+ * the mix cannot drift from what the phase is for.
+ *
+ * It also now depends on the athlete: somebody who does not yet run gets the
+ * run/walk and aerobic ladders at every phase, where before their quality slot drew
+ * from threshold and their entry rung fell through to zero.
  */
-export const PHASE_MIX: Record<PhaseName, Partial<Record<LadderId, number>>> = {
-  base:     { L3: 0.40, L4: 0.20, L5: 0.40 },
-  build:    { L3: 0.40, L4: 0.40, L5: 0.20 },
-  specific: { L3: 0.20, L4: 0.40, L5: 0.10, L6: 0.30 },
-  taper:    { L3: 0.20, L4: 0.40, L5: 0.20, L6: 0.20 },
-};
+export const ladderMixFor = ladderMix;
 
 /** The ceiling a phase puts on how far up a ladder a session may go. */
 export const PHASE_CAP: Record<PhaseName, number> = {
-  base: 0.5, build: 0.75, specific: 1.0, taper: 1.0,
+  base: 0.5, build: 0.75, specific: 1.0,
+  /*
+   * The taper is the one phase allowed to go backwards.
+   *
+   * At 1.0 it could reach the top of every ladder, and it did: the first taper week
+   * prescribed "2 × 20 min" — forty minutes at threshold, the longest quality session
+   * in the block, a fortnight out from the race. Intensity stays in a taper and
+   * volume comes down, and the rung is the volume.
+   */
+  taper: 0.6,
 };
 
 /**
@@ -87,8 +100,13 @@ export const PHASE_CAP: Record<PhaseName, number> = {
  * five weeks at 40/40/20 gives two, two and one rather than whatever a random
  * draw happens to produce. Same input, same plan.
  */
-export function ladderFor(phase: PhaseName, weekInPhase: number, canDoStations: boolean): LadderId {
-  const mix = Object.entries(PHASE_MIX[phase])
+export function ladderFor(
+  phase: PhaseName, weekInPhase: number, canDoStations: boolean,
+  base: RunningBase = "runs_regularly",
+): LadderId {
+  // The running slot: the race share belongs to the Hyrox session, which is a slot
+  // of its own in the same week.
+  const mix = Object.entries(ladderMix(phase, base, canDoStations, true))
     .filter(([id]) => canDoStations || id !== "L6") as [LadderId, number][];
   const total = mix.reduce((n, [, w]) => n + w, 0);
 
@@ -115,6 +133,20 @@ export function ladderFor(phase: PhaseName, weekInPhase: number, canDoStations: 
  */
 export function rungFor(
   ladder: LadderId, base: RunningBase, weeksIn: number, phase: PhaseName,
+  /**
+   * How far into the whole block this week is, where the caller knows.
+   *
+   * `weeksIn` counts from the start of the *phase*, which is what makes a rung climb
+   * inside a phase — and what made it fall off a cliff at every boundary: week 9 of
+   * the build finished on "8 × 1000 m" and week 10 of the specific phase started
+   * again at "3 × 8 min", because the counter went back to zero. A session got easier
+   * because the calendar turned a page.
+   *
+   * The block week is a floor, not a replacement: it stops a later phase starting
+   * below what an earlier one reached, while the phase cap still decides how far up
+   * the ladder that phase is allowed to go.
+   */
+  blockWeek?: number,
 ): Rung {
   const rungs = LADDERS[ladder].rungs;
   const ceiling = Math.max(0, Math.floor((rungs.length - 1) * PHASE_CAP[phase]));
@@ -129,7 +161,18 @@ export function rungFor(
   const entry = Math.min(ENTRY[base]?.[ladder] ?? 0, Math.max(0, ceiling - 1));
   // Every other week, not every week: a rung is a change of session, and changing
   // it weekly means nothing is ever repeated well enough to be measured.
-  const rung = Math.min(entry + Math.floor(weeksIn / 2), ceiling, rungs.length - 1);
+  const climbed = entry + Math.floor(weeksIn / 2);
+  /*
+   * The floor from the block, capped by the phase.
+   *
+   * A phase that is allowed further up the ladder than the last one starts where the
+   * last one finished rather than at its own entry rung; a phase with a lower cap —
+   * the taper — is still held down by it, which is the point of the cap.
+   */
+  const floor = blockWeek === undefined
+    ? 0
+    : Math.min(entry + Math.floor(blockWeek / 3), ceiling);
+  const rung = Math.min(Math.max(climbed, floor), ceiling, rungs.length - 1);
   return { label: rungs[Math.max(0, rung)], rung: Math.max(0, rung) };
 }
 

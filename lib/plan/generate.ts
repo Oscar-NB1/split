@@ -201,8 +201,14 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      */
     const runnable = Math.max(3, Math.round(w.km * 10) / 10);
 
-    const ladder = ladderFor(w.phase, inPhase, stations);
-    const rung = rungFor(ladder, p.running_base, inPhase, w.phase);
+    /*
+     * The athlete's running comes into the choice, not just the phase.
+     *
+     * Without it every athlete drew from the same ladders and somebody who does not
+     * run yet was handed threshold intervals in week one.
+     */
+    const ladder = ladderFor(w.phase, inPhase, stations, p.running_base);
+    const rung = rungFor(ladder, p.running_base, inPhase, w.phase, w.n - 1);
     /*
      * The Hyrox session is named as well.
      *
@@ -239,7 +245,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       const second = isQuality && qualitySeen++ > 0;
       const thisLadder = second ? secondLadder : ladder;
       const thisRung = second
-        ? rungFor(secondLadder, p.running_base, inPhase, w.phase)
+        ? rungFor(secondLadder, p.running_base, inPhase, w.phase, w.n - 1)
         : rung;
       const isBench = benchmarks.has(w.n) && isQuality && !benchTaken;
       if (isBench) benchTaken = true;

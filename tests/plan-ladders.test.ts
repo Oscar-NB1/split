@@ -5,8 +5,9 @@ import {
   durability, prescribe, racePaceMultiplier, withoutAnchor,
 } from "../lib/plan/paces";
 import {
-  ENTRY, LADDERS, PHASE_MIX, canDoStations, ladderFor, rungFor,
+  ENTRY, LADDERS, canDoStations, ladderFor, rungFor,
 } from "../lib/plan/ladders";
+import { ZONE_BUDGET, ladderMix, z5Share } from "../lib/plan/zone-budget";
 
 // ------------------------------------------------------------------- paces
 
@@ -102,33 +103,74 @@ test("a phase does not open and close on the same rung", () => {
   assert.ok(across[across.length - 1] > across[0], across.join(" → "));
 });
 
+const mixOf = (phase: "base" | "build" | "specific" | "taper") =>
+  ladderMix(phase, "runs_regularly", true);
+
 test("race-specific work only appears in the phases that have it", () => {
-  assert.equal(PHASE_MIX.base.L6, undefined, "no simulations in base");
-  assert.equal(PHASE_MIX.build.L6, undefined);
-  assert.ok((PHASE_MIX.specific.L6 ?? 0) > 0);
+  assert.equal(mixOf("base").L6, undefined, "no simulations in base");
+  assert.equal(mixOf("build").L6, undefined);
+  assert.ok((mixOf("specific").L6 ?? 0) > 0);
 });
 
-test("L5 is maintenance, never a focus", () => {
-  // an athlete already running 400s at 3:39 needs threshold, not more top end
+test("almost no work above race pace, and none of it outside the build weeks", () => {
+  /*
+   * The old version of this test exempted the base phase from its own rule —
+   * `if (phase !== "base")` — which is how the table came to give L5 forty per cent
+   * of the base weeks while the comment above it said L5 was "never a focus". The
+   * test had been written to accommodate the bug.
+   *
+   * A Hyrox has no sprint in it and its shortest run is a kilometre. The top end an
+   * athlete needs comes from the strides in every quality warm-up, not from spending
+   * one of two weekly hard sessions above race pace.
+   */
+  assert.equal(z5Share("base"), 0, "a base phase has no business above race pace");
   for (const phase of ["base", "build", "specific", "taper"] as const) {
-    const mix = PHASE_MIX[phase];
-    const l5 = mix.L5 ?? 0;
-    const biggest = Math.max(...Object.values(mix));
-    assert.ok(l5 <= biggest, `${phase}: L5 at ${l5} against a peak of ${biggest}`);
-    if (phase !== "base") assert.ok(l5 < biggest, `${phase}: and never the largest share`);
+    assert.ok(z5Share(phase) <= 0.10, `${phase}: ${z5Share(phase) * 100}% above race pace`);
+    const mix = mixOf(phase);
+    const biggest = Math.max(...Object.values(mix) as number[]);
+    assert.ok((mix.L5 ?? 0) < biggest, `${phase}: L5 is never the largest share`);
   }
+});
+
+test("every phase's budget adds up, and each says what the phase is for", () => {
+  for (const phase of ["base", "build", "specific", "taper"] as const) {
+    const b = ZONE_BUDGET[phase];
+    const total = b.z3 + b.z4 + b.z5 + b.race;
+    assert.ok(Math.abs(total - 1) < 1e-9, `${phase} sums to ${total}`);
+  }
+  // base builds the ceiling; specific is race-shaped. That is the whole argument.
+  assert.ok(ZONE_BUDGET.base.z3 > ZONE_BUDGET.base.z4, "base is threshold-led");
+  assert.ok(ZONE_BUDGET.specific.z4 + ZONE_BUDGET.specific.race > 0.6,
+    "specific is race pace and stations");
+  assert.ok(ZONE_BUDGET.taper.z4 > ZONE_BUDGET.build.z4, "a taper is rehearsal");
+});
+
+test("an athlete who does not run is not given threshold intervals", () => {
+  /*
+   * The old table had no L1 or L2 at any phase, so their quality slot drew from the
+   * threshold ladder and their entry rung fell through to zero: "2 × 8 min" at
+   * threshold, in week one, for somebody who does not run.
+   */
+  for (const phase of ["base", "build", "specific", "taper"] as const) {
+    const mix = ladderMix(phase, "doesnt_run", true);
+    assert.deepEqual(Object.keys(mix).sort(), ["L1", "L2"], `${phase}: ${Object.keys(mix)}`);
+    const pick = ladderFor(phase, 0, true, "doesnt_run");
+    assert.ok(["L1", "L2"].includes(pick), `${phase} picked ${pick}`);
+  }
+  // and somebody taking walk breaks gets a little threshold, but not much
+  const walk = ladderMix("build", "walk_breaks", true);
+  assert.ok((walk.L1 ?? 0) > 0 && (walk.L3 ?? 0) > 0 && (walk.L3 ?? 0) < 0.5);
 });
 
 test("ladder choice is deterministic and follows the phase mix", () => {
   const picks = Array.from({ length: 10 }, (_, w) => ladderFor("build", w, true));
   assert.deepEqual(picks, Array.from({ length: 10 }, (_, w) => ladderFor("build", w, true)),
     "same input, same plan");
-  const l3 = picks.filter((p) => p === "L3").length;
-  const l4 = picks.filter((p) => p === "L4").length;
-  const l5 = picks.filter((p) => p === "L5").length;
-  assert.equal(l3, 4, "40%");
-  assert.equal(l4, 4, "40%");
-  assert.equal(l5, 2, "20%");
+  const share = (id: string) => picks.filter((p) => p === id).length;
+  // build: 40% threshold, 50% race pace, 10% above it — the budget, in sessions
+  assert.equal(share("L3"), 4, "40% threshold");
+  assert.equal(share("L4"), 5, "50% race pace");
+  assert.equal(share("L5"), 1, "10% above it, and only in this phase");
 });
 
 test("an athlete with no facility is never given a simulation", () => {
@@ -136,4 +178,44 @@ test("an athlete with no facility is never given a simulation", () => {
   const picks = Array.from({ length: 10 }, (_, w) => ladderFor("specific", w, false));
   assert.ok(!picks.includes("L6"), "L6 drops out and the rest take its share");
   assert.equal(picks.length, 10);
+});
+
+test("a session never gets easier because a phase changed", () => {
+  /*
+   * `weeksIn` counts from the start of the phase, so it went back to zero at every
+   * boundary: week 9 of the build finished on the top rung and week 10 of the
+   * specific phase started again at the bottom of the same ladder. The session got
+   * easier because the calendar turned a page.
+   */
+  const build = rungFor("L3", "runs_regularly", 4, "build", 8).rung;
+  const specific = rungFor("L3", "runs_regularly", 0, "specific", 9).rung;
+  assert.ok(specific >= build,
+    `build reached rung ${build}, specific restarted at ${specific}`);
+});
+
+test("the taper is the one phase allowed to go backwards", () => {
+  /*
+   * At a cap of 1.0 it reached the top of every ladder, and did: the first taper week
+   * prescribed 2 × 20 min — forty minutes at threshold, the longest quality session
+   * of the block, a fortnight out. Intensity stays; volume comes down.
+   */
+  const specific = rungFor("L3", "runs_regularly", 3, "specific", 12).rung;
+  const taper = rungFor("L3", "runs_regularly", 0, "taper", 13).rung;
+  assert.ok(taper < specific, `specific ${specific}, taper ${taper}`);
+});
+
+test("the race share belongs to the Hyrox session, not to the interval session", () => {
+  /*
+   * The quality slot and the Hyrox slot both drew from a mix containing L6, so
+   * roughly three in ten race-specific weeks prescribed "Compromised running" as the
+   * interval session as well — the same session twice, on consecutive days.
+   */
+  const running = ladderMix("specific", "runs_regularly", true, true);
+  assert.equal(running.L6, undefined, "a running slot never draws a simulation");
+  const week = ladderMix("specific", "runs_regularly", true);
+  assert.ok((week.L6 ?? 0) > 0, "the week's budget still spends it");
+
+  for (let w = 0; w < 10; w++) {
+    assert.notEqual(ladderFor("specific", w, true, "runs_regularly"), "L6");
+  }
 });
