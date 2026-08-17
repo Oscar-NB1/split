@@ -2,6 +2,7 @@ import { NextResponse, after, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { badRequest, notFound, route } from "@/lib/http";
+import { applyLengthFeel } from "@/lib/strength-apply";
 import { isUuid } from "@/lib/plan";
 import { parseSteps, parseStrength, repCount } from "@/lib/prescription";
 
@@ -129,8 +130,8 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
   if (!isUuid(id)) throw notFound("No such session.");
   const body = await req.json();
 
-  const [s] = await sql<{ id: string; user_id: string }[]>`
-    select id, user_id from planned_sessions where id = ${id}
+  const [s] = await sql<{ id: string; user_id: string; kind: string }[]>`
+    select id, user_id, kind from planned_sessions where id = ${id}
   `;
   if (!s) throw notFound("No such session.");
 
@@ -167,7 +168,17 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
           note = coalesce(excluded.note, session_feedback.note),
           updated_at = now()
       `;
-      return NextResponse.json({ ok: true });
+      /*
+       * And on a strength session, the report changes the next one.
+       *
+       * This is the whole point of asking. Stored and never read, "too long" is a
+       * question with no consequence, and an athlete works that out in about three
+       * weeks and stops answering.
+       */
+      let said: string | null = null;
+      if (feel && s.kind === "strength") said = await applyLengthFeel(me.id, feel);
+
+      return NextResponse.json({ ok: true, said });
     }
 
     // ------------------------------------------------------------- a message

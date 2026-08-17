@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import type { Send } from "./Brief";
 import { fmt } from "@/lib/dates";
 
 type Comment = {
@@ -17,7 +18,7 @@ export default function Thread({
   comments, meId, send, reload,
 }: {
   comments: Comment[]; meId: string;
-  send: (b: Record<string, unknown>) => Promise<boolean>; reload: () => void;
+  send: Send; reload: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);

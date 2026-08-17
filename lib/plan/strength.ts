@@ -81,7 +81,9 @@ const ACCESSORY_REST = 60;
  * the A day leads with a hinge and pulls, the B day with a squat and presses. Both
  * carry single-leg work and grip, because both are what the race takes.
  */
-export function liftsFor(phase: PhaseName, week: number, kit: Kit): Lift[] {
+export function liftsFor(
+  phase: PhaseName, week: number, kit: Kit, accessories = 0,
+): Lift[] {
   const s = SCHEME[phase] ?? SCHEME.base;
   const a = week % 2 === 1;
   const heavy = { sets: s.sets, reps: s.reps, rest: s.rest };
@@ -155,21 +157,50 @@ export function liftsFor(phase: PhaseName, week: number, kit: Kit): Lift[] {
     };
 
   /*
+   * The extras, when an athlete keeps saying the session is too short.
+   *
+   * Ordered by what a Hyrox actually asks for next, once the four compounds and the
+   * grip and core work are already in: the calf and hamstring load of two hundred
+   * metres of lunges, then the upper-back endurance the ski and the row end on.
+   */
+  const extra: Lift[] = [
+    {
+      name: "Calf raise", sets: 3, reps: 15, rest: ACCESSORY_REST,
+      note: "Slow down, pause at the bottom. The sled is a calf station and nobody trains it as one.",
+    },
+    {
+      name: kit.kettlebells ? "Kettlebell swing" : "Nordic or hamstring curl",
+      sets: 3, reps: 12, rest: ACCESSORY_REST,
+      note: "The hamstring is what holds the lunge together at 80 m.",
+    },
+  ];
+
+  /*
    * Four heavy movements, then two accessories.
    *
    * Both lower lifts every session, because the race is a leg event: the sled and
    * the lunge take more out of an athlete than everything above the waist put
    * together. Which upper lift alternates so the block is not the same six
    * exercises for fifteen weeks.
+   *
+   * The accessory count moves with what the athlete reported, and only the
+   * accessories move. An athlete who says the session ran long gets the tail
+   * trimmed; the four compounds are the session, and taking one of those away to
+   * save eight minutes removes the reason they went.
    */
-  return a
-    ? [hinge, singleLeg, pull, squat, grip, core]
-    : [squat, singleLeg, press, hinge, grip, core];
+  const compounds = a
+    ? [hinge, singleLeg, pull, squat]
+    : [squat, singleLeg, press, hinge];
+  const tail = [grip, core, ...extra];
+  const keep = Math.max(0, Math.min(tail.length, 2 + Math.round(accessories)));
+  return [...compounds, ...tail.slice(0, keep)];
 }
 
 /** The lifts as the app's strength syntax, one per line. */
-export function strengthTarget(phase: PhaseName, week: number, kit: Kit): string {
-  return liftsFor(phase, week, kit)
+export function strengthTarget(
+  phase: PhaseName, week: number, kit: Kit, accessories = 0,
+): string {
+  return liftsFor(phase, week, kit, accessories)
     .map((l) => `${l.name} ${l.sets}x${l.reps} rest ${l.rest}s`)
     .join("\n");
 }
@@ -177,3 +208,56 @@ export function strengthTarget(phase: PhaseName, week: number, kit: Kit): string
 /** What to say about the session as a whole. */
 export const strengthNote = (phase: PhaseName): string =>
   (SCHEME[phase] ?? SCHEME.base).note;
+
+/**
+ * The same session, made shorter or longer by what the athlete reported.
+ *
+ * Works on the written prescription rather than rebuilding from the phase, because
+ * that is what materialisation has in front of it — and because rebuilding would
+ * discard a session an athlete may already have loads recorded against.
+ *
+ * The first four lines are the compounds and are never touched. Everything after
+ * them is the tail, and the tail is what moves: an athlete who says the session ran
+ * long loses the calf raise, not the squat.
+ */
+const COMPOUNDS = 4;
+/** Grip and core: the tail every session carries before anything is added. */
+const BASE_TAIL = 2;
+
+export function resizeStrength(target: string | null | undefined, delta: number): string | null {
+  if (!target) return null;
+  const lines = target.split("\n").filter(Boolean);
+  if (!delta || lines.length <= COMPOUNDS) return target;
+
+  /*
+   * The delta is a length, not an increment.
+   *
+   * Written as "append `delta` more" it was not idempotent: materialisation writes
+   * the same block repeatedly, the two extras it had already added were filtered out
+   * as present, and the next two were appended instead — so a session would have
+   * grown nine accessories by November. The target is the tail it should end up
+   * with, so applying it to its own output changes nothing.
+   */
+  const want = Math.max(0, BASE_TAIL + Math.round(delta));
+
+  const kettlebells = /kettlebell|goblet|swing/i.test(target);
+  const EXTRAS = [
+    "Calf raise 3x15 rest 60s",
+    kettlebells ? "Kettlebell swing 3x12 rest 60s" : "Nordic or hamstring curl 3x12 rest 60s",
+    "Face pull or band row 3x15 rest 60s",
+  ];
+  const isExtra = (line: string) =>
+    EXTRAS.some((e) => line.toLowerCase().startsWith(e.split(" ")[0].toLowerCase()));
+
+  // The session as the plan wrote it: compounds, then the tail it came with, with
+  // anything a previous resize appended stripped back off first.
+  const original = lines.filter((l, i) => i < COMPOUNDS || !isExtra(l));
+  const tail = original.slice(COMPOUNDS);
+
+  if (want <= tail.length) {
+    return [...original.slice(0, COMPOUNDS), ...tail.slice(0, want)].join("\n");
+  }
+  const add = EXTRAS.filter((e) =>
+    !original.some((l) => l.toLowerCase().startsWith(e.split(" ")[0].toLowerCase())));
+  return [...original, ...add.slice(0, want - tail.length)].join("\n");
+}

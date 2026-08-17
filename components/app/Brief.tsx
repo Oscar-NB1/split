@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { fmt } from "@/lib/dates";
 import { kindColour, kindLabel } from "@/lib/coach";
 import type { Forecast } from "@/lib/weather";
+import { warmupFor } from "@/lib/warmup";
 import { humanDose, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
@@ -46,13 +47,21 @@ export function useSession(id: string) {
   }, [id]);
   useEffect(() => { load(); }, [load]);
 
-  const send = useCallback(async (body: Record<string, unknown>) => {
+  /**
+   * PATCH the session, and hand back what the server said.
+   *
+   * It returned a bare boolean, which was enough while every write was
+   * fire-and-forget. The length report is not: the server decides whether two
+   * matching answers have changed the next session, and the athlete has to be told.
+   */
+  const send = useCallback<Send>(async (body) => {
     const r = await fetch(`/api/session/${id}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (!r.ok) setErr((await r.json().catch(() => ({}))).error ?? "That didn't save.");
-    return r.ok;
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { setErr(j.error ?? "That didn't save."); return null; }
+    return j as Record<string, unknown>;
   }, [id]);
 
   return { d, setD, err, load, send };
@@ -85,6 +94,14 @@ function useForecast(date: string | null | undefined) {
 const WEATHER_MARK: Record<string, string> = {
   hot: "☀", warm: "☀", fine: "○", cold: "❄", wet: "☂", windy: "≋",
 };
+
+/**
+ * What a session write hands back: the server's own answer, or null if it failed.
+ *
+ * Not a boolean. The server decides things the screen cannot — whether two matching
+ * length reports have changed the next session — and it has to be able to say so.
+ */
+export type Send = (b: Record<string, unknown>) => Promise<Record<string, unknown> | null>;
 
 const TEAL = "#0A8FB0";
 const INK55 = "var(--ink-55)";
@@ -428,31 +445,7 @@ export default function Brief({
         </Action>
       </div>
 
-      {warmOpen && (
-        <div style={{ margin: "14px 18px 0", background: "var(--paper)",
-          border: "1px solid var(--teal)", borderRadius: "var(--r-card)",
-          padding: "15px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-              textTransform: "uppercase", color: "var(--teal)" }}>Warm-up</span>
-            <button onClick={() => setWarmOpen(false)} style={{ color: "var(--ink-40)", fontSize: 11,
-              fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>Hide</button>
-          </div>
-          {WARMUP.map((w, i) => (
-            <div key={w.name} style={{ display: "grid", gridTemplateColumns: "22px 1fr auto",
-              gap: 12, alignItems: "center", padding: "10px 0",
-              borderTop: i ? "1px solid var(--line-2)" : "none" }}>
-              <span style={{ fontFamily: "var(--display)", fontSize: 15, fontWeight: 700,
-                color: "var(--ink-40)" }}>{i + 1}</span>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{w.name}</span>
-                <span style={{ fontSize: 11, color: "var(--ink-55)", lineHeight: 1.4 }}>{w.cue}</span>
-              </div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: "var(--teal)", whiteSpace: "nowrap" }}>{w.dose}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
 
       {groups.length > 0 && (
         <div style={{ padding: "20px 18px 8px", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -594,21 +587,65 @@ function Action({ label, onClick, active, danger, children }: {
   );
 }
 
-/** A fixed warm-up. The plan prescribes sessions, not mobility, so this is ours. */
-const WARMUP = [
-  { name: "Easy jog", cue: "Conversational. Nothing to prove yet.", dose: "8 min" },
-  { name: "Leg swings", cue: "Front-to-back then side-to-side, holding something.", dose: "10 each" },
-  { name: "Walking lunge", cue: "Long step, back knee low, chest tall.", dose: "10 each" },
-  { name: "A-skips", cue: "Quick ground contact, tall posture.", dose: "2 × 20 m" },
-  { name: "Strides", cue: "Build to target pace, not past it.", dose: "4 × 20 s" },
-];
+/**
+ * The warm-up, for the session it sits under.
+ *
+ * Exported because the strength screen is a different component and had no warm-up at
+ * all — an athlete opening a squat session got nothing, and one opening a run got a
+ * runner's warm-up whether they were running or not.
+ */
+export function WarmupCard({ kind, title, onHide }: {
+  kind: string; title: string; onHide: () => void;
+}) {
+  const warmup = warmupFor(kind, title);
+  return (
+    <div style={{ margin: "14px 18px 0", background: "var(--paper)",
+      border: "1px solid var(--teal)", borderRadius: "var(--r-card)",
+      padding: "15px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
+          textTransform: "uppercase", color: "var(--teal)" }}>Warm-up</span>
+        <button onClick={onHide} style={{ color: "var(--ink-40)", fontSize: 11,
+          fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase" }}>Hide</button>
+      </div>
+      {/* What this warm-up is for, which changes with what follows it. There was one
+          warm-up in the app and it was a runner's: eight minutes of jogging and two
+          stride drills, prescribed before a back squat. */}
+      <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-55)", paddingBottom: 4 }}>
+        {warmup.purpose}
+      </div>
+      {warmup.steps.map((w, i) => (
+        <div key={w.name} style={{ display: "grid", gridTemplateColumns: "22px 1fr auto",
+          gap: 12, alignItems: "center", padding: "10px 0",
+          borderTop: i ? "1px solid var(--line-2)" : "none" }}>
+          <span style={{ fontFamily: "var(--display)", fontSize: 15, fontWeight: 700,
+            color: "var(--ink-40)" }}>{i + 1}</span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{w.name}</span>
+            <span style={{ fontSize: 11, color: "var(--ink-55)", lineHeight: 1.4 }}>{w.cue}</span>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "var(--teal)",
+            whiteSpace: "nowrap" }}>{w.dose}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** RPE and how long it felt. Both are the athlete's report, not the watch's. */
 export function Rpe({
   d, send, reload,
-}: { d: SessionDetail; send: (b: Record<string, unknown>) => Promise<boolean>; reload: () => void }) {
+}: { d: SessionDetail; send: Send; reload: () => void }) {
   const rpe = d.feedback?.rpe ?? null;
   const feel = d.feedback?.length_feel ?? null;
+  /*
+   * What the answer did, said back.
+   *
+   * "Too long" was stored and read by nobody. A question with no visible consequence
+   * stops being answered in about three weeks, and this is the only signal the app
+   * has about a session a watch cannot measure.
+   */
+  const [said, setSaid] = useState<string | null>(null);
   return (
     <div className="band">
       <span className="caps" style={{ color: "var(--ink)" }}>How did it feel?</span>
@@ -622,7 +659,11 @@ export function Rpe({
       </div>
       <div style={{ display: "flex", gap: 6 }}>
         {["short", "right", "long"].map((f) => (
-          <button key={f} onClick={async () => { await send({ action: "feedback", length_feel: f }); reload(); }}
+          <button key={f} onClick={async () => {
+            const r = await send({ action: "feedback", length_feel: f });
+            setSaid((r?.said as string | null) ?? null);
+            reload();
+          }}
             style={{ flex: 1, padding: "9px 0", borderRadius: "var(--r-pill)", fontSize: 11,
               fontWeight: 700, border: "1px solid",
               background: feel === f ? "var(--teal-tint)" : "transparent",
@@ -632,6 +673,12 @@ export function Rpe({
           </button>
         ))}
       </div>
+      {said && (
+        <div style={{ fontSize: 12, lineHeight: 1.5, color: "var(--teal)",
+          background: "var(--teal-tint2)", borderRadius: 8, padding: "10px 12px" }}>
+          {said}
+        </div>
+      )}
     </div>
   );
 }

@@ -541,12 +541,16 @@ function SessionFeedback({ sessionId, meId }: { sessionId: string; meId: string 
   };
   useEffect(() => { load(); }, [sessionId]);
 
+  // Hands back the server's answer rather than a boolean, for the same reason the
+  // session screen does: a length report can change the next session, and only the
+  // server knows whether it did.
   const send = async (body: Record<string, unknown>) => {
     const r = await fetch(`/api/session/${sessionId}`, {
       method: "PATCH", headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
-    return r.ok;
+    const j = await r.json().catch(() => ({}));
+    return r.ok ? (j as Record<string, unknown>) : null;
   };
 
   if (!d) return null;

@@ -1021,3 +1021,16 @@ create index if not exists build_failures_at on build_failures (at desc);
 alter table plan_templates add column if not exists pace_shift_s int not null default 0;
 alter table plan_templates add column if not exists pace_shift_declined_s int;
 alter table plan_templates add column if not exists pace_shift_at timestamptz;
+
+-- How long the strength session should be (2026-08-17).
+--
+-- "Too short" and "too long" were being stored on session_feedback and read by
+-- nobody: an athlete could report the same session too long for six weeks and be
+-- given it again every week. This is the accessory count, adjusted by what they
+-- said — the four heavy compounds are the session and are never touched, because
+-- the thing an athlete drops when a session overruns should not be the reason
+-- they turned up.
+--
+-- Clamped in code to ±2. Two reports in the same direction move it; one does not,
+-- because a single bad Tuesday is a bad Tuesday and not a prescription error.
+alter table plan_templates add column if not exists strength_accessories_delta int not null default 0;

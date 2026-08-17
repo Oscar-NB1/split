@@ -2,6 +2,7 @@ import { sql } from "./db";
 import { addDays, diffWeeks, mondayOf, today } from "./dates";
 import { FATIGUE_REASONS } from "./plan";
 import { shiftPaces } from "./prescription";
+import { resizeStrength } from "./plan/strength";
 
 /**
  * Template engine.
@@ -102,9 +103,10 @@ export async function materialise(templateId: string) {
   const [tpl] = await sql<{
     id: string; athlete_id: string; author_id: string; start_date: string;
     weeks: TemplateDay[][]; rules: Rules; horizon: number; pace_shift_s: number;
+    strength_accessories_delta: number;
   }[]>`
     select id, athlete_id, author_id, start_date::text as start_date,
-           weeks, rules, horizon, pace_shift_s
+           weeks, rules, horizon, pace_shift_s, strength_accessories_delta
     from plan_templates where id = ${templateId} and active
   `;
   if (!tpl) return { created: 0 };
@@ -157,7 +159,29 @@ export async function materialise(templateId: string) {
        and planned_date > ${now}
        and status = 'planned' and activity_id is null
        and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
-       and not exists (select 1 from session_sets st where st.session_id = planned_sessions.id)
+       and not exists (
+             select 1 from session_sets st
+              where st.session_id = planned_sessions.id
+                -- A prescribed set is not a record of anything.
+                --
+                -- Loads are pre-filled, so opening a strength session creates a row
+                -- per set with the prescribed load and reps already in it. Treating
+                -- the row's existence as evidence the athlete trained meant every
+                -- strength session they had ever looked at became permanent: a
+                -- rebuild could not replace it, and the day showed the session twice,
+                -- once from the old template and once from the new. What makes a set
+                -- theirs is ticking it off, or entering something other than what was
+                -- asked for.
+                --
+                -- The load cannot be the test. It is seeded from the last time the
+                -- athlete lifted that movement, so a pre-filled 60 kg against a
+                -- prescribed NULL looks like input and protected the row anyway.
+                -- Reps are seeded from the prescription, so a differing rep count is
+                -- genuinely theirs — and ticking a set off is the act of logging one.
+                and (st.done
+                     or st.note is not null
+                     or st.reps is distinct from st.prescribed_reps)
+           )
   `;
 
   /*
@@ -206,7 +230,18 @@ export async function materialise(templateId: string) {
        * than baked into the template so the original prescription is never lost and
        * a shift can be reversed by setting it back to zero.
        */
-      const target = shiftPaces(d.target, tpl.pace_shift_s) || null;
+      /*
+       * And the strength session's length, where the athlete has said something
+       * about it.
+       *
+       * Trimmed or extended here for the same reason the paces are shifted here:
+       * the template holds what the plan prescribed, and this holds what the
+       * athlete has since told it. Both are reversible by setting the number back
+       * to zero.
+       */
+      const target = d.kind === "strength"
+        ? resizeStrength(d.target, tpl.strength_accessories_delta)
+        : shiftPaces(d.target, tpl.pace_shift_s) || null;
 
       // Keyed on the date, not the plan week. The week number is derived, so
       // any change to how it's counted (this commit changed exactly that)
@@ -259,7 +294,23 @@ export async function materialise(templateId: string) {
             and source_ref = ${ref}
             and status = 'planned' and activity_id is null
             and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
-            and not exists (select 1 from session_sets st where st.session_id = planned_sessions.id)
+            and not exists (
+             select 1 from session_sets st
+              where st.session_id = planned_sessions.id
+                -- A prescribed set is not a record of anything.
+                --
+                -- Loads are pre-filled, so opening a strength session creates a row
+                -- per set with the prescribed load and reps already in it. Treating
+                -- the row's existence as evidence the athlete trained meant every
+                -- strength session they had ever looked at became permanent: a
+                -- rebuild could not replace it, and the day showed the session twice,
+                -- once from the old template and once from the new. What makes a set
+                -- theirs is ticking it off, or entering something other than what was
+                -- asked for.
+                and (st.done
+                     or st.note is not null
+                     or st.reps is distinct from st.prescribed_reps)
+           )
         `;
       }
     }

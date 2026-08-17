@@ -1,8 +1,9 @@
 "use client";
+import { useState } from "react";
 import { fmt } from "@/lib/dates";
 import { restFor, tonnage } from "@/lib/prescription";
 import Thread from "./Thread";
-import { Rpe, useSession, type SetRow } from "./Brief";
+import { Rpe, WarmupCard, useSession, type SetRow } from "./Brief";
 import type { Rest } from "./RestTimer";
 
 /**
@@ -20,6 +21,14 @@ export default function Strength({
   startRest: (r: Rest | null) => void;
 }) {
   const { d, setD, err, load, send } = useSession(id);
+  /*
+   * Open by default here, unlike on a run.
+   *
+   * There was no warm-up on this screen at all — an athlete opened a squat session
+   * and the first thing on it was a working set. A cold heavy first set is the most
+   * avoidable injury in the plan, and hiding the fix behind a tap made it optional.
+   */
+  const [warmOpen, setWarmOpen] = useState(true);
 
   if (err) return <div className="pad"><div className="errbox" role="alert">{err}</div></div>;
   if (!d) return <div className="pad"><p className="empty">Loading…</p></div>;
@@ -94,6 +103,18 @@ export default function Strength({
           </span>
         </div>
       </div>
+
+      {warmOpen && (
+        <WarmupCard kind="strength" title={d.session.title} onHide={() => setWarmOpen(false)} />
+      )}
+      {!warmOpen && (
+        <div style={{ padding: "12px 18px 0" }}>
+          <button onClick={() => setWarmOpen(true)} style={{ fontSize: 11, fontWeight: 700,
+            letterSpacing: ".06em", textTransform: "uppercase", color: "var(--teal)" }}>
+            Show warm-up
+          </button>
+        </div>
+      )}
 
       {byExercise.length === 0 && (
         <div className="band">
