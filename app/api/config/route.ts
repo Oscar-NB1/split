@@ -61,7 +61,23 @@ export const GET = route(async () => {
       // No key, by design. Worth stating so nobody goes looking for one.
       configured: true,
       env: null,
-      note: "Open-Meteo needs no key. Forecast to 16 days, climate averages beyond it.",
+      note: "Open-Meteo needs no key. Forecast to 15 days, and nothing beyond it.",
+    },
+    /*
+     * The model that reads "what changed this week". Configured or not, never the key.
+     *
+     * Missing is a working state, not a broken one: the rule-based parser takes over and the
+     * athlete sees no difference except on the sentences it cannot follow. Reported because
+     * "my rebuild understood less than I expected" and "the key is not set" look identical
+     * from the outside, which is the same problem the Mapbox block exists to solve.
+     */
+    model: {
+      configured: Boolean(process.env.ANTHROPIC_API_KEY),
+      env: process.env.ANTHROPIC_API_KEY ? "ANTHROPIC_API_KEY" : null,
+      note: process.env.ANTHROPIC_API_KEY
+        ? "Rebuild my week reads your sentence with claude-opus-5, falling back to rules."
+        : "Not set. Rebuild my week reads your sentence with rules only — which is tested, "
+          + "just less forgiving of self-correcting speech.",
     },
     strava: {
       configured: Boolean(process.env.STRAVA_CLIENT_ID && process.env.STRAVA_CLIENT_SECRET),

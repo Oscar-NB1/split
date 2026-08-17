@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/session";
 import { badRequest, route } from "@/lib/http";
 import { isDateString } from "@/lib/plan";
 import { today } from "@/lib/dates";
-import { parseWeek } from "@/lib/plan/parse-week";
+import { parseWeekWith } from "@/lib/plan/parse-week-llm";
 import { rebuildWeek, type WeekSession } from "@/lib/plan/rebuild";
 
 /**
@@ -99,7 +99,12 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const week = await weekOf(me.id, monday);
   if (week.length === 0) throw badRequest("There is nothing in that week to rebuild.");
 
-  const parsed = parseWeek(raw);
+  /*
+   * The model reads the sentence when there is a key for it, and the rules read it when there
+   * is not — same shape either way, and the week is rebuilt by the same deterministic code
+   * from whichever set of constraints comes back.
+   */
+  const { by, ...parsed } = await parseWeekWith(raw, week);
   const out = rebuildWeek(week.map((s) => ({ ...s })), parsed);
 
   /*
@@ -112,6 +117,12 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   const proposal = {
     monday,
     parsed,
+    /*
+     * Which parser read it, stored alongside. When a rebuild goes wrong the first question is
+     * whether the sentence was misread or the week was misbuilt, and this answers it without
+     * having to re-run anything.
+     */
+    parsed_by: by,
     sessions: out.sessions.map((s) => ({
       ...s, date: dateFor(monday, s.day), title: byId.get(s.id)?.title ?? s.label,
       moved_from: byId.get(s.id)?.day !== s.day ? DAY[byId.get(s.id)?.day ?? 0] : null,

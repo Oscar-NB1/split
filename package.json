@@ -17,6 +17,7 @@
     "lint": "eslint components lib app"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "jose": "^5.9.6",
     "next": "^15.1.0",
     "postgres": "^3.4.5",
