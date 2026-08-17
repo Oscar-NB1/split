@@ -23,6 +23,19 @@ export type Signal = {
   achieved: number;
   /** -1 when more is better (a lift), +1 when less is (a pace) */
   dir?: number;
+  /**
+   * What the conditions cost, in seconds per km, where they are known.
+   *
+   * A session run at 29°C is not evidence that an athlete got slower, and this
+   * engine cannot tell the difference on its own: it reads pace against
+   * prescription and nothing else. Without this, a hot fortnight recommends
+   * slowing a whole plan down — permanently, from a temporary cause.
+   *
+   * Used in one direction only. A missed target in bad conditions is discounted;
+   * a target *beaten* in bad conditions is left exactly as it is, because that is
+   * a real signal and arguably a stronger one than the same run in still air.
+   */
+  conditions_s?: number;
 };
 
 export type Read = {
@@ -65,11 +78,23 @@ export function read(signals: Signal[], goalSeconds: number, band = BAND): Read 
     };
   }
 
-  // delta is sign-normalised so negative always means better than prescribed
-  const points = signals.map((s) => ({
-    ...s,
-    delta: (s.achieved - s.prescribed) * (s.dir ?? 1),
-  }));
+  /*
+   * Delta is sign-normalised so negative always means better than prescribed, and
+   * discounted for conditions in the slower direction only.
+   *
+   * Asymmetric on purpose. Crediting a fast run back towards its target would be
+   * the app arguing with evidence in its favour; discounting a slow one is the app
+   * refusing to draw a conclusion the weather already explains. The discount can
+   * only ever pull a delta towards zero — never past it into the opposite verdict.
+   */
+  const points = signals.map((s) => {
+    const raw = (s.achieved - s.prescribed) * (s.dir ?? 1);
+    const allowance = s.conditions_s ?? 0;
+    return {
+      ...s,
+      delta: raw > 0 && allowance > 0 ? Math.max(0, raw - allowance) : raw,
+    };
+  });
 
   const recent = points.slice(-WINDOW);
   let wSum = 0, dSum = 0;

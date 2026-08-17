@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fmt } from "@/lib/dates";
 import { kindColour, kindLabel } from "@/lib/coach";
+import type { Forecast } from "@/lib/weather";
 import { humanDose, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
@@ -56,6 +57,34 @@ export function useSession(id: string) {
 
   return { d, setD, err, load, send };
 }
+
+/**
+ * The forecast for the day this session is on.
+ *
+ * Loaded separately from the session rather than joined into it, for two reasons: it
+ * comes from a third party that can be slow or down, and a session screen must open
+ * instantly whether or not the weather answered. A null forecast renders nothing at
+ * all — no skeleton, no "unavailable" — because a training app has nothing useful to
+ * say about the weather it could not fetch.
+ */
+function useForecast(date: string | null | undefined) {
+  const [f, setF] = useState<Forecast | null>(null);
+  useEffect(() => {
+    if (!date) return;
+    let live = true;
+    fetch(`/api/weather?date=${date}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (live) setF(j?.forecast ?? null); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [date]);
+  return f;
+}
+
+/** What the day looks like, in one glyph. */
+const WEATHER_MARK: Record<string, string> = {
+  hot: "☀", warm: "☀", fine: "○", cold: "❄", wet: "☂", windy: "≋",
+};
 
 const TEAL = "#0A8FB0";
 const INK55 = "var(--ink-55)";
@@ -275,6 +304,7 @@ export default function Brief({
   const [mode, setMode] = useState("Outdoor");
   const [sent, setSent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const weather = useForecast(d?.session.planned_date);
 
   if (err) return <div className="pad"><div className="errbox" role="alert">{err}</div></div>;
   if (!d) return <div className="pad"><p className="empty">Loading…</p></div>;
@@ -346,6 +376,38 @@ export default function Brief({
                 textTransform: "uppercase" }}>Why this session matters</span>
             </div>
             <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-70)" }}>{why}</div>
+          </div>
+        </div>
+      )}
+
+      {weather && !done && (
+        <div style={{ padding: "14px 18px 0" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start",
+            background: weather.cost_s >= 6 ? "var(--gold-tint, #FBF3DE)" : "var(--paper)",
+            border: `1px solid ${weather.cost_s >= 6 ? "#E8C051" : "var(--line)"}`,
+            borderRadius: "var(--r-card)", padding: "13px 15px" }}>
+            <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1,
+              color: weather.cost_s >= 6 ? "#B08A1E" : "var(--ink-40)" }}>
+              {WEATHER_MARK[weather.verdict] ?? "○"}
+            </span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em",
+                textTransform: "uppercase", color: "var(--ink-55)" }}>
+                {/* The numbers, so the advice underneath is checkable. */}
+                {Math.round(weather.temp_c)}°C · {weather.humidity}% · {weather.wind_kmh} km/h
+              </div>
+              <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)" }}>
+                {weather.headline}
+              </div>
+              {weather.cost_s >= 6 && (
+                <div style={{ fontSize: 11, color: "var(--ink-55)" }}>
+                  {/* Said out loud, because an athlete who misses a target in a
+                      heatwave should know the plan already knows why. */}
+                  Missing the target in this does not count against you — the plan
+                  discounts conditions like these before it recommends anything.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

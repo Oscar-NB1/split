@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/session";
 import { notFound, route } from "@/lib/http";
 import { isUuid } from "@/lib/plan";
 import { decodePolyline } from "@/lib/analysis";
-import { staticMapUrl } from "@/lib/map";
+import { clipEnds, staticMapUrl } from "@/lib/map";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -34,10 +34,18 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
   `;
   if (!row?.polyline) throw notFound("No route recorded for this activity.");
 
-  const url = staticMapUrl(
-    decodePolyline(row.polyline),
-    row.user_id === me.id ? COLOUR.a : COLOUR.b,
-  );
+  /*
+   * Both ends trimmed before anything is drawn.
+   *
+   * A route drawn door to door publishes an address. The trim happens here rather
+   * than in the renderer so there is one place it can be forgotten, and so the
+   * clipped shape is what reaches Mapbox — an unclipped polyline in a third party's
+   * request log is the same disclosure as one on the screen.
+   */
+  const points = clipEnds(decodePolyline(row.polyline));
+  if (points.length < 2) throw notFound("This route is too short to show without its start.");
+
+  const url = staticMapUrl(points, row.user_id === me.id ? COLOUR.a : COLOUR.b);
   // no token configured: the client falls back to drawing the outline itself
   if (!url) throw notFound("No basemap configured.");
 

@@ -7,7 +7,7 @@ import {
   classifySegments, decodePolyline, downsample, statsFor,
   type LapRow, type StreamData,
 } from "@/lib/analysis";
-import { hasBasemap } from "@/lib/map";
+import { clipEnds, hasBasemap } from "@/lib/map";
 import { stationOfSplit } from "@/lib/stations";
 import { zoneSeconds } from "@/lib/coach";
 import { sanitise as zonesOf } from "@/lib/zones";
@@ -151,7 +151,17 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
       pct: zoneTotal ? Math.round((zoneSecs[i] / zoneTotal) * 100) : 0,
     })),
     zoneTotal,
-    route: activity.polyline ? decodePolyline(activity.polyline) : [],
+    /*
+     * The route, with both ends trimmed.
+     *
+     * Clipped on the way out, not on the way in: the recorded activity keeps its
+     * full trace so a future feature can compute distance or elevation from it, but
+     * nothing that leaves the server carries the two hundred metres around the door.
+     * The client's own fallback renderer draws whatever this sends, so clipping only
+     * the Mapbox path would have hidden the address from Mapbox and shown it to
+     * everyone looking at the screen.
+     */
+    route: activity.polyline ? clipEnds(decodePolyline(activity.polyline)) : [],
     // whether MAPBOX_TOKEN is configured. The client can't read it (no
     // NEXT_PUBLIC_ prefix, by design), so the server has to say.
     basemap: hasBasemap(),

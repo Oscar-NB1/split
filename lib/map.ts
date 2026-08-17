@@ -57,6 +57,53 @@ export function encodePolyline(points: [number, number][]): string {
   return out;
 }
 
+/** Metres between two coordinates, near enough at running distances. */
+function metresBetween(a: [number, number], b: [number, number]): number {
+  const lat = ((a[0] + b[0]) / 2) * (Math.PI / 180);
+  const dy = (b[0] - a[0]) * 111_320;
+  const dx = (b[1] - a[1]) * 111_320 * Math.cos(lat);
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * How much of each end to hide, in metres.
+ *
+ * Most runs start and finish at the door. A route drawn end to end publishes an
+ * address to anyone who can see the activity — which here is a training partner,
+ * but the app is built for more than two people and the default should be the safe
+ * one. Two hundred metres is the usual privacy radius: enough to cover a street,
+ * short enough that a 5 km route still looks like itself.
+ */
+export const PRIVACY_METRES = 200;
+
+/**
+ * The route with both ends trimmed.
+ *
+ * Trimmed by distance from the first and last point rather than by a count of
+ * points, because sample density varies: the same twenty points is fifty metres
+ * standing at a junction and half a kilometre on a straight.
+ *
+ * An out-and-back returns to where it started, so the radius around the start also
+ * catches the finish, which is the intent. If clipping would leave almost nothing —
+ * a treadmill drift, a lap of a small park — the whole route is dropped instead of
+ * shown as a stub, since a stub near the door is exactly what this is protecting.
+ */
+export function clipEnds(
+  points: [number, number][], metres = PRIVACY_METRES,
+): [number, number][] {
+  if (points.length < 2 || metres <= 0) return points;
+  const start = points[0];
+  const finish = points[points.length - 1];
+
+  let from = 0;
+  while (from < points.length && metresBetween(start, points[from]) < metres) from++;
+  let to = points.length - 1;
+  while (to > from && metresBetween(finish, points[to]) < metres) to--;
+
+  const kept = points.slice(from, to + 1);
+  return kept.length >= 8 ? kept : [];
+}
+
 /**
  * The Mapbox URL for one route, or null if there is no token or no route.
  *

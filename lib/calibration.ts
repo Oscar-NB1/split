@@ -1,7 +1,8 @@
 import { sql } from "./db";
-import { classifySegments, statsFor, type LapRow } from "./analysis";
+import { classifySegments, decodePolyline, statsFor, type LapRow } from "./analysis";
 import { prescribedPace, type Signal } from "./signals";
 import { blockFor } from "./block-db";
+import { conditionsCost, forecast } from "./weather";
 import type { Block } from "./block";
 
 /**
@@ -57,6 +58,25 @@ export async function signalsFor(userId: string): Promise<Gathered> {
   const signals: Signal[] = [];
   const skipped: { title: string; why: string }[] = [];
 
+  /*
+   * Where they were running, for the conditions on the day.
+   *
+   * One lookup for the whole set rather than one per session, from the most recent
+   * route, rounded to about a kilometre. It is the same derivation the weather
+   * endpoint uses and for the same reason: nobody is asked for a location, and the
+   * precise one never leaves this file.
+   */
+  const [place] = await sql<{ polyline: string | null }[]>`
+    select raw #>> '{map,summary_polyline}' as polyline
+      from activities
+     where user_id = ${userId} and coalesce(raw #>> '{map,summary_polyline}', '') <> ''
+     order by local_date desc limit 1
+  `;
+  const at = place?.polyline ? decodePolyline(place.polyline)[0] : null;
+  const where = at
+    ? { lat: Math.round(at[0] * 100) / 100, lon: Math.round(at[1] * 100) / 100 }
+    : null;
+
   for (const r of rows) {
     const prescribed = prescribedPace(r.title);
     if (prescribed == null) {
@@ -87,6 +107,20 @@ export async function signalsFor(userId: string): Promise<Gathered> {
       skipped.push({ title: r.title, why: "no usable pace in the laps" });
       continue;
     }
+    /*
+     * What the weather cost, where it can be known.
+     *
+     * Open-Meteo serves history from the same endpoint, so a session from six weeks
+     * ago gets the conditions it was actually run in. If the lookup fails the signal
+     * still counts at face value — an unavailable weather service must never remove
+     * evidence, only ever explain it.
+     */
+    let conditions_s = 0;
+    if (where) {
+      const f = await forecast(where.lat, where.lon, r.planned_date);
+      if (f) conditions_s = conditionsCost(f);
+    }
+
     signals.push({
       on: r.planned_date,
       label: r.title,
@@ -94,6 +128,7 @@ export async function signalsFor(userId: string): Promise<Gathered> {
       weight: weightFor(r.significance, r.title),
       prescribed,
       achieved: 1000 / stats.avg_speed_ms,
+      conditions_s,
     });
   }
 
