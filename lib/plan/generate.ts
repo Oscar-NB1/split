@@ -273,6 +273,42 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       + (runSlots.quality_run + (benchmarks.has(w.n) ? 1 : 0)) * 12;
     const asked = Math.round(w.km * 10) / 10;
     const runnable = Math.max(3, Math.min(asked, Math.round(capacity * 10) / 10));
+    /*
+     * And where the sessions' own minimums exceed the week, there are too many sessions.
+     *
+     * A session has a floor — an easy run is not an easy run below 3 km, a long run below
+     * 5, an interval session below two reps — and for a low-volume athlete those floors add
+     * up to more than the curve asks for. Sarah's week 1 curve is 9 km; five slots with
+     * their minimums come to 21.8, so the plan silently delivered two and a half times what
+     * it had decided was safe, every week, and the ramp became irrelevant.
+     *
+     * The answer is fewer running sessions, not shorter ones. Easy runs come off first —
+     * they are the slot the week can most afford to lose — until the floors fit, and the
+     * week says how many it dropped and why.
+     */
+    const FLOOR = { long_run: 5, easy_run: 3, quality_run: 8 };
+    let floor = () => (runSlots.long_run ? FLOOR.long_run : 0)
+      + runSlots.easy_run * FLOOR.easy_run
+      + runSlots.quality_run * FLOOR.quality_run;
+    let shed = 0;
+    while (floor() > runnable && runSlots.easy_run > 0) {
+      runSlots.easy_run -= 1;
+      shed += 1;
+    }
+    if (shed > 0) {
+      const idx = placed.week.findIndex((x) => x.kind === "easy_run");
+      for (let i = 0; i < shed; i += 1) {
+        const at = placed.week.findIndex((x) => x.kind === "easy_run");
+        if (at >= 0) placed.week.splice(at, 1);
+      }
+      void idx;
+      flags.push({
+        code: "sessions_over_target",
+        message: `Week ${w.n}: ${shed} easy run${shed > 1 ? "s" : ""} dropped. Your week is ${
+          runnable} km and a session has a floor — an easy run is not an easy run below 3 km — so the honest way to hit that number is fewer runs, not shorter ones.`,
+      });
+    }
+
     if (asked - runnable > 2) {
       flags.push({
         code: "volume_capacity",
