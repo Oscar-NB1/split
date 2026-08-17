@@ -48,7 +48,7 @@ function readKm(target: string): number {
 /** Only these reach a session. Anything else in a document is a problem, not a row. */
 const KINDS = new Set([
   "quality_run", "easy_run", "long_run", "hyrox", "easy_hyrox", "strength", "race",
-  "kickboxing", "benchmark",
+  "kickboxing", "spin", "benchmark",
 ]);
 
 export type WriteResult = {
@@ -104,7 +104,7 @@ export function check(
          * athlete already does, and the race. Anything else with an empty target is a session
          * screen with nothing on it.
          */
-        if (!s.commitment && s.kind !== "race") {
+        if (!s.commitment && s.kind !== "race" && s.kind !== "spin") {
           problems.push(`${where}: "${s.title}" has no prescription`);
         }
         continue;

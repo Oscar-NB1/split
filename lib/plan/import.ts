@@ -68,7 +68,18 @@ export type Imported = {
 };
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const dayOf = (s: string) => DAYS.indexOf(s.trim());
+
+/**
+ * "Mon", or "Mon 26" — a day cell may carry its date.
+ *
+ * Her race week is three days long and names them "Mon 26", "Tue 27", "Wed 28". An exact match on
+ * the day name found none of them, so the week parsed with no sessions in it at all.
+ */
+const dayOf = (s: string): number => {
+  const m = /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\b/i.exec(s.trim());
+  return m ? DAYS.findIndex((d) => d.toLowerCase() === m[1].toLowerCase()) : -1;
+};
+const isDayCell = (s: string) => dayOf(s) >= 0 && /^\w{3}(\s+\d{1,2})?$/.test(s.trim());
 
 /** En dashes, non-breaking spaces and the rest of what a word processor leaves behind. */
 const clean = (s: string) =>
@@ -127,12 +138,28 @@ function zoneFor(name: string): string {
 function quality(
   detail: string, name: string,
 ): { target: string; km: number; minutes: number; over: number } | null {
+  /*
+   * A stated total where there is one, and the work plus a warm-up where there is not.
+   *
+   * Her test days say only what the test is — "Thursday: 2 km time trial" — with no total, because
+   * for a 2 km test the total is not the interesting number. Requiring one made every test day
+   * unreadable, and a test is the session the rest of the block is measured against.
+   */
   const total = /(\d+(?:\.\d+)?)\s*km\s*total/i.exec(detail);
-  if (!total) return null;
-  const km = Number(total[1]);
+  const km = total ? Number(total[1]) : 0;
   const zone = zoneFor(name);
 
   const tt = /(\d+(?:\.\d+)?)\s*km\s+time trial/i.exec(detail);
+  /*
+   * "6 × (3 min run / 1 min walk)" — a run/walk set, which is what a new runner's key session is.
+   *
+   * Written with the walk inside the bracket rather than as a recovery after it, so the reps
+   * pattern below never saw it: the "(" stopped the match dead and every one of her key runs came
+   * back unreadable. It is its own shape because the walk is part of the rep, not a rest between
+   * reps — and it is the whole reason the session is doable at all.
+   */
+  const runwalk =
+    /(\d+)\s*[×x]\s*\(\s*(\d+(?:\.\d+)?)\s*min[^/]*\/\s*(\d+(?:\.\d+)?)\s*min/i.exec(detail);
   const reps = /(\d+)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(km|m|min)\b/i.exec(detail);
   const pace = paceOf(detail.split("·").find((p) => /@/.test(p)) ?? "");
   /*
@@ -149,7 +176,15 @@ function quality(
   let workKm = 0;
   const work: string[] = [];
 
-  if (tt) {
+  if (runwalk) {
+    const n = Number(runwalk[1]), on = Number(runwalk[2]), off = Number(runwalk[3]);
+    const paceS = pace ? paceSeconds(pace) : 0;
+    /* Only the running counts as distance. The walk is time on the clock, not kilometres run. */
+    workKm = paceS ? ((on * 60) / paceS) * n : 0;
+    work.push(`- ${n}x`);
+    work.push(`- ${on} min ${zone}${pace ? ` @ ${pace}/km` : ""}`);
+    work.push(`- ${off} min Z1 walk`);
+  } else if (tt) {
     workKm = Number(tt[1]);
     work.push(`- ${doseKm(workKm)} ${zone} time trial — nonstop, negative split`);
   } else if (reps) {
@@ -181,7 +216,10 @@ function quality(
   let over = 0;
   /* A warm-up and a short cool-down is about a mile and a half. Below that there is no room. */
   const FLOOR = 1.5;
-  if (spare < FLOOR) {
+  if (!total) {
+    /* Nothing to overshoot: the session is whatever the work plus a warm-up comes to. */
+    spare = FLOOR;
+  } else if (spare < FLOOR) {
     over = km1(FLOOR - spare);
     spare = FLOOR;
   }
@@ -198,7 +236,7 @@ function quality(
   const restS = reps && rest ? Number(reps[1]) * rest.seconds : 0;
   return {
     target: lines.join("\n"),
-    km: km1(km + over),
+    km: km1(total ? km + over : workKm + spare),
     minutes: Math.round((spare * 330 + workS + restS) / 60),
     over,
   };
@@ -379,13 +417,26 @@ function strength(detail: string): { target: string; minutes: number; note?: str
 function kindOf(name: string): { kind: string; hard: boolean } | null {
   const n = name.toLowerCase();
   if (/^rest$|^off$|^—$|^-$/.test(n)) return null;
-  if (/b-race|^race$/.test(n)) return { kind: "race", hard: true };
+  /* "RACE — Hyrox mixed doubles" as much as "RACE" or "Race day": the word leads the cell. */
+  if (/b-race|^race\b|race day/.test(n)) return { kind: "race", hard: true };
   if (/full sim/.test(n)) return { kind: "hyrox", hard: true };
   if (/hyrox class/.test(n)) return { kind: "hyrox", hard: /hard/i.test(n) };
-  if (/^quality|openers/.test(n)) return { kind: "quality_run", hard: true };
+  /*
+   * "KEY RUN" and "TEST" are what her plan calls the session the week turns on. Named by
+   * importance rather than by content, which is not how this app names things — but it is her
+   * coach's word for it, and an import does not rename sessions.
+   */
+  if (/^quality|openers|^key run|^test\b|time trial/.test(n)) {
+    return { kind: "quality_run", hard: true };
+  }
   if (/^strength/.test(n)) return { kind: "strength", hard: false };
   if (/long run/.test(n)) return { kind: "long_run", hard: false };
   if (/easy run|shakeout/.test(n)) return { kind: "easy_run", hard: false };
+  /*
+   * A studio spin class, twice a week, fixed to its days. Somebody else runs it and it is not
+   * the plan's to prescribe — the same treatment his kickboxing gets.
+   */
+  if (/rocycle|spin|cycl/.test(n)) return { kind: "spin", hard: false };
   return null;
 }
 
@@ -397,11 +448,30 @@ function sessionsFrom(
   const k = kindOf(name);
   const where = `week ${week} ${DAYS[day]}`;
 
+  /*
+   * A studio class she already attends, twice a week, fixed to its days.
+   *
+   * Built here rather than through a prescription builder because there is nothing to prescribe:
+   * somebody else runs it, the plan is arranged around it, and inventing a target for it would be
+   * writing a session she is not going to do.
+   */
+  if (k?.kind === "spin") {
+    return [{
+      day, kind: "spin", title: clean(name), target: "",
+      note: clean(detail) || undefined, minutes: 45, km: 0, commitment: true,
+    }];
+  }
+
   if (k) {
     let built: {
       target: string; km?: number; minutes: number; note?: string; over?: number;
     } | null = null;
-    if (k.kind === "quality_run") built = quality(detail, name);
+    /*
+     * Her key runs put the structure in the session's name and the total in the detail:
+     * "KEY RUN — 6 × (3 min run / 1 min walk)" against "2.5 km total · …". His put both in the
+     * detail. Reading the two joined finds it either way, and neither document had to change.
+     */
+    if (k.kind === "quality_run") built = quality(`${detail} · ${name}`, name);
     else if (k.kind === "long_run" || k.kind === "easy_run") built = run(detail, name);
     else if (k.kind === "hyrox") built = hyroxClass(detail, name);
     else if (k.kind === "strength") built = strength(detail);
@@ -510,11 +580,11 @@ export function parsePlan(text: string, year = 2026): Imported {
       continue;
     }
 
-    if (cur && DAYS.includes(line) && i + 2 < lines.length) {
+    if (cur && isDayCell(line) && i + 2 < lines.length) {
       const name = clean(lines[i + 1]);
       const detail = clean(lines[i + 2]);
       /* A day row is three cells. Anything else and the table has been misread. */
-      if (DAYS.includes(name)) { i += 1; continue; }
+      if (isDayCell(name)) { i += 1; continue; }
       cur.sessions.push(
         ...sessionsFrom(dayOf(line), name, detail, problems, notes, cur.n));
       i += 3;
@@ -525,7 +595,7 @@ export function parsePlan(text: string, year = 2026): Imported {
      * The paragraph after a week's table, where there is one, is the author's note about the
      * week. Kept, because it is the part that says why the week is shaped as it is.
      */
-    if (cur && cur.sessions.length > 0 && line && !DAYS.includes(line)
+    if (cur && cur.sessions.length > 0 && line && !isDayCell(line)
       && !/^(Day|Session|Detail)$/i.test(line) && !cur.note && !/^Week \d/.test(line)) {
       cur.note = line;
     }
