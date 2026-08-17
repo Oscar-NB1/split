@@ -14,6 +14,17 @@ import type { Rest } from "./RestTimer";
  * what was written". A set that came in 10 kg under is the signal; a set with no
  * prescription to compare against is just a number.
  */
+/**
+ * How much one tap moves a load.
+ *
+ * 2.5 kg was the smallest plate pair, which is the right step for a barbell and far too
+ * coarse for a dumbbell or a kettlebell progression — and it made the stepper unusable
+ * for nudging a number the plan had estimated. Half a kilo, rounded so floating-point
+ * addition cannot leave 47.50000000000001 in the box.
+ */
+const STEP = 0.5;
+const round = (n: number) => Math.round(n * 2) / 2;
+
 export default function Strength({
   id, meId, onChanged, startRest,
 }: {
