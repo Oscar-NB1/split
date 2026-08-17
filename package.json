@@ -13,7 +13,8 @@
     "strava:subscribe": "tsx scripts/subscribe-webhook.ts",
     "typecheck": "tsc --noEmit",
     "test": "TZ=Europe/Berlin node --import tsx --test tests/*.test.ts",
-    "build:check": "BUILD_CHECK=1 next build"
+    "build:check": "BUILD_CHECK=1 next build",
+    "lint": "eslint components lib app"
   },
   "dependencies": {
     "jose": "^5.9.6",
@@ -27,6 +28,9 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/web-push": "^3.6.4",
+    "@typescript-eslint/parser": "^8.67.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.2"
   }
