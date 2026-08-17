@@ -44,6 +44,22 @@ export function mapboxToken(): string | null {
     // be used here, because this URL is what the athlete's browser fetches.
     if (v && v.trim() && !v.startsWith("sk.")) return v.trim();
   }
+  /*
+   * Any variable at all whose value is a Mapbox public token.
+   *
+   * Four guessed names was still a guessing game, and losing that game looks exactly
+   * like the feature not existing — the client draws its own outline and says nothing.
+   * A `pk.` prefix is unambiguous: Mapbox issues them and nothing else does, so a
+   * variable holding one was put there to be used, whatever it was called.
+   */
+  for (const [name, v] of Object.entries(process.env)) {
+    if (v && v.startsWith("pk.") && v.length > 40) {
+      if (!NAMES.includes(name as (typeof NAMES)[number])) {
+        console.log(`[map] using the Mapbox token in ${name}`);
+      }
+      return v.trim();
+    }
+  }
   return null;
 }
 
@@ -52,7 +68,12 @@ export const mapboxTokenName = (): string | null =>
   NAMES.find((n) => {
     const v = process.env[n];
     return Boolean(v && v.trim() && !v.startsWith("sk."));
-  }) ?? null;
+  })
+  ?? Object.keys(process.env).find((n) => {
+    const v = process.env[n];
+    return Boolean(v && v.startsWith("pk.") && v.length > 40);
+  })
+  ?? null;
 
 export const hasBasemap = () => Boolean(mapboxToken());
 

@@ -158,7 +158,26 @@ a:hover{color:var(--teal-l)}
  * bar is unchanged.
  */
 @supports (padding:max(0px)){
-  .tabbar button{padding-bottom:max(6px, calc(18px - env(safe-area-inset-bottom)))}
+  /*
+   * The labels sit as close to the indicator area as is safe, and the inset itself is
+   * capped.
+   *
+   * Twice now I have "fixed" this by reasoning about it and been wrong, so here is what
+   * is actually happening, measured from the CSS rather than guessed: on a phone with a
+   * home indicator, `env(safe-area-inset-bottom)` is about 34px. The bar pads itself by
+   * that much so its labels clear the indicator — and the bar's background is
+   * `--paper`, which in the light theme is pure white. So below the labels there is a
+   * 34px band of white inside the bar. It is not a gap and nothing is missing; it is a
+   * white strip, and a white strip under four small labels reads as blank space,
+   * because that is what it looks like.
+   *
+   * Two changes. The button's own bottom padding goes entirely when an inset exists —
+   * the inset is already the clearance, and adding 6px more just makes the strip
+   * taller. And the inset is capped at 20px, which still clears the indicator on every
+   * current iPhone while taking a third off the height of the band.
+   */
+  .tabbar{padding-bottom:min(20px, env(safe-area-inset-bottom))}
+  .tabbar button{padding-bottom:max(2px, calc(14px - env(safe-area-inset-bottom)))}
 }
 .tabbar button[aria-current="page"]{color:var(--ink);border-top-color:var(--teal)}
 
