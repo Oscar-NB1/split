@@ -246,9 +246,21 @@ export function qualityRun(
     workSeconds = work.seconds;
   } else {
     const rounds = work.reps;
+    /*
+     * The run/walk session names itself too.
+     *
+     * This was the one branch that left `title` undefined, and it is the beginner's branch —
+     * so when the week's volume cap trimmed five reps to two, the label went on saying
+     * "5 × (4/1)" above a prescription that wrote 2. Sarah's first four weeks were all
+     * named for a session two and a half times the one she was given, and the watch got the
+     * short one. A title that claims more than the prescription is the plan telling somebody
+     * to do something it did not write.
+     */
+    const on = Math.round(work.onSeconds / 60), off = Math.round(work.offSeconds / 60);
+    title = `${rounds} × (${on}/${off})`;
     lines.push(`- ${rounds}x`);
-    lines.push(`- ${Math.round(work.onSeconds / 60)}m Z3 ${at(Math.round(paceS * 1.06))}`);
-    lines.push(`- ${Math.round(work.offSeconds / 60)}m Z1 walk`);
+    lines.push(`- ${on}m Z3 ${at(Math.round(paceS * 1.06))}`);
+    lines.push(`- ${off}m Z1 walk`);
     workKm = (work.onSeconds / paceS) * rounds;
     workSeconds = rounds * (work.onSeconds + work.offSeconds);
   }

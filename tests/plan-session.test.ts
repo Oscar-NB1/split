@@ -395,3 +395,22 @@ test("a strength card says what the session trains, not what its first line is",
   // Two different sessions read differently.
   assert.notEqual(line, summariseStrength(parseStrength(strengthTarget("build", 3, kit))));
 });
+
+test("a run/walk session is named for the reps it actually prescribes", () => {
+  /*
+   * The alternating branch was the only one that left the title undefined, and it is the
+   * beginner's branch — so when a week's volume cap trimmed five reps to two, the label went
+   * on saying "5 × (4/1)" above a prescription that wrote 2. Sarah's first four weeks were
+   * named for a session two and a half times the one she was given.
+   */
+  const tight = qualityRun("5 × (4/1)", 420, 520, 3.7, 0, "L1");
+  const reps = [...(tight.target.matchAll(/^- (\d+)x$/gm))].map((m) => Number(m[1]))[0];
+  assert.ok(reps, "the prescription writes a repeat count");
+  assert.equal(tight.title, `${reps} × (4/1)`,
+    `named "${tight.title}" and prescribed ${reps} reps`);
+
+  /* And where the week has room, the name is the one the ladder asked for. */
+  const roomy = qualityRun("5 × (4/1)", 420, 520, 40, 0, "L1");
+  assert.match(roomy.target, /^- 5x$/m);
+  assert.equal(roomy.title, "5 × (4/1)");
+});
