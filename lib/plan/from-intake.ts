@@ -185,6 +185,16 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
     long_run_pace: DIFFICULTY[x.difficulty]?.longRunPace ?? true,
     allow_doubles: (x.allowDoubles ?? "").startsWith("Yes"),
     recent: extra.recent,
+    /*
+     * Measured first, then what they told us.
+     *
+     * `recentFor` returns a measured or Strava-surveyed figure and nothing else, so an
+     * athlete with no connected account had no longest run at all as far as the
+     * generator was concerned — even though the intake asks for it directly and he
+     * answered 19 km. Same hierarchy as everywhere else in the app: a record beats a
+     * memory, and a memory beats nothing.
+     */
+    longest_run_km: extra.recent?.long_run_km ?? x.longestRunKm ?? null,
 
     // ------- the rest
     length,

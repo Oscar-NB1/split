@@ -41,10 +41,24 @@ export type Rules = {
   fatigue_cut?: number;
 };
 
+/*
+ * Defaults for a template that carries no rules of its own — which now means every
+ * template, because this generator writes all fifteen weeks explicitly.
+ *
+ * `deload_every: 0`, deliberately. It was 4, and it was second-guessing a generator
+ * that already decides which weeks are down weeks and sizes them accordingly. The two
+ * cycles did not even align, and the visible result was a session that disagreed with
+ * itself: week 4's long run said "17.3 km @ 4:58/km" — 86 minutes of running — with
+ * "60 min" printed beside it, because the factor scaled the minutes and left the
+ * prescription alone.
+ *
+ * A plan that writes its own deloads does not want a second opinion applied on a
+ * four-week timer. Any template that genuinely wants one can still set it.
+ */
 const DEFAULTS: Required<Rules> = {
   long_run_delta_min: 5,
   long_run_max_min: 150,
-  deload_every: 4,
+  deload_every: 0,
   deload_factor: 0.7,
   fatigue_skips_to_deload: 2,
   fatigue_cut: 0.85,
@@ -85,6 +99,19 @@ export function minutesFor(
       minutes + rules.long_run_delta_min * planWeek,
     );
   }
+  /*
+   * A written prescription keeps its own duration.
+   *
+   * Scaling the minutes of a session whose target says "17.1 km @ 5:23/km" produces a
+   * card that contradicts itself, and the athlete believes the prescription — so the
+   * number beside it is simply wrong. Where a session has a target, its duration is
+   * whatever that target costs; where it has none (a class, a commitment), the factor
+   * is the only lever there is and it still applies.
+   *
+   * The adaptation itself is not lost: the day's note says the week has been cut, and
+   * the athlete decides what to drop.
+   */
+  if (d.target && factor !== 1) return Math.max(10, Math.round(minutes));
   return Math.max(10, Math.round(minutes * factor));
 }
 

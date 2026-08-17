@@ -42,6 +42,15 @@ export type Params = ResolveInput & {
   /** 0 = Monday, or null for no preference */
   long_run_day: number | null;
   /**
+   * The longest run this athlete is known to have done, in km.
+   *
+   * Measured where the file has one, and otherwise the figure they typed into the
+   * intake. It is the floor under the long run: a share of the week is a sensible
+   * guide and a terrible floor, and a first week that halves somebody's longest run
+   * is the plan ignoring the one number they volunteered.
+   */
+  longest_run_km?: number | null;
+  /**
    * Days the athlete has taught the plan, by session kind. 0 = Monday.
    *
    * Learned from them moving a session and saying "always", rather than asked for in
@@ -337,9 +346,49 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
        * durability it needs is trained by the blocks inside the run rather than by
        * another four kilometres on the end.
        */
+      /*
+       * And it never starts below what the athlete can already run.
+       *
+       * A flat 32% of the week is a sensible guide and a terrible floor: a 34 km first
+       * week gave a 10.9 km "long run" to somebody whose longest run on file is 19 km.
+       * Nothing about starting a block makes a person forget how to run for two hours,
+       * and a long run that halves is not a conservative start — it is the plan
+       * ignoring the one number the athlete volunteered.
+       *
+       * So the share sets the shape of the ramp and their own longest run sets the
+       * floor, at 90% of it: enough to be comfortably inside what they have done,
+       * close enough that week one is recognisable as their own training.
+       *
+       * A deload or taper week is exempt. Those weeks are meant to be shorter, and a
+       * floor that held the long run up through a taper would defeat the taper.
+       */
+      const easing = w.taper || w.deload;
+      const known = p.longest_run_km ?? 0;
+      const floor = easing || known < 6 ? 0 : Math.min(LONG_RUN_CAP, known * 0.9);
+      const guide = Math.min(LONG_RUN_CAP, w.km * 0.32, runnable * 0.36);
+      /*
+       * And the floor stops at 40% of the week, because the ramp outranks it.
+       *
+       * The week's volume comes from a curve built on what the athlete has actually
+       * been running, and that curve is a safety rule — letting a long-run floor push
+       * a week past it would trade one conservative number for a genuinely risky one.
+       * Forty per cent is already a long-run-dominant week.
+       *
+       * Where their longest run is more than that, the limiter is the weekly volume
+       * rather than the long run, and the week says so. That is the true and useful
+       * thing to tell somebody who has run 19 km inside a 37 km week: the Sunday is
+       * not the problem.
+       */
+      const ceiling = Math.max(guide, w.km * 0.40);
+      const km = Math.max(5, Math.min(Math.max(guide, floor), ceiling));
+      if (floor > ceiling + 0.5) {
+        flags.push({
+          code: "long_run_share",
+          message: `Week ${w.n}: you have run ${known} km before, but a ${Math.round(w.km)} km week cannot carry that in one session — the long run is held at ${km.toFixed(1)} km. Your weekly volume is the limiter, not your long run.`,
+        });
+      }
       const built = longRun(
-        Math.max(5, Math.min(LONG_RUN_CAP, w.km * 0.32, runnable * 0.36)),
-        easyPace, steady, w.taper || w.deload ? "steady" : shape, String(w.phase));
+        km, easyPace, steady, easing ? "steady" : shape, String(w.phase));
       long.km = built.km;
       long.target_text = built.target;
       long.minutes = built.minutes;

@@ -6,7 +6,7 @@ import { paramsFrom } from "../lib/plan/from-intake";
 import type { Intake } from "../lib/intake";
 
 /** A big week: 70 km at peak, seven sessions, which is where 15 km easy runs came from. */
-const bigWeek = (): Intake => ({
+const bigWeek = (o: Partial<Intake> = {}): Intake => ({
   hasRace: "Yes", discipline: "Hyrox doubles", raceDistance: null,
   raceDate: "2026-11-29", role: null, division: "Mixed doubles", longRunDay: "Sun",
   base: "Several years", runningSelf: "Runs regularly",
@@ -23,6 +23,7 @@ const bigWeek = (): Intake => ({
   sled: "Race weight and distance", injuries: "",
   volume: "Progressive", difficulty: "Hard", benchmark: "scheduled",
   pastRaces: [], bRaces: [],
+  ...o,
 } as Intake);
 import { parseSteps, parseStrength, repCount } from "../lib/prescription";
 import { kitFrom, strengthTarget } from "../lib/plan/strength";
@@ -199,4 +200,42 @@ test("an easy run is never a long run wearing an easy label", () => {
         `week ${w.n}: a ${s.km} km easy run`);
     }
   }
+});
+
+test("a first week never halves the longest run the athlete has already done", () => {
+  /*
+   * The long run was a flat 32% of the week's volume, so a 34 km first week produced a
+   * 10.9 km "long run" for somebody whose longest run on file is 19 km. Nothing about
+   * starting a block makes a person forget how to run for two hours.
+   *
+   * The share still shapes the ramp; their own longest run is the floor under it, at
+   * 90% — and the weekly ramp still outranks both, because that curve is a safety
+   * rule and a long-run floor is not.
+   */
+  const g = generate(paramsFrom(bigWeek({ peakWeekKm: 38, longestRunKm: 19 }), {
+    recent: null, absences: [], max_hr: 185, measured: false,
+  }));
+  const w1 = g.weeks[0];
+  const long = w1.sessions.find((s) => String(s.kind) === "long_run");
+  assert.ok((long?.km ?? 0) >= 12,
+    `week 1's long run is ${long?.km} km against a 19 km longest run`);
+  assert.ok((long?.km ?? 0) <= w1.km * 0.42,
+    `and ${long?.km} km is not most of a ${w1.km} km week`);
+
+  // it still grows, and still stops at the cap
+  const longs = g.weeks.map((w) =>
+    (w.sessions.find((s) => String(s.kind) === "long_run")?.km ?? 0));
+  assert.ok(Math.max(...longs) > (long?.km ?? 0), "it grows across the block");
+  assert.ok(Math.max(...longs) <= 22.1, "and never past 22 km");
+});
+
+test("an athlete with no history is not given a long run out of nowhere", () => {
+  // The floor only exists where there is a number behind it. Without one the share
+  // decides, which is the conservative answer and the correct one.
+  const g = generate(paramsFrom(bigWeek({
+    peakWeekKm: 12, longestRunKm: null, runningSelf: "I do not run",
+  }), { recent: null, absences: [], max_hr: 185, measured: false }));
+  const w1 = g.weeks[0];
+  const long = w1.sessions.find((s) => String(s.kind) === "long_run");
+  assert.ok((long?.km ?? 0) <= w1.km * 0.45, `${long?.km} km of a ${w1.km} km week`);
 });
