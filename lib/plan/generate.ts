@@ -11,7 +11,7 @@ import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { applyBRaces } from "./braces";
 import { whyFor } from "./why";
 import { purposeFor } from "./purpose";
-import { type Anchor, prescribe } from "./paces";
+import { type Anchor, prescribe, sharpen } from "./paces";
 import { type ResolveInput, type Resolved, resolve } from "./resolve";
 import { type PhaseName, type Week, skeleton } from "./skeleton";
 import { type Commitment, type SlotKind, allocateSlots, placeWeek } from "./slots";
@@ -343,7 +343,20 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * curve says: a quality session that costs less than its share gives the
      * remainder back to the easy running rather than to nobody.
      */
-    const cvPace = p.anchor?.cv_pace_s_per_km ?? 300;
+    /*
+     * The anchor, sharpened by how far into the block this week is.
+     *
+     * It was one number for four months: week 14's threshold target was week 1's, so a
+     * plan built to make somebody faster never once asked them to run faster. Three per
+     * cent across the block — about 8 s/km on a 4:26 threshold — which is what a
+     * rebuilt aerobic base actually returns over three months.
+     *
+     * Easy running is sharpened with it rather than held: an athlete whose threshold has
+     * moved has an easy pace that has moved too, and holding easy at the old number
+     * would slowly turn it into a steady run.
+     */
+    const progress = p.length > 1 ? (w.n - 1) / (p.length - 1) : 0;
+    const cvPace = sharpen(p.anchor?.cv_pace_s_per_km ?? 300, progress);
     // Easy is a fixed distance from the critical-velocity pace: there is no
     // separate easy anchor, and inventing one here would be a second opinion.
     const easyPace = Math.round(cvPace * 1.25);

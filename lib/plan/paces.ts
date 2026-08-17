@@ -190,3 +190,31 @@ export function prescribe(
     : Math.round(anchor.cv_pace_s_per_km * RUNG_MULTIPLIER[rung]);
   return { kind: "pace", seconds_per_km: seconds, flags: anchor.flags };
 }
+
+/**
+ * How much quicker the plan expects the athlete to be, by the time it gets there.
+ *
+ * Every pace in a fifteen-week block was written off one anchor set on day one, so the
+ * target for week 14's threshold session was the target for week 1's: 4:26 in thirteen
+ * weeks of fifteen. A block that never asks for a faster pace is not a plan to get
+ * faster — it is the same session repeated with more reps, and the athlete is left to
+ * supply the intent the plan should have had.
+ *
+ * Three per cent across the block, applied by how far through it the week is. That is
+ * deliberately modest: it is roughly 8 s/km on a 4:26 threshold, which is the sort of
+ * improvement a rebuilt aerobic base actually delivers over three months, and it lands
+ * inside the range a coach would write by hand for the same athlete.
+ *
+ * Two things keep it honest:
+ *
+ *   - it is a projection, and the session says so. An athlete who cannot hold the
+ *     week-12 target has not failed a measurement, they have outrun a forecast;
+ *   - calibration outranks it. The moment three key sessions say something different,
+ *     the accepted shift is applied on top of this and the evidence wins.
+ */
+export const PROJECTED_GAIN = 0.03;
+
+export function sharpen(seconds: number, progress: number): number {
+  const p = Math.max(0, Math.min(1, progress));
+  return Math.round(seconds * (1 - PROJECTED_GAIN * p));
+}
