@@ -4,6 +4,7 @@ import { addDays, dow, fmt, mondayOf, today } from "@/lib/dates";
 import { kindColour, kindLabel, weekDates } from "@/lib/coach";
 import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
 import { prescribedPace } from "@/lib/signals";
+import { parseStrength } from "@/lib/prescription";
 import type { Session, User, WeekData } from "./Shell";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -86,7 +87,24 @@ function metrics(s: Session): [string, string, string] {
   const done = ["done", "adjusted", "unplanned"].includes(s.status);
   const pace = prescribedPace(s.title);
   if (s.kind === "strength") {
-    return [`${s.planned_minutes ?? 40} min`, done ? "logged" : "3 lifts", ""];
+    /*
+     * Counted, not guessed.
+     *
+     * It said "3 lifts" on every strength session in the app — a literal, written when
+     * a session had three movements in it. They have six now, and the card was reading
+     * as "three sets" beside a lift line that says 3×5, which is two wrong numbers
+     * agreeing with each other.
+     */
+    const lifts = parseStrength(s.target);
+    const sets = lifts.reduce((n, l) => n + (l.sets || 0), 0);
+    return [
+      `${s.planned_minutes ?? 40} min`,
+      done ? "logged"
+        : lifts.length
+          ? `${lifts.length} exercises · ${sets} sets`
+          : "",
+      "",
+    ];
   }
   const km = s.distance_m ? Number(s.distance_m) / 1000 : null;
   if (!s.kind.startsWith("run")) {

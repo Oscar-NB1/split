@@ -62,14 +62,35 @@ export function kitFrom(equipment: string[] = []): Kit {
  * where strength is actually made; specific stops chasing load and holds it while
  * the running turns race-shaped; the taper keeps the pattern and drops the work.
  */
+/**
+ * And an effort target, because the load is the athlete's to choose.
+ *
+ * RPE is what makes a prescribed weight honest. "Back squat 3×8" with a number beside
+ * it is a guess about a stranger; "3×8 at RPE 7 — two reps left in the tank" is a
+ * complete instruction that works on a good day and a bad one, and it is the thing
+ * that lets next week's load be decided by what happened this week rather than by a
+ * percentage table.
+ *
+ * The phase sets it: base leaves two or three in the tank because the point is to be
+ * able to lift at all, build takes it to one, and the taper deliberately stays light.
+ */
 const SCHEME: Record<PhaseName, {
-  sets: number; reps: number; rest: number; note: string;
+  sets: number; reps: number; rest: number; rpe: number; note: string;
 }> = {
-  base: { sets: 3, reps: 8, rest: 120, note: "Leave two in the tank on every set. The point of these weeks is to be able to lift, not to prove you can." },
-  build: { sets: 3, reps: 5, rest: 180, note: "Heaviest sets of the block. This is the phase that makes you stronger — everything after it maintains." },
-  specific: { sets: 3, reps: 6, rest: 150, note: "Hold the load, drop the volume. Nothing here should cost you Sunday." },
-  taper: { sets: 2, reps: 5, rest: 150, note: "Keep the pattern, drop the work. Nothing to prove this week." },
+  base: { sets: 3, reps: 8, rest: 120, rpe: 7, note: "Leave two in the tank on every set. The point of these weeks is to be able to lift, not to prove you can." },
+  build: { sets: 3, reps: 5, rest: 180, rpe: 8, note: "Heaviest sets of the block. This is the phase that makes you stronger — everything after it maintains." },
+  specific: { sets: 3, reps: 6, rest: 150, rpe: 7, note: "Hold the load, drop the volume. Nothing here should cost you Sunday." },
+  taper: { sets: 2, reps: 5, rest: 150, rpe: 6, note: "Keep the pattern, drop the work. Nothing to prove this week." },
 };
+
+/** What an RPE actually means, in the only terms that matter mid-set. */
+export const sayRpe = (rpe: number): string =>
+  rpe >= 9 ? "one rep left at most"
+    : rpe >= 8 ? "one, maybe two reps left"
+    : rpe >= 7 ? "two or three reps left"
+    : "comfortable — this is not the hard part of your week";
+
+export const rpeFor = (phase: PhaseName): number => (SCHEME[phase] ?? SCHEME.base).rpe;
 
 /** Accessories are not the session. Short rests, and out. */
 const ACCESSORY_REST = 60;
@@ -200,8 +221,11 @@ export function liftsFor(
 export function strengthTarget(
   phase: PhaseName, week: number, kit: Kit, accessories = 0,
 ): string {
+  const rpe = rpeFor(phase);
   return liftsFor(phase, week, kit, accessories)
-    .map((l) => `${l.name} ${l.sets}x${l.reps} rest ${l.rest}s`)
+    // Accessories carry no RPE: "face pull at RPE 8" is not a thing anybody should do.
+    .map((l) => `${l.name} ${l.sets}x${l.reps} rest ${l.rest}s`
+      + (l.rest >= 90 ? ` rpe ${rpe}` : ""))
     .join("\n");
 }
 

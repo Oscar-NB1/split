@@ -154,6 +154,14 @@ export type Lift = {
    * after the heaviest set of the block. Where the prescription says, the prescription wins.
    */
   rest: number | null;
+  /**
+   * The effort to take the set to, 1–10, where the plan stated one.
+   *
+   * The load is the athlete's to choose and this is what makes that choice safe: a
+   * number without an effort target is a guess about a stranger, and the same number
+   * is right on a rested Monday and wrong after a bad night.
+   */
+  rpe?: number | null;
 };
 
 /**
@@ -172,11 +180,25 @@ export function parseStrength(target: string | null | undefined): Lift[] {
     if (!line) continue;
 
     const rest = /\brest\s+(\d+)\s*s\b/i.exec(line);
-    const body = line.replace(/\s*\brest\s+\d+\s*s\b/i, "").trim();
+    /*
+     * The effort target, which is what makes a prescribed weight honest.
+     *
+     * A load is a guess about a stranger; a load with an RPE beside it is a complete
+     * instruction that survives a good day and a bad one — and it is what lets next
+     * week's number be decided by what happened this week.
+     */
+    const rpe = /\brpe\s+([\d.]+)\b/i.exec(line);
+    const body = line
+      .replace(/\s*\brest\s+\d+\s*s\b/i, "")
+      .replace(/\s*\brpe\s+[\d.]+\b/i, "")
+      .trim();
     const m = body.match(/^(.+?)\s+(\d+)\s*[x×]\s*(\d+)\s*(?:@\s*([\d.]+)\s*(?:kg)?)?$/i);
     if (!m) {
       // unreadable, but not thrown away — a lift with no set scheme is still a lift
-      out.push({ name: body || line, sets: 0, reps: 0, load: null, rest: rest ? Number(rest[1]) : null });
+      out.push({
+        name: body || line, sets: 0, reps: 0, load: null,
+        rest: rest ? Number(rest[1]) : null, rpe: rpe ? Number(rpe[1]) : null,
+      });
       continue;
     }
     out.push({
@@ -185,6 +207,7 @@ export function parseStrength(target: string | null | undefined): Lift[] {
       reps: Number(m[3]),
       load: m[4] === undefined ? null : Number(m[4]),
       rest: rest ? Number(rest[1]) : null,
+      rpe: rpe ? Number(rpe[1]) : null,
     });
   }
   return out;
@@ -210,14 +233,24 @@ export const ZONE_WORD: Record<string, string> = {
 };
 
 /** "15m" → "15 min", "800m" → "800 m", "1000m" → "1.0 km". */
-export function humanDose(dose: string): string {
+export function humanDose(dose: string, unitHint: "auto" | "distance" = "auto"): string {
   const m = dose.match(/^(\d+(?:\.\d+)?)\s*(km|k|m|min|s|sec|mi)$/i);
   if (!m) return dose;
   const n = Number(m[1]);
   const unit = m[2].toLowerCase();
-  // intervals.icu writes minutes as "15m" and metres as "800m". A bare "m"
-  // under 60 with no other clue is minutes; above that it is metres. Ambiguous
-  // by design in the source format, so this is where the guess is made once.
+  /*
+   * intervals.icu writes minutes as "15m" and metres as "800m". A bare "m" under 60
+   * with no other clue is minutes; above that it is metres. Ambiguous by design in
+   * the source format, so this is where the guess is made once.
+   *
+   * And where the caller knows, it should say: a station step has no pace and no zone,
+   * so "25m" is twenty-five metres of sled and never twenty-five minutes of it. That
+   * guess printed "25 min Sled push at 152 kg total", which is not a thing anybody
+   * should be asked to do.
+   */
+  if (unit === "m" && unitHint === "distance") {
+    return n >= 1000 ? `${(n / 1000).toFixed(1)} km` : `${n} m`;
+  }
   if (unit === "m") return n <= 60 ? `${n} min` : n >= 1000 ? `${(n / 1000).toFixed(1)} km` : `${n} m`;
   if (unit === "km" || unit === "k") return `${n} km`;
   if (unit === "min") return `${n} min`;

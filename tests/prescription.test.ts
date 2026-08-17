@@ -58,7 +58,22 @@ test("no target is no steps, not a crash", () => {
 
 test("a lift line parses into name, sets, reps and load", () => {
   const [l] = parseStrength("Trap bar deadlift 3x5 @ 130");
-  assert.deepEqual(l, { name: "Trap bar deadlift", sets: 3, reps: 5, load: 130, rest: null });
+  assert.deepEqual(l, {
+    name: "Trap bar deadlift", sets: 3, reps: 5, load: 130, rest: null, rpe: null,
+  });
+});
+
+test("an effort target is part of the prescription too", () => {
+  /*
+   * A load is a guess about a stranger; a load with an RPE beside it is a complete
+   * instruction that survives a good day and a bad one — and it is what lets next
+   * week's number be decided by what happened this week.
+   */
+  const [l] = parseStrength("Back squat 3x8 rest 120s rpe 7");
+  assert.equal(l.rpe, 7);
+  assert.equal(l.rest, 120);
+  assert.equal(l.name, "Back squat", "and the RPE does not end up in the name");
+  assert.equal(parseStrength("Face pull or band row 3x15 rest 60s")[0].rpe, null);
 });
 
 test("a rest between sets is part of the prescription", () => {

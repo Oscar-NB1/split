@@ -297,7 +297,8 @@ function groupsFor(
           // its pace, because running off a station is the one thing being trained.
           main: it.pace
             ? `${humanDose(it.dose)} at ${sayPace(it.pace, mode)}`
-            : `${humanDose(it.dose)} ${it.label}`.trim(),
+            // A station has no pace, so its "25m" is metres — see humanDose.
+            : `${humanDose(it.dose, "distance")} ${it.label}`.trim(),
           sub: it.rest ? "Recover, then go again." : "",
           work: !it.rest,
           tag: it.pace ? undefined : stationTag(it.label),
@@ -658,7 +659,7 @@ export default function Brief({
                         <path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 014-4h14" />
                         <path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 01-4 4H3" />
                       </svg>
-                      Repeat the pair × {g.repeat}
+                      Repeat × {g.repeat}
                     </div>
                   )}
                   {g.note && (

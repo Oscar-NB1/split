@@ -93,6 +93,7 @@ test("an easy run says one thing, and a Hyrox session is a list of things to do"
    * instruction: it tells the athlete a station goes here without saying which one,
    * how much of it, or in what order.
    */
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
   const hyrox = hyroxSession("Hyrox · transitions", 310);
   assert.doesNotMatch(hyrox.target, /1 station/, "no placeholder stations");
   const named = ["SkiErg", "Sled", "Row", "Wall balls", "burpee", "carry", "lunge"];
@@ -101,13 +102,36 @@ test("an easy run says one thing, and a Hyrox session is a list of things to do"
     `stations are named and dosed:\n${hyrox.target}`);
   // Run, station, run, station — the shape of the race — inside a repeated round.
   const lines = hyrox.target.split("\n");
-  assert.ok(lines.some((l) => /^- \dx$/.test(l)), `rounds are stated:\n${hyrox.target}`);
-  assert.ok(lines.some((l) => /rest between rounds/.test(l)),
+  /*
+   * Compromised running repeats an identical round, so it states the count and the rest
+   * between rounds. Transitions deliberately does neither — every round is a different
+   * station and there is no rest anywhere, which is the session.
+   */
+  const compro = hyroxSession("Hyrox · compromised running", 310, 4, kit, 1).target
+    .split("\n");
+  assert.ok(compro.some((l) => /^- \dx$/.test(l)), `rounds are stated:\n${compro.join("\n")}`);
+  assert.ok(compro.some((l) => /rest between rounds/.test(l)),
     "and so is the rest between them");
   const body = lines.filter((l) => !/warm up|cool down|rest between|^- \dx$/.test(l));
   body.forEach((l, i) => {
-    if (i % 2 === 0) assert.match(l, /400m/, `line ${i} is a run`);
+    if (i % 2 === 0) assert.match(l, /^- \d+m Z3/, `line ${i} is a run`);
   });
+
+  /*
+   * And the four rungs are four different sessions.
+   *
+   * They were the same structure under four names — run 400 m, do a station, repeat —
+   * which is the plan claiming a progression it does not have.
+   */
+  const shapeOf = (l: string) => hyroxSession(l, 310, 4, kit, 1).target;
+  const compromised = shapeOf("Hyrox · compromised running");
+  const transitions = shapeOf("Hyrox · transitions");
+  const half = shapeOf("Hyrox · half simulation");
+  assert.notEqual(compromised, transitions);
+  assert.match(compromised, /800m/, "long runs off heavy stations");
+  assert.match(transitions, /200m/, "short runs, many changeovers");
+  assert.doesNotMatch(transitions, /rest between rounds/, "and no rest in transitions");
+  assert.match(half, /1000m/, "race distances in a simulation");
 });
 
 test("a Hyrox session rotates its stations, and respects the kit", () => {

@@ -6,6 +6,8 @@ import { applyLengthFeel } from "@/lib/strength-apply";
 import { isUuid } from "@/lib/plan";
 import { parseSteps, parseStrength, repCount } from "@/lib/prescription";
 import { describe, loadNote, startingLoad } from "@/lib/plan/exercises";
+import { nextLoad } from "@/lib/plan/progression";
+import { sayRpe } from "@/lib/plan/strength";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -64,19 +66,47 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
    * thing that recorded it. Pre-filled from their own last logged set, so it starts
    * where they left off and they only touch it when it changes.
    */
-  const lastLoads = isStrength && lifts.length > 0
-    ? await sql<{ exercise: string; load_kg: number }[]>`
-        select distinct on (lower(st.exercise))
-               st.exercise, st.load_kg
+  /*
+   * Every set of the most recent session that used each movement — not just its load.
+   *
+   * The load alone told us where they were and nothing about whether it was right. Reps
+   * against prescription and the effort they reported are what decide whether next week
+   * goes up, holds or comes down, so the whole session comes back.
+   */
+  const history = isStrength && lifts.length > 0
+    ? await sql<{
+      exercise: string; load_kg: number | null; reps: number | null;
+      prescribed_reps: number | null; done: boolean; rpe: number | null;
+    }[]>`
+        with latest as (
+          select lower(st.exercise) as key, max(p.planned_date) as on_date
+            from session_sets st
+            join planned_sessions p on p.id = st.session_id
+           where p.user_id = ${s.user_id} and p.id <> ${id}
+             and st.load_kg is not null and st.done
+             and lower(st.exercise) = any(${lifts.map((l) => l.name.toLowerCase())})
+           group by 1
+        )
+        select st.exercise, st.load_kg, st.reps, st.prescribed_reps, st.done, st.rpe
           from session_sets st
           join planned_sessions p on p.id = st.session_id
-         where p.user_id = ${s.user_id} and st.load_kg is not null and st.done
-           and lower(st.exercise) = any(${lifts.map((l) => l.name.toLowerCase())})
-         order by lower(st.exercise), p.planned_date desc, st.set_no desc
+          join latest l on l.key = lower(st.exercise) and l.on_date = p.planned_date
+         where p.user_id = ${s.user_id}
+         order by lower(st.exercise), st.set_no
       `
     : [];
-  const lastFor = (name: string) =>
-    lastLoads.find((r) => r.exercise.toLowerCase() === name.toLowerCase())?.load_kg ?? null;
+  const setsFor = (name: string) => history
+    .filter((r) => r.exercise.toLowerCase() === name.toLowerCase())
+    .map((r) => ({
+      load_kg: r.load_kg == null ? null : Number(r.load_kg),
+      reps: r.reps, prescribed_reps: r.prescribed_reps, done: r.done, rpe: r.rpe,
+    }));
+  /** Where last week got to, and where it should go next. */
+  const stepFor = (name: string, rpe: number | null) => {
+    const sets = setsFor(name);
+    return sets.length ? nextLoad(sets, rpe ?? 7) : null;
+  };
+  const lastFor = (name: string, rpe: number | null) => stepFor(name, rpe)?.load ?? null;
 
   /*
    * And a starting number for anything they have never lifted here.
@@ -105,7 +135,16 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     // makes re-opening the screen harmless.
     for (const [ord, lift] of lifts.entries()) {
       // Their own history first, then the bodyweight estimate, then nothing.
-      const seed = lift.load ?? lastFor(lift.name) ?? guessFor(lift.name, lift.reps);
+      /*
+       * Last week's load, progressed — then the bodyweight estimate, then nothing.
+       *
+       * The plan writes no load of its own on purpose: a number nobody has earned is
+       * worse than an effort target. What it can do is remember what they lifted and
+       * move it in the right direction.
+       */
+      const seed = lift.load
+        ?? lastFor(lift.name, lift.rpe ?? null)
+        ?? guessFor(lift.name, lift.reps);
       for (let n = 1; n <= Math.max(1, lift.sets); n++) {
         await sql`
           insert into session_sets
@@ -146,14 +185,26 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
    */
   const guidance = lifts.map((l) => {
     const ex = describe(l.name);
-    const estimate = lastFor(l.name) === null && l.load == null
+    const step = stepFor(l.name, l.rpe ?? null);
+    const estimate = step === null && l.load == null
       ? guessFor(l.name, l.reps) : null;
     return {
       name: l.name,
       what: ex?.what ?? null,
       how: ex?.how ?? null,
-      /** set only where the number came from bodyweight rather than their own history */
+      /** the effort to take the set to, and what that means in reps left */
+      rpe: l.rpe ?? null,
+      rpe_means: l.rpe ? sayRpe(l.rpe) : null,
+      /*
+       * Where the number came from, said plainly. Three possible answers and they mean
+       * very different things: their own last session, an estimate from their
+       * bodyweight, or nothing at all.
+       */
+      source: step ? "your last session" : estimate ? "your bodyweight" : null,
       estimated_load: estimate,
+      /** how last week moved it, so the change is explained rather than mysterious */
+      progression: step && step.verdict !== "unknown"
+        ? { verdict: step.verdict, why: step.why } : null,
       note: estimate ? loadNote(Boolean(ex?.perHand)) : null,
     };
   });

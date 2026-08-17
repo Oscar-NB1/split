@@ -1063,3 +1063,12 @@ create table if not exists day_preferences (
   created_at timestamptz not null default now(),
   primary key (athlete_id, kind)
 );
+
+-- Effort per set (2026-08-17).
+--
+-- The load a plan prescribes is a guess about a stranger; the same load with an effort
+-- target beside it is a complete instruction, and the athlete's own report of what it
+-- cost is what lets next week's number be decided by what happened rather than by a
+-- percentage table. Nullable: an athlete who logs weight and reps and nothing else
+-- still gets progression, just with less to go on.
+alter table session_sets add column if not exists rpe int;

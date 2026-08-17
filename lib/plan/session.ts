@@ -290,67 +290,125 @@ export function continuousRun(km: number, paceS: number, zone = "Z2"): Built {
  * they can reach — with the substitution written out rather than the station
  * quietly dropped.
  */
+/**
+ * The four race-specific sessions, and what actually distinguishes them.
+ *
+ * They were the same session with four names: run 400 m, do a station, repeat. The
+ * ladder's whole purpose is that each rung trains a different thing, and printing the
+ * same structure under each label is the plan claiming a progression it does not have.
+ *
+ *   compromised running  long runs off heavy stations. Few stations, generous rest.
+ *                        The question is whether you can still run when your legs are
+ *                        wrecked, so the running has to be long enough to answer it.
+ *   transitions          short runs, many stations, no rest. The question is how fast
+ *                        you move between things, which is where a minute and a half
+ *                        hides in a race.
+ *   half simulation      four stations in race order at race dose, 1 km between.
+ *   full simulation      all eight, race order, race dose, race weight.
+ */
+type HyroxShape = {
+  runM: number;
+  /** stations per round */
+  perRound: number;
+  rounds: number;
+  /** seconds between rounds; zero means straight into the next one */
+  rest: number;
+  /** race doses and weights rather than training doses */
+  raceDose: boolean;
+  cue: string;
+};
+
+function shapeOf(label: string): HyroxShape {
+  const l = label.toLowerCase();
+  if (/full simulation/.test(l)) {
+    return {
+      runM: 1000, perRound: 8, rounds: 1, rest: 0, raceDose: true,
+      cue: "The whole event, in order, at race weight. Treat it as a race: it is the only session in the block that earns a taper of its own.",
+    };
+  }
+  if (/half simulation/.test(l)) {
+    return {
+      runM: 1000, perRound: 4, rounds: 1, rest: 0, raceDose: true,
+      cue: "Race order, race weight, race distances — half of it. Hold your race pace on the runs rather than proving something on the first one.",
+    };
+  }
+  if (/transition/.test(l)) {
+    return {
+      runM: 200, perRound: 6, rounds: 2, rest: 0, raceDose: false,
+      cue: "Short runs, and no rest anywhere. The changeover is the session — every second you spend deciding what to do next is a second of your race.",
+    };
+  }
+  return {
+    runM: 800, perRound: 2, rounds: 4, rest: 90, raceDose: false,
+    cue: "Long runs off heavy stations. The station is there to wreck your legs; the run is the session, and it should be held at the pace on your card.",
+  };
+}
+
 export function hyroxSession(
-  label: string, paceS: number, rounds = 4, kit?: Kit, week = 1, loads?: Loads | null,
+  label: string, paceS: number, _rounds = 4, kit?: Kit, week = 1, loads?: Loads | null,
 ): Built {
-  const full = /full simulation/.test(label.toLowerCase());
-  const runM = /simulation/.test(label.toLowerCase()) ? 1000 : 400;
   const k = kit ?? { barbell: true, kettlebells: true, rig: true, sled: true };
+  const shape = shapeOf(label);
+  const need = shape.perRound * shape.rounds;
+  const stations = shape.raceDose
+    ? raceOrder(k, loads).slice(0, shape.perRound)
+    : stationsFor(k, need, week, loads);
 
   /*
-   * Rounds, not one long list — and every movement with its load.
+   * The warm-up is cardio, not necessarily running.
    *
-   * The first version wrote one flat sequence of run, station, run, station. That is
-   * readable but it is not how anybody does the session: a self-written Hyrox workout
-   * is a short block repeated, with a known rest between rounds, and the athlete needs
-   * to know how many times and how long to stand still. Written flat, an eight-item
-   * list also gave no way to say "that again, twice more".
-   *
-   * And a station without a weight is half an instruction. The loads come from the
-   * division the athlete entered, so "25 m sled push" becomes "25 m sled push at
-   * 202 kg total" — the number that decides whether this was the session or a warm-up.
+   * It said "2 km Z2" with a pace target — a running warm-up before a session of sleds
+   * and skis, on a day that already has kilometres of running in it. Anything that
+   * raises a heart rate does this job.
    */
-  const perRound = full ? 8 : 2;
-  const roundCount = full ? 1 : Math.max(2, Math.round(rounds / perRound) + 1);
-  const stations = full
-    ? raceOrder(k, loads)
-    : stationsFor(k, perRound * roundCount, week, loads);
+  const lines = ["- 10m Z2 warm up — row, bike, ski or jog, your choice"];
 
-  const lines = [
-    `- ${doseKm(WARMUP_KM)} Z2 warm up ${between(paceS, Math.round(paceS * 1.08))}`,
-  ];
   /*
-   * One round written out, then a repeat count — unless the stations differ between
-   * rounds, in which case every round is written, because "× 3" is a lie when round
-   * two is a different station.
+   * One round written out with a repeat count where every round is identical, and all
+   * of them written where they are not — because "× 3" is a lie when round two is a
+   * different station.
    */
-  const sameEveryRound = roundCount > 1 && stations.length >= perRound * roundCount;
-  if (sameEveryRound) {
-    lines.push(`- ${roundCount}x`);
-    for (let i = 0; i < perRound; i += 1) {
-      const st = stations[i];
-      lines.push(`- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
+  const same = shape.rounds > 1 && stations.length >= need;
+  const write = (from: number, count: number) => {
+    for (let i = 0; i < count; i += 1) {
+      const st = stations[(from + i) % stations.length];
+      lines.push(`- ${shape.runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
       lines.push(`- ${st.dose} ${st.name}${st.load ? ` at ${st.load}` : ""}`);
     }
-    // The rest between rounds, stated. Standing still for an unknown length is how a
-    // session becomes a different session.
-    lines.push("- 90s Z1 rest between rounds");
+  };
+  if (same) {
+    lines.push(`- ${shape.rounds}x`);
+    write(0, shape.perRound);
+    if (shape.rest > 0) lines.push(`- ${shape.rest}s Z1 rest between rounds`);
   } else {
-    for (const st of stations) {
-      lines.push(`- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
-      lines.push(`- ${st.dose} ${st.name}${st.load ? ` at ${st.load}` : ""}`);
+    for (let r = 0; r < shape.rounds; r += 1) {
+      write(r * shape.perRound, shape.perRound);
+      if (shape.rest > 0 && r < shape.rounds - 1) {
+        lines.push(`- ${shape.rest}s Z1 rest between rounds`);
+      }
     }
   }
-  lines.push(`- ${doseKm(1)} Z1 cool down ${at(paceS)}`);
+  lines.push("- 5m Z1 cool down — easy on any machine");
 
-  const runs = sameEveryRound ? perRound * roundCount : stations.length;
-  const km = km1(WARMUP_KM + (runM / 1000) * runs + 1);
-  // A station is roughly the time of the run beside it, plus the transition.
-  const stationSeconds = (runM / 1000) * paceS + 60;
+  /*
+   * Only the runs count as running.
+   *
+   * The warm-up and cool-down are whatever machine they choose, so they are not
+   * kilometres in the weekly ledger — the same rule that keeps compromised running out
+   * of it.
+   */
+  const km = km1((shape.runM / 1000) * need);
+  /*
+   * A station takes about ninety seconds at a training dose, and about three minutes at
+   * a race one — not "as long as the run beside it", which is what this said and which
+   * credited four minutes to a sled because the run next to it was 800 m. That put a
+   * 94-minute estimate on an hour's work.
+   */
+  const stationSeconds = shape.raceDose ? 180 : 90;
   const minutes = Math.round(
-    ((WARMUP_KM + 1) * paceS + runs * ((runM / 1000) * paceS + stationSeconds)) / 60
-    + (sameEveryRound ? (roundCount - 1) * 1.5 : 0));
-  return { target: lines.join("\n"), km, minutes };
+    15 + (need * ((shape.runM / 1000) * paceS + stationSeconds)) / 60
+    + ((shape.rounds - 1) * shape.rest) / 60);
+  return { target: lines.join("\n"), km, minutes, note: shape.cue };
 }
 
 /**
