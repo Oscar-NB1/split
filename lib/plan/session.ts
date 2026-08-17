@@ -541,30 +541,45 @@ export function hyroxSession(
  * Machines and bodyweight only: ski, row, burpee broad jumps. No sled, no carry, no
  * sandbag. If it needs a rack it does not belong on an easy day.
  */
-export function easyHyrox(rounds = 3): Built {
+export function easyHyrox(rounds = 3, runKm = 0, easyS = 330): Built {
   const lines = ["- 5m Z1 easy spin or row to open up"];
   const block = [
     ["500m", "row Z2"],
     ["500m", "SkiErg Z2"],
     ["20m", "burpee broad jump, unhurried"],
   ];
+  /*
+   * Easy running between the machine rounds, where the week has room for it.
+   *
+   * This session used to be machines only, and in the specific phase it is paid for by a
+   * quality run — so a 12 km session became a 0 km session and his running fell from 56 km
+   * in week 9 to 36 by week 11, in the four weeks where race-specific running matters most.
+   * The volume was not reallocated; it was lost, and the taper then measured itself against
+   * the loss.
+   *
+   * The rule this looks like it breaks is a real one and it still holds: compromised work
+   * never counts towards running volume, which is why the machines report nothing. What
+   * counts here is an explicitly prescribed easy run — the same session an easy run would
+   * have been, sharing a slot with the transitions. Running that is written as easy running
+   * is easy running wherever it sits.
+   */
+  const perRound = runKm > 0 ? km1(runKm / rounds) : 0;
   for (let i = 0; i < rounds; i += 1) {
     for (const [dose, what] of block) lines.push(`- ${dose} ${what}`);
+    if (perRound > 0) {
+      lines.push(`- ${doseKm(perRound)} Z2 easy run ${between(easyS, Math.round(easyS * 1.08))}`);
+    }
     if (i < rounds - 1) lines.push("- 90s Z1 walk or easy spin");
   }
   lines.push("- 5m Z1 easy spin");
-  /*
-   * No running kilometres at all.
-   *
-   * Reporting any would put them in the week's running total, and compromised work
-   * never counts towards running volume — that was the whole fault this session was
-   * built to stop repeating.
-   */
+  const km = km1(perRound * rounds);
   return {
     target: lines.join("\n"),
-    km: 0,
-    minutes: 15 + rounds * 12,
-    note: "Conversational the whole way. If you cannot talk through it, it has become a session it was not meant to be.",
+    km,
+    minutes: 15 + rounds * 12 + Math.round((km * easyS) / 60),
+    note: km > 0
+      ? "Conversational the whole way, running included. If you cannot talk through it, it has become a session it was not meant to be."
+      : "Conversational the whole way. If you cannot talk through it, it has become a session it was not meant to be.",
   };
 }
 

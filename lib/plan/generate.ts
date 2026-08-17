@@ -173,6 +173,15 @@ export type Generated = {
 export const LONG_RUN_CAP = 22;
 
 /**
+ * And the easy running inside an easy Hyrox session stops at six.
+ *
+ * It shares a slot with the machine work and the transitions, so it is a short easy run
+ * rather than a full one — enough to hold the specific phase's aerobic volume, not enough
+ * to turn the session into a run with rowing attached.
+ */
+export const EASY_HYROX_KM = 6;
+
+/**
  * And an easy run stops at eleven.
  *
  * Not a proportion of anything. An easy run is a recovery and aerobic-maintenance
@@ -298,6 +307,12 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     const longCap = Math.min(LONG_RUN_CAP, Math.max(0, (p.longest_run_km ?? 0) * 0.9) || LONG_RUN_CAP);
     const capacity = (runSlots.long_run ? longCap : 0)
       + runSlots.easy_run * EASY_MAX_KM
+      /*
+       * The easy Hyrox session carries easy running between its machine rounds, so it holds
+       * volume rather than costing it. Counted here or the week is capped as though the slot
+       * were empty, which is what dropped his specific weeks to 36 km.
+       */
+      + runSlots.easy_hyrox * EASY_HYROX_KM
       + (runSlots.quality_run + (benchmarks.has(w.n) ? 1 : 0)) * 12;
     const asked = Math.round(w.km * 10) / 10;
     let runnable = Math.max(3, Math.min(asked, Math.round(capacity * 10) / 10));
@@ -730,7 +745,13 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
           if (cls.note) s.note_text = cls.note;
         }
       } else if (kind === "easy_hyrox") {
-        const built = easyHyrox();
+        /*
+         * Sized like an easy run, because that is what the running inside it is. Capped low:
+         * this is the session that keeps aerobic volume in the specific weeks, not one that
+         * competes with the long run.
+         */
+        const built = easyHyrox(3, Math.min(EASY_HYROX_KM, Math.max(0, runnable - spent) * 0.4),
+          easyPace);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.note) s.note_text = built.note;
       } else if (kind === "strength") {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { paramsFrom } from "../lib/plan/from-intake";
-import { generate, type GeneratedWeek } from "../lib/plan/generate";
+import { generate, type GeneratedWeek, type Session } from "../lib/plan/generate";
 import type { Intake } from "../lib/intake";
 
 /**
@@ -36,9 +36,14 @@ const x = (o: Partial<Intake> = {}): Intake => ({
 const built = (o: Partial<Intake> = {}) =>
   generate(paramsFrom(x(o), { recent: null, absences: [], max_hr: 185, measured: false }));
 
-const hard = (w: GeneratedWeek) => w.sessions.filter((s) => s.hard).length;
+/*
+ * `GeneratedWeek` intersects two session types, and the intersection resolves to the leaner
+ * one. Read through here so a test asserting on a label is not asserting on `never`.
+ */
+const of = (w: GeneratedWeek): Session[] => w.sessions as unknown as Session[];
+const hard = (w: GeneratedWeek) => of(w).filter((s) => s.hard).length;
 const quality = (w: GeneratedWeek) =>
-  w.sessions.filter((s) => s.kind === "quality_run" || s.kind === "benchmark");
+  of(w).filter((s) => s.kind === "quality_run" || s.kind === "benchmark");
 
 test("a down week steps the interval work back, not only the easy running", () => {
   /*
@@ -82,7 +87,7 @@ test("the down week is the test week, and the timed long run exists at all", () 
    */
   const g = built();
   const timed = g.weeks.filter((w) =>
-    w.sessions.some((s) => s.kind === "long_run"
+    of(w).some((s) => s.kind === "long_run"
       && (s.target_text ?? "").split("\n").length === 1
       && /Z3/.test(s.target_text ?? "")));
   assert.ok(timed.length > 0, "no week in the block has a timed long run");
@@ -126,4 +131,37 @@ test("volume still ramps where the sessions can carry it", () => {
   const peak = Math.max(...loading.map((w) => w.km));
   assert.ok(peak > loading[0].km * 1.3,
     `${loading[0].km} → ${peak} km is not a ramp`);
+});
+
+test("the easy Hyrox session holds volume rather than costing it", () => {
+  /*
+   * In the specific phase this session is paid for by a quality run, and it used to report
+   * zero running — so a 12 km session became a 0 km one and his weeks fell from 56 km to 36
+   * in the four weeks where race-specific running matters most. The volume was not
+   * reallocated, it was lost, and the taper then measured itself against the loss.
+   */
+  const g = built();
+  const easy = g.weeks.flatMap((w) => of(w).filter((s) => s.kind === "easy_hyrox")
+    .map((s) => ({ n: w.n, taper: w.taper, s })));
+  assert.ok(easy.length >= 3, "the specific phase carries one of these a week");
+  for (const e of easy) {
+    if (e.taper) continue;
+    assert.ok((e.s.km ?? 0) > 0, `week ${e.n}: easy Hyrox carries no running`);
+    assert.ok((e.s.km ?? 0) <= 6.1, `week ${e.n}: ${e.s.km} km is a run with rowing attached`);
+    /* Written as easy running, which is the only reason it is allowed to count. */
+    assert.match(e.s.target_text ?? "", /Z2 easy run/);
+    /* And the machine work still says nothing about pace, because it is not running. */
+    assert.match(e.s.target_text ?? "", /500m row Z2/);
+  }
+
+  const specific = g.weeks.filter((w) => w.phase === "specific");
+  const build = g.weeks.filter((w) => w.phase === "build" && !w.deload);
+  const peak = Math.max(...build.map((w) => w.km));
+  const worst = Math.min(...specific.map((w) => w.km));
+  /*
+   * The specific phase does trade running for station work, deliberately. What it must not
+   * do is halve the running: a third off the peak was the fault, not the design.
+   */
+  assert.ok(worst > peak * 0.6,
+    `specific bottoms at ${worst} km against a build peak of ${peak}`);
 });
