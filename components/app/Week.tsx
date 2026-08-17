@@ -7,7 +7,7 @@ import {
 } from "./Rebuild";
 import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
 import { prescribedPace } from "@/lib/signals";
-import { parseStrength } from "@/lib/prescription";
+import { parseStrength, prescribedKm } from "@/lib/prescription";
 import { summariseStrength } from "@/lib/plan/exercises";
 import type { Session, User, WeekData } from "./Shell";
 
@@ -71,15 +71,39 @@ const pc = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.round(sec) % 
 function workLine(target: string | null | undefined): string {
   if (!target) return "";
   const lines = target.split("\n").map((l) => l.replace(/^[-•*]\s*/, "").trim());
+  const say = (l: string) => l.replace(/\bZ[1-5]\b/, "").replace(/@\s*/, "at ")
+    .replace(/\s+/g, " ").trim();
+
   const reps = lines.findIndex((l) => /^\d+\s*x$/i.test(l));
   if (reps > -1 && lines[reps + 1]) {
     const n = lines[reps].replace(/x$/i, "").trim();
-    const work = lines[reps + 1]
-      .replace(/\bZ[1-5]\b/, "")
-      .replace(/@\s*/, "at ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const work = say(lines[reps + 1]);
+    /*
+     * The repeat is the session only when the session is the repeat.
+     *
+     * Describing the first repeat block turned an 8 km easy run with six strides on the end
+     * into "6 × 20s stride" — the strides are a footnote and the eight kilometres are the
+     * session. Where there is running before the repeat, the run leads and the repeat follows.
+     */
+    const before = lines.slice(0, reps).filter((l) => l && !/warm up/i.test(l));
+    if (before.length > 0) return `${say(before[0])} · ${n} × ${work}`;
     return `${n} × ${work}`;
+  }
+
+  /*
+   * Blocks written out one at a time — an embedded-block long run — are the session's shape,
+   * and the first line is not it. "18 km · 3 × 1 km at 4:30" is what the plan says; the card
+   * was showing "8km at 5:08-5:22", which is the first easy segment and reads as a run ten
+   * kilometres shorter than the one prescribed.
+   */
+  const body = lines.filter((l) => l && !/warm up|cool down/i.test(l));
+  const fast = body.filter((l) => /\bZ[3-5]\b/.test(l) && !/float|walk|jog|stride/i.test(l));
+  const total = prescribedKm(target);
+  if (fast.length > 1 && new Set(fast).size === 1) {
+    return `${total} km · ${fast.length} × ${say(fast[0])}`;
+  }
+  if (fast.length >= 1 && body.length > fast.length && total > 0) {
+    return `${total} km · ${fast.map(say).join(" + ")}`;
   }
   /*
    * A strength session says what it trains and how big it is.
@@ -118,7 +142,14 @@ function metrics(s: Session): [string, string, string] {
       "",
     ];
   }
-  const km = s.distance_m ? Number(s.distance_m) / 1000 : null;
+  /*
+   * Recorded where it has been run, prescribed where it has not.
+   *
+   * `distance_m` is what a matched activity covered, so it is null on every planned session —
+   * which meant a planned run showed only its duration, and a 51 km week looked like seven
+   * unquantified sessions. The prescription always knows what it is asking for.
+   */
+  const km = s.distance_m ? Number(s.distance_m) / 1000 : (prescribedKm(s.target) || null);
   if (!s.kind.startsWith("run")) {
     return [
       s.actual_minutes ? `${s.actual_minutes} min` : `${s.planned_minutes ?? "—"} min`,
@@ -127,10 +158,11 @@ function metrics(s: Session): [string, string, string] {
     ];
   }
   return [
-    km ? `${km.toFixed(2)} km` : `${s.planned_minutes ?? "—"} min`,
+    km ? `${km.toFixed(km >= 10 ? 1 : 2)} km` : `${s.planned_minutes ?? "—"} min`,
     done && km && s.actual_minutes
       ? `${pc((s.actual_minutes * 60) / km)} /km`
-      : pace ? `${pc(pace)} /km prescribed` : "",
+      : pace ? `${pc(pace)} /km prescribed`
+      : `${s.planned_minutes ?? "—"} min`,
     done && s.avg_hr ? `HR ${Math.round(Number(s.avg_hr))}` : pace ? `alert ${pc(pace - 3)}` : "",
   ];
 }

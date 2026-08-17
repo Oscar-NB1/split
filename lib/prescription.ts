@@ -318,3 +318,67 @@ export function shiftPaces(target: string | null | undefined, seconds: number): 
       b ? `${move(a)}-${move(b)}${unit}` : `${move(a)}${unit}`,
   );
 }
+
+/**
+ * The distance a prescription asks for, read the way the rest of the app reads it.
+ *
+ * This existed three times over — in the importer's validation, in two export scripts — and
+ * nowhere the screens could reach, which is why a planned run showed no distance at all:
+ * `metrics` read `distance_m`, and that is the distance a *recorded* activity covered, so it is
+ * null until the session has been run. An 18 km Sunday displayed as "95 min" and its card line
+ * described the first 8 km block, so the plan looked like it had lost ten kilometres.
+ *
+ * Repeats are expanded, because a repeat block is the most common way to get this wrong. The
+ * `m`-under-60-is-minutes rule is the same one `humanDose` applies: "10m Z2 warm up" is ten
+ * minutes and "800m" is metres. A step with a duration and a pace contributes the distance that
+ * duration covers at that pace; one with neither contributes nothing, which is correct for a
+ * station.
+ */
+export function prescribedKm(target: string | null | undefined): number {
+  let km = 0;
+  for (const g of parseSteps(target)) {
+    for (const st of g.items) {
+      const m = /^(\d+(?:\.\d+)?)\s*(km|k|m|mi|min|s|sec)\b/i.exec(st.dose.trim());
+      if (!m) continue;
+      const n = Number(m[1]);
+      const unit = m[2].toLowerCase();
+      const seconds = paceSecondsOf(st.pace);
+      let d = 0;
+      if (unit === "km" || unit === "k") d = n;
+      else if (unit === "mi") d = n * 1.609;
+      else if (unit === "m") d = n < 60 ? (seconds ? (n * 60) / seconds : 0) : n / 1000;
+      else if (unit === "min") d = seconds ? (n * 60) / seconds : 0;
+      else d = seconds ? n / seconds : 0;
+      km += d * g.repeat;
+    }
+  }
+  return Math.round(km * 10) / 10;
+}
+
+/** The midpoint of a pace or pace range, in seconds per km. */
+function paceSecondsOf(pace: string | null): number {
+  const all = [...(pace ?? "").matchAll(/(\d{1,2}):([0-5]\d)/g)]
+    .map((m) => Number(m[1]) * 60 + Number(m[2]));
+  return all.length ? all.reduce((a, b) => a + b, 0) / all.length : 0;
+}
+
+/**
+ * How many work reps a prescription genuinely repeats.
+ *
+ * `repCount` counts every work step, which is right for an interval session and wrong for
+ * everything else: an 8 km easy run with six strides on the end came back as "7 reps", and an
+ * 18 km long run with three tempo blocks in it as "5". A continuous run has no reps, and saying
+ * it has one is worse than saying nothing.
+ *
+ * Only groups that actually repeat count, so a session with no repeat block returns 0 and the
+ * screen can show its distance instead.
+ */
+export function repeatedReps(target: string | null | undefined): number {
+  let n = 0;
+  for (const g of parseSteps(target)) {
+    if (g.repeat <= 1) continue;
+    if (/warm|cool/i.test(g.label)) continue;
+    n += g.items.filter((s) => !s.rest).length * g.repeat;
+  }
+  return n;
+}

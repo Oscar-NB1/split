@@ -5,7 +5,7 @@ import { kindColour, kindLabel } from "@/lib/coach";
 import type { Forecast } from "@/lib/weather";
 import { warmupFor } from "@/lib/warmup";
 import { classGuideFor } from "@/lib/class-guide";
-import { humanDose, type StepGroup } from "@/lib/prescription";
+import { humanDose, prescribedKm, repeatedReps, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
 
@@ -469,8 +469,18 @@ export default function Brief({
         <div style={{ fontSize: 13, color: "var(--ink-55)", marginTop: 6 }}>
           {/* The kind, in the app's words. It said "Hyrox" for anything that was
               not a run or a lift, so an interval session read as Hyrox. */}
+          {/*
+            * Reps where the session repeats something, distance where it does not.
+            *
+            * `d.reps` counts every work step, so an 8 km easy run with six strides on the end
+            * read as "7 reps" and an 18 km long run with three tempo blocks as "5 reps" — a
+            * number that describes neither session. A continuous run has no reps; it has a
+            * distance, and that is the thing worth putting beside its name.
+            */}
           {[s.purpose ? s.title : null, kindLabel(s.kind),
-            d.reps > 0 ? `${d.reps} reps` : null].filter(Boolean).join(" · ")}
+            repeatedReps(s.target) > 0 ? `${repeatedReps(s.target)} × reps`
+              : prescribedKm(s.target) > 0 ? `${prescribedKm(s.target)} km`
+              : null].filter(Boolean).join(" · ")}
         </div>
 
         {s.planned_minutes && (

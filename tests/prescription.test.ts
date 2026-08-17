@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mmss, parseSteps, parseStrength, repCount, restFor, tonnage } from "../lib/prescription";
+import { mmss, parseSteps, parseStrength, prescribedKm, repCount, repeatedReps, restFor, tonnage } from "../lib/prescription";
 
 // the real prescription the plan writes for week 1's Tuesday
 const KEY = [
@@ -154,4 +154,43 @@ test("the clock reads m:ss, and h:mm:ss past an hour", () => {
   assert.equal(mmss(3661), "1:01:01");
   // a countdown must never render a negative
   assert.equal(mmss(-5), "0:00");
+});
+
+/**
+ * What a planned session says about itself.
+ *
+ * These came out of his imported plan looking wrong on the screen while being right in the
+ * database: an 18 km Sunday displayed as an 8 km run, an 8 km easy run described by the six
+ * strides on the end of it, and a 51 km week whose cards showed no distance at all. All three
+ * were the screens reading one step and calling it the session.
+ */
+
+test("a prescription's distance is what it asks for, repeats expanded", () => {
+  const blocks = [
+    "- 8km Z2 @ 5:08-5:22/km", "- 1km Z3 @ 4:30/km", "- 1km Z2 float @ 5:08-5:22/km",
+    "- 1km Z3 @ 4:30/km", "- 1km Z2 float @ 5:08-5:22/km", "- 1km Z3 @ 4:30/km",
+    "- 5km Z2 @ 5:08-5:22/km",
+  ].join("\n");
+  assert.equal(prescribedKm(blocks), 18, "an 18 km long run is 18 km, not its first segment");
+
+  const quality = ["- 3km Z2 warm up", "- 6x", "- 1000m Z4 @ 4:20/km", "- 90s Z1 walk",
+    "- 2km Z1 cool down"].join("\n");
+  assert.equal(prescribedKm(quality), 11, "3 + 6 × 1 + 2");
+
+  /* Minutes become distance through their pace; "10m" is ten minutes and "800m" is metres. */
+  assert.equal(prescribedKm("- 10m Z2 @ 5:00/km"), 2);
+  assert.equal(prescribedKm("- 800m Z4 @ 4:00/km"), 0.8);
+  /* A station has no pace and no distance, and must not invent one. */
+  assert.equal(prescribedKm("- 25 reps Wall balls at 6 kg"), 0);
+  assert.equal(prescribedKm(null), 0);
+});
+
+test("reps are counted only where the session repeats something", () => {
+  /* An 8 km easy run with strides on the end is not a seven-rep session. */
+  assert.equal(repeatedReps("- 8km Z2 @ 5:18-5:38/km\n- 6x\n- 20s Z5 stride\n- 60s Z1 walk"), 6);
+  assert.equal(repeatedReps("- 18km Z2 @ 5:08-5:22/km"), 0,
+    "a continuous run has no reps, and claiming one is worse than saying nothing");
+  assert.equal(repeatedReps("- 3km Z2 warm up\n- 6x\n- 1000m Z4 @ 4:20/km\n- 90s Z1 walk"), 6);
+  /* The recovery inside a repeat is not a rep. */
+  assert.equal(repeatedReps("- 4x\n- 2000m Z3 @ 4:30/km\n- 120s Z1 walk"), 4);
 });
