@@ -1,5 +1,5 @@
 import { sql } from "./db";
-import { isRunnable } from "./session-kinds";
+import { RUNNABLE_KINDS, isRunnable } from "./session-kinds";
 
 /**
  * intervals.icu bridge - this is how a programmed session reaches the watch.
@@ -213,7 +213,15 @@ export async function pushUpcoming(userId: string) {
     where user_id = ${userId}
       and status = 'planned'
       and planned_date between current_date and current_date + 10
-      and kind like 'run%'
+      /*
+       * The same list isRunnable() uses, rather than a second attempt at it in SQL.
+       *
+       * This was a LIKE on 'run%', which matches a kind that starts with run — the naming it
+       * was written for. The kinds end with it now, so this selected nothing, and the fix to the
+       * TypeScript guard in pushSession() did not touch it: the same mistake existed twice, in two
+       * languages, and fixing one left the hourly job still pushing zero sessions an hour.
+       */
+      and kind = any(${[...RUNNABLE_KINDS]})
       and (intervals_pushed_at is null or intervals_pushed_at < updated_at)
   `;
   let n = 0;

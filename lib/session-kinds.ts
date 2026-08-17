@@ -15,10 +15,12 @@
  * Both namings are accepted, because old plans still hold the old ones, and the set is explicit
  * rather than a substring test so the next rename breaks a test instead of a feature.
  */
-const RUNNABLE = new Set([
+export const RUNNABLE_KINDS = [
   "easy_run", "long_run", "quality_run", "benchmark",
   "run_easy", "run_long", "run_intervals", "run_recovery",
-]);
+] as const;
+
+const RUNNABLE = new Set<string>(RUNNABLE_KINDS);
 
 export const isRunnable = (kind: string): boolean =>
   RUNNABLE.has(kind) || kind.startsWith("run_") || /_run$/.test(kind);

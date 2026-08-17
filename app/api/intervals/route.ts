@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { pushUpcoming, resolveAthleteId, verifyIntervals } from "@/lib/intervals";
+import { RUNNABLE_KINDS } from "@/lib/session-kinds";
 import { badRequest, route } from "@/lib/http";
 
 /**
@@ -25,7 +26,7 @@ export const GET = route(async () => {
     select count(*)::int as due from planned_sessions
      where user_id = ${me.id} and status = 'planned' and target is not null
        and planned_date >= current_date and planned_date < current_date + 10
-       and (kind like '%\_run' or kind like 'run\_%' or kind = 'benchmark')
+       and kind = any(${[...RUNNABLE_KINDS]})
   `;
   return NextResponse.json({
     connected: Boolean(row), athlete_id: row?.athlete_id ?? null,
