@@ -51,8 +51,26 @@ export type Signal = {
   reps?: number[];
 };
 
+/** One session, as the engine read it. */
+export type Point = Signal & {
+  /**
+   * The delta the reps proved, conditions allowed for.
+   *
+   * Not an average and not a median — see `repRead`. Zero when the set was mixed,
+   * which is the honest answer to "how much should the plan move" for an athlete who
+   * hit the pace on some reps and not others.
+   */
+  delta: number;
+  /** the set average, which is what the watch showed and what the athlete remembers */
+  average: number;
+  /** the rep-by-rep breakdown, or null where no laps came through */
+  reps_read: RepRead | null;
+  /** seconds per km lost across the set, or null with too few reps to tell */
+  fade: number | null;
+};
+
 export type Read = {
-  points: (Signal & { delta: number })[];
+  points: Point[];
   /** recency-weighted average miss, in the signal's own units */
   trend: number;
   /** consecutive signals on the same side of the tolerance band */
@@ -95,11 +113,101 @@ export const CLEAN_SWEEP_REPS = 3;
  * streak like everything else.
  */
 export function cleanSweep(s: Signal, band = BAND): boolean {
-  const reps = s.reps ?? [];
-  if (reps.length < CLEAN_SWEEP_REPS) return false;
+  const rr = repRead(s, band);
+  if (!rr || rr.total < CLEAN_SWEEP_REPS) return false;
   // Conditions do not enter this. They are only ever an excuse for being slow, and
   // a set of reps run faster than target in bad air is stronger evidence, not weaker.
-  return reps.every((r) => r <= s.prescribed - band);
+  return rr.behind === 0 && rr.provable <= -band
+    && rr.ahead >= Math.ceil(rr.total * MOST);
+}
+
+/**
+ * What a session proves, rep by rep.
+ *
+ * No average and no median. Both collapse a set into one number, and the number
+ * cannot tell apart the two sessions a coach would read completely differently:
+ *
+ *   4:05, 4:06, 4:07, 4:30   three reps beat a 4:10 target and one blew up
+ *   3:55, 4:05, 4:15, 4:25   went out too hard and lost 30 s/km across the set
+ *
+ * Their averages are both 4:10 — on plan, apparently, in both cases. The first is an
+ * athlete whose prescription is too slow; the second is an athlete who cannot yet
+ * hold the prescription they have. A median is better than a mean here and still
+ * wrong: it is a single rep standing in for the set.
+ *
+ * So every rep is compared to what was prescribed, and the session is read from that
+ * distribution. The magnitude comes from the **binding rep** — the slowest one, when
+ * they all beat the target — because that is the only pace the athlete has actually
+ * demonstrated they can hold for the whole set. A plan should move by what every rep
+ * supported, not by what the good ones did.
+ */
+export type RepRead = {
+  total: number;
+  /** reps quicker than prescribed by more than the band */
+  ahead: number;
+  /** reps inside the band, either side */
+  on: number;
+  /** reps slower than prescribed by more than the band */
+  behind: number;
+  /**
+   * The provable delta, in seconds per km, or 0 when the set does not prove one.
+   *
+   * Negative when every rep beat the target: the slowest of them, because that pace
+   * was held on every single rep. Positive when every rep missed it: the quickest of
+   * them, for the same reason in reverse. Zero for a mixed set — an athlete who hit
+   * the pace on some reps and not others has a durability finding, not a pace one,
+   * and easing the target would be answering the wrong question.
+   */
+  provable: number;
+  /** seconds per km lost between the first half of the set and the last */
+  fade: number | null;
+};
+
+/** Where two thirds of the set has to agree before the set says anything. */
+export const MOST = 2 / 3;
+
+export function repRead(s: Signal, band = BAND): RepRead | null {
+  const reps = (s.reps ?? []).filter((r) => Number.isFinite(r) && r > 0);
+  if (reps.length < 2) return null;
+
+  const dir = s.dir ?? 1;
+  const off = reps.map((r) => (r - s.prescribed) * dir);
+  const ahead = off.filter((d) => d <= -band).length;
+  const behind = off.filter((d) => d >= band).length;
+  const on = off.length - ahead - behind;
+
+  /*
+   * The binding rep, and why two thirds rather than all of them.
+   *
+   * Requiring every rep to beat the target means one rep interrupted by a road
+   * crossing cancels a session that was otherwise emphatic. Two thirds ahead with
+   * none behind is the same finding with room for a set of six to contain a
+   * mistake — and the magnitude is still the slowest qualifying rep, so a single
+   * flyer cannot inflate it.
+   */
+  let provable = 0;
+  if (behind === 0 && ahead >= Math.ceil(reps.length * MOST)) {
+    const qualifying = off.filter((d) => d <= -band);
+    provable = Math.max(...qualifying);
+  } else if (ahead === 0 && behind >= Math.ceil(reps.length * MOST)) {
+    const qualifying = off.filter((d) => d >= band);
+    provable = Math.min(...qualifying);
+  }
+
+  /*
+   * Fade: the back half against the front half.
+   *
+   * The one place halves are compared rather than reps, because fade is a claim
+   * about the shape of the set and not about any rep in it. Reported, never used to
+   * move a target — a Hyrox is decided in its back half, and an athlete who faded
+   * 20 s/km needs to be told that rather than have their paces quietly adjusted.
+   */
+  const half = Math.floor(reps.length / 2);
+  const fade = reps.length < 4 ? null : Math.round((
+    reps.slice(reps.length - half).reduce((n, x) => n + x, 0) / half
+    - reps.slice(0, half).reduce((n, x) => n + x, 0) / half) * 10) / 10;
+
+  return { total: reps.length, ahead, on, behind, provable, fade };
 }
 
 /**
@@ -127,11 +235,21 @@ export function read(signals: Signal[], goalSeconds: number, band = BAND): Read 
    * only ever pull a delta towards zero — never past it into the opposite verdict.
    */
   const points = signals.map((s) => {
-    const raw = (s.achieved - s.prescribed) * (s.dir ?? 1);
+    /*
+     * Rep by rep where the laps came through; the one number they gave us where they
+     * did not. A lift, or a continuous tempo, genuinely is one effort — the
+     * per-rep read applies to sessions that have reps.
+     */
+    const rr = repRead(s, band);
+    const raw = rr ? rr.provable : (s.achieved - s.prescribed) * (s.dir ?? 1);
     const allowance = s.conditions_s ?? 0;
     return {
       ...s,
       delta: raw > 0 && allowance > 0 ? Math.max(0, raw - allowance) : raw,
+      /** what the watch showed, for the screen — never what the verdict came from */
+      average: s.achieved,
+      reps_read: rr,
+      fade: rr?.fade ?? null,
     };
   });
 
@@ -185,12 +303,28 @@ export function read(signals: Signal[], goalSeconds: number, band = BAND): Read 
   const swept = sweptLast && last.delta <= -band;
   const enough = streak >= MIN_STREAK || (swept && lastSide === -1);
 
+  /*
+   * The magnitude comes from the least-improved session of the run, not from a
+   * weighted mean of them.
+   *
+   * Same argument as inside a session, one level up: three sessions at −8, −9 and −2
+   * average to about −7, and the athlete has only actually demonstrated −2 on all
+   * three of them. A plan should move by the amount every piece of evidence supports,
+   * so the binding session sets the size exactly as the binding rep does.
+   *
+   * `trend` is still reported — it is a genuine description of the direction and the
+   * screen labels it as one — but nothing is sized from it.
+   */
+  const run = points.slice(-Math.max(1, streak));
+  const sameSide = run.filter((p) => (lastSide === -1 ? p.delta <= -band : p.delta >= band));
+  const binding = sameSide.length
+    ? sameSide.reduce((a, b) => (Math.abs(a.delta) <= Math.abs(b.delta) ? a : b)).delta
+    : last.delta;
+
   const shift = state === "on" ? 0
     : !enough ? 0
     : Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, Math.round(
-      // A sweeping session speaks for itself rather than through a trend that is
-      // still averaging in the weeks before it.
-      (swept && streak < MIN_STREAK ? last.delta : trend) * 0.6)));
+      (swept && streak < MIN_STREAK ? last.delta : binding) * 0.6)));
 
   return {
     points, trend, streak, state, shift,

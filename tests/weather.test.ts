@@ -4,7 +4,7 @@ import {
   beyondHorizon, coldCost, conditionsCost, headlineFor, heatCost, verdictFor,
   wasAdverse, windCost,
 } from "../lib/weather";
-import { read, type Signal } from "../lib/signals";
+import { read, repRead, type Signal } from "../lib/signals";
 
 test("heat costs nothing until it costs something, then accelerates", () => {
   assert.equal(heatCost(12, 60), 0, "a cool day is not an excuse");
@@ -126,10 +126,15 @@ test("a session where every rep beat target moves the plan on its own", () => {
   assert.ok(r.shift < 0, `${r.shift} s/km off a single sweeping session`);
 });
 
-test("one rep off the pace, and it waits for the streak like everything else", () => {
-  // Four flew and one blew up: that is a pacing story, not a fitness one.
+test("one rep off the pace, and the set proves nothing", () => {
+  /*
+   * Four flew and one blew up. Averaging would have called this ahead and moved the
+   * plan; reading the reps calls it a set they could not complete at that pace, which
+   * is a durability finding rather than a pace one.
+   */
   const r = read([sweep([241, 240, 239, 238, 262])], 250);
   assert.equal(r.shift, 0, "no shift from a set that fell apart");
+  assert.equal(r.points[0].reps_read!.behind, 1);
 });
 
 test("two quick reps are a good day, not evidence", () => {
@@ -155,4 +160,94 @@ test("a session with no laps imported cannot sweep, and does not pretend to", ()
     prescribed: 250, achieved: 240,
   };
   assert.equal(read([noReps], 250).shift, 0);
+});
+
+// --- reps, not the average of them ----------------------------------------------
+
+test("one blown rep does not turn a good session into a bad verdict", () => {
+  /*
+   * 4:05, 4:06, 4:07, 4:30 against a 4:10 target. The average is 4:12, which reads
+   * as behind — while three of the four reps beat the target and one rep blew up.
+   * That athlete is fitter than their prescription, and averaging says the opposite.
+   */
+  const reps = [245, 246, 247, 270];
+  const s: Signal = {
+    on: "2026-08-14", label: "4 × 1000 m", type: "Interval", weight: 1,
+    prescribed: 250, achieved: reps.reduce((a, b) => a + b, 0) / reps.length, reps,
+  };
+  assert.ok(s.achieved > 250, "the average is behind the target");
+  const rr = repRead(s)!;
+  assert.equal(rr.ahead, 3, "three reps beat it");
+  assert.equal(rr.behind, 1, "one blew up");
+  /*
+   * Nothing moves — and that is the point. Averaging called this session *behind*
+   * and would have eased every pace target in the block off one bad rep. Reading the
+   * reps calls it what it is: a prescription that is about right, for an athlete who
+   * held it three times out of four.
+   *
+   * It does not move the plan quicker either, because a set is a set: they were asked
+   * for four reps at 4:10 and produced three. The finding is durability, and the
+   * `fade` figure is where that gets said.
+   */
+  assert.equal(rr.provable, 0, "a set with a blown rep proves nothing about pace");
+  const v = read([s], 250);
+  assert.equal(v.points[0].delta, 0);
+  assert.notEqual(v.state, "behind", "and above all, not behind");
+});
+
+test("a set that fell apart is not read as on plan", () => {
+  /*
+   * 3:55, 4:05, 4:15, 4:25 averages exactly the 4:10 target. The athlete went out too
+   * hard and could not hold it — which is the opposite finding from the session above,
+   * and has an identical average.
+   */
+  const reps = [235, 245, 255, 265];
+  const s: Signal = {
+    on: "2026-08-14", label: "4 × 1000 m", type: "Interval", weight: 1,
+    prescribed: 250, achieved: 250, reps,
+  };
+  const rr = repRead(s)!;
+  assert.equal(rr.ahead, 2);
+  assert.equal(rr.behind, 2);
+  assert.equal(rr.provable, 0, "a mixed set proves nothing about the pace");
+  assert.equal(read([s], 250).points[0].delta, 0);
+  assert.equal(rr.fade, 20, "and it says they lost 20 s/km across it");
+});
+
+test("fade is reported, and needs enough reps to mean anything", () => {
+  const even: Signal = {
+    on: "2026-08-14", label: "6 × 1000 m", type: "Interval", weight: 1,
+    prescribed: 250, achieved: 250, reps: [250, 249, 251, 250, 250, 251],
+  };
+  assert.ok(Math.abs(repRead(even)!.fade!) <= 1, "held evenly");
+  assert.equal(repRead({ ...even, reps: [250, 248, 252] })!.fade, null,
+    "three reps is not a trend");
+});
+
+test("without laps, the session average is still the evidence", () => {
+  // A lift, or an activity imported with no interval structure, has one number.
+  const s: Signal = {
+    on: "2026-08-14", label: "Threshold 20 min", type: "Interval", weight: 1,
+    prescribed: 250, achieved: 244,
+  };
+  assert.equal(repRead(s), null, "no reps, no rep read");
+  // and the one number it did give us is still the evidence
+  assert.equal(read([s], 250).points[0].delta, -6);
+});
+
+test("a run of sessions moves the plan by the least of them, not the average", () => {
+  /*
+   * Same argument as inside a session, one level up. Three sessions at −8, −9 and −2
+   * average to about −7, and the athlete has only demonstrated −2 across all three.
+   * A plan moves by the amount every piece of evidence supports.
+   */
+  const at = (d: number): Signal => ({
+    on: "2026-08-14", label: "5 × 1000 m", type: "Interval", weight: 1,
+    prescribed: 250, achieved: 250 + d,
+    reps: [250 + d, 250 + d, 250 + d, 250 + d],
+  });
+  const r = read([at(-8), at(-9), at(-2)], 250);
+  assert.equal(r.streak, 3, "three on the same side of the band");
+  assert.equal(r.shift, -1, "−2 × 0.6, rounded — the binding session");
+  assert.ok(r.trend < -4, `the trend is still reported as ${r.trend}`);
 });

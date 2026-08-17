@@ -123,7 +123,9 @@ export default function Form({ only }: { only?: "pace" | "volume" }) {
                 Move pace targets {secs(v.shift)}
               </span>
               <span className="muted">
-                {v.streak} consecutive sessions {v.sideWord}, trend {secs(v.trend)}. Capped at 6 s/km
+                {v.streak} consecutive sessions {v.sideWord}. The move is sized from the least
+                of them, not their average — a plan should only shift by what every session
+                supported. Capped at 6 s/km
                 and applied to pace targets only — never to volume.
               </span>
 
@@ -188,8 +190,53 @@ export default function Form({ only }: { only?: "pace" | "volume" }) {
                   }} />
                 </div>
                 <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
-                  prescribed {clock(p.prescribed)}/km · held {clock(p.achieved)}/km
+                  {/* The median, because that is what the verdict was read from —
+                      and the average beside it, because that is what the watch
+                      showed and what the athlete will compare against. */}
+                  {/* The average is shown because it is what the watch said and what
+                      the athlete remembers — never because the verdict came from it.
+                      The verdict is the rep counts underneath. */}
+                  prescribed {clock(p.prescribed)}/km · set average {clock(p.average)}/km
                 </span>
+                {p.reps && p.reps.length > 1 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {/* Every rep, because the verdict is about the reps.
+                        A set of four where three beat the target and one blew up is a
+                        different session from one that faded across all four, and the
+                        two have the same average — so showing only the average asks
+                        the athlete to trust a number that cannot tell them apart. */}
+                    <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 26 }}>
+                      {p.reps.map((r, ri) => {
+                        const off = r - p.prescribed;
+                        return (
+                          <span key={ri} title={`Rep ${ri + 1}: ${clock(r)}/km`}
+                            style={{
+                              flex: 1, minWidth: 4, borderRadius: 2,
+                              height: `${Math.max(20, Math.min(100, 55 + off * 2.2))}%`,
+                              background: off <= -2 ? "var(--teal)"
+                                : off >= 2 ? "#C07A3E" : "var(--ink-40)",
+                            }} />
+                        );
+                      })}
+                    </div>
+                    <span style={{ fontSize: 10.5, color: "var(--ink-40)" }}>
+                      {/* Every rep counted against what was asked for. This is the
+                          verdict — a set of four where three beat the target and one
+                          blew up is a different session from one that faded across
+                          all four, and both have the same average. */}
+                      {p.reps_read
+                        ? [
+                          `${p.reps_read.ahead} of ${p.reps_read.total} ahead`,
+                          p.reps_read.behind ? `${p.reps_read.behind} behind` : null,
+                          p.reps_read.on ? `${p.reps_read.on} on target` : null,
+                        ].filter(Boolean).join(" · ")
+                        : `${p.reps.length} reps`}
+                      {p.fade != null && Math.abs(p.fade) >= 2
+                        ? ` · ${p.fade > 0 ? `faded ${Math.round(p.fade)} s/km` : `finished ${Math.abs(Math.round(p.fade))} s/km quicker`} across the set`
+                        : p.fade != null ? " · held it evenly" : ""}
+                    </span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
