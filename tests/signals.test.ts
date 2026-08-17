@@ -169,3 +169,16 @@ test("the countdown marks are days that can actually occur", () => {
     assert.ok(mark < fromStart, `${mark} days out falls inside the block`);
   }
 });
+
+test("a banded pace target is read at its middle", () => {
+  /*
+   * Pace targets are written as a range now. `prescribedPace` took the first number it found,
+   * which on "4:32-4:38/km" is the fast end — so every rep run correctly would have read as three
+   * seconds quick, and the calibration that decides what gets prescribed next would have drifted
+   * the whole plan faster on evidence that was an artefact of how the target is written.
+   */
+  assert.equal(prescribedPace("5 × 1km @ 4:32-4:38/km"), 4 * 60 + 35);
+  assert.equal(prescribedPace("5 × 1km @ 4:35/km"), 4 * 60 + 35, "a single pace still reads");
+  /* And a start time is still not a pace. */
+  assert.equal(prescribedPace("Race @ 09:30"), null);
+});

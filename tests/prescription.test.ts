@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mmss, parseSteps, parseStrength, prescribedKm, repCount, repeatedReps, restFor, tonnage } from "../lib/prescription";
+import { mmss, parseSteps, parseStrength, prescribedKm, repCount, repeatedReps, restFor, tonnage, widenPaces } from "../lib/prescription";
 
 // the real prescription the plan writes for week 1's Tuesday
 const KEY = [
@@ -193,4 +193,36 @@ test("reps are counted only where the session repeats something", () => {
   assert.equal(repeatedReps("- 3km Z2 warm up\n- 6x\n- 1000m Z4 @ 4:20/km\n- 90s Z1 walk"), 6);
   /* The recovery inside a repeat is not a rep. */
   assert.equal(repeatedReps("- 4x\n- 2000m Z3 @ 4:30/km\n- 120s Z1 walk"), 4);
+});
+
+test("a single pace target becomes a band, and a range is left alone", () => {
+  /*
+   * A prescription that says 4:35/km asks for something nobody can hold — GPS is worth two or
+   * three seconds on its own and a hill is worth more — so an athlete running the session
+   * correctly still read as missing it. The easy and long runs were always written as ranges;
+   * the interval sessions were not.
+   */
+  assert.equal(widenPaces("- 8m Z3 @ 4:35/km"), "- 8m Z3 @ 4:32-4:38/km");
+  assert.equal(widenPaces("- 9km Z2 @ 5:18-5:38/km"), "- 9km Z2 @ 5:18-5:38/km",
+    "a range the author wrote is theirs — widening it invents latitude nobody asked for");
+});
+
+test("banding a pace changes nothing that reads one back", () => {
+  const t = "- 3km Z2 warm up\n- 6x\n- 1000m Z4 @ 4:20/km\n- 90s Z1 walk\n- 2km Z1 cool down";
+  assert.equal(prescribedKm(widenPaces(t)), prescribedKm(t), "the midpoint is preserved");
+  assert.equal(prescribedKm(widenPaces(t)), 11);
+});
+
+test("only paces are banded", () => {
+  /* A rest is a duration, not a pace, and a bare mm:ss match would find one in "90s Z1 walk". */
+  assert.equal(widenPaces("- 180s Z1 walk\n- 20s Z5 stride"), "- 180s Z1 walk\n- 20s Z5 stride");
+  /* A finish time is not a pace either. */
+  assert.equal(widenPaces("- 5km Z4 in 19:30/km"), "- 5km Z4 in 19:30/km");
+  assert.equal(widenPaces("- 5km Z4 time trial"), "- 5km Z4 time trial");
+});
+
+test("banding twice is the same as banding once", () => {
+  /* materialise() runs on every pass, so this must not creep wider each hour. */
+  const once = widenPaces("- 8m Z3 @ 4:35/km")!;
+  assert.equal(widenPaces(once), once);
 });

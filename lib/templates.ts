@@ -1,7 +1,7 @@
 import { sql } from "./db";
 import { addDays, diffWeeks, mondayOf, today } from "./dates";
 import { FATIGUE_REASONS } from "./plan";
-import { shiftPaces } from "./prescription";
+import { shiftPaces, widenPaces } from "./prescription";
 import { resizeStrength } from "./plan/strength";
 
 /**
@@ -273,9 +273,18 @@ export async function materialise(templateId: string) {
        * athlete has since told it. Both are reversible by setting the number back
        * to zero.
        */
+      /*
+       * And every single pace becomes a band, here, because here is the one place every stored
+       * session passes through whatever wrote it — generated, imported, or rebuilt.
+       *
+       * A prescription that says 4:35/km asks for something nobody can hold: GPS is worth two or
+       * three seconds on its own and a hill is worth more, so an athlete running the session
+       * correctly still read as missing it. The band is applied after the shift so a calibrated
+       * plan bands the pace it actually asks for, and it leaves ranges the author wrote alone.
+       */
       const target = d.kind === "strength"
         ? resizeStrength(d.target, tpl.strength_accessories_delta)
-        : shiftPaces(d.target, tpl.pace_shift_s) || null;
+        : widenPaces(shiftPaces(d.target, tpl.pace_shift_s)) || null;
 
       // Keyed on the date, not the plan week. The week number is derived, so
       // any change to how it's counted (this commit changed exactly that)

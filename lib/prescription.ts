@@ -382,3 +382,48 @@ export function repeatedReps(target: string | null | undefined): number {
   }
   return n;
 }
+
+/** How far either side of a target pace is still the target. */
+export const PACE_BAND_S = 3;
+
+/**
+ * Every single pace target, widened into a band.
+ *
+ * A prescription that says 4:35/km asks for something nobody can do: a pace is held to within a
+ * few seconds at best, GPS is worth two or three on its own, and a hill is worth more than that.
+ * So an athlete running the session correctly still reads as missing it, and the honest target was
+ * always a range — which is how the easy and long runs have always been written, and how the
+ * interval sessions were not.
+ *
+ * Three seconds either side, and only on paces that are single numbers: a range that was already
+ * a range is the author's own and is left exactly as written. Widening 5:25-5:45 into 5:22-5:48
+ * would be inventing latitude nobody asked for.
+ *
+ * The midpoint is preserved, so everything that reads a pace back out — distance from a duration,
+ * a calibration comparison, the watch alert — gets the number it got before.
+ */
+export function widenPaces(
+  target: string | null | undefined, spread = PACE_BAND_S,
+): string | null {
+  if (!target?.trim()) return target ?? null;
+  const say = (total: number) =>
+    `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+
+  /*
+   * Guarded on both sides. A lookahead alone skipped the first half of an existing range and then
+   * banded the second: 5:18-5:38 came out as 5:18-5:35-5:41, which is not a pace at all. A range
+   * has a time before it or after it, so both have to be checked.
+   *
+   * Matched with the unit attached, too, or this would rewrite the rest steps — "90s Z1 walk" has
+   * no pace in it and a bare mm:ss would find one.
+   */
+  return target.replace(
+    /(?<!\d{1,2}:[0-5]\d\s*[-–]\s*)(\d{1,2}):([0-5]\d)(?!\s*[-–]\s*\d{1,2}:[0-5]\d)(\s*\/?\s*km)/g,
+    (_all, m: string, s: string, unit: string) => {
+      const total = Number(m) * 60 + Number(s);
+      /* Not a pace: a finish time or a clock. Left alone rather than banded. */
+      if (total < 120 || total > 900) return `${m}:${s}${unit}`;
+      return `${say(total - spread)}-${say(total + spread)}${unit}`;
+    },
+  );
+}

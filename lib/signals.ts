@@ -354,6 +354,24 @@ export const secs = (v: number) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.ab
  * rather than a guessed one.
  */
 export function prescribedPace(title: string): number | null {
+  /*
+   * The middle of a band, where the target is a band.
+   *
+   * Pace targets are written as a range now — three seconds either side, because a single number
+   * asks for something nobody can hold and GPS is worth two of those seconds on its own. This
+   * function took the first number it found, which on "4:32-4:38/km" is the fast end: every rep
+   * run correctly would have read as three seconds quick, and the calibration that decides what
+   * gets prescribed next would have drifted the whole plan faster on evidence that was an
+   * artefact of how the target is written.
+   */
+  const band = title.match(/@\s*(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
+  if (band) {
+    const a = Number(band[1]) * 60 + Number(band[2]);
+    const b = Number(band[3]) * 60 + Number(band[4]);
+    const mid = Math.round((a + b) / 2);
+    return mid >= 120 && mid <= 540 ? mid : null;
+  }
+
   const m = title.match(/@\s*(\d{1,2}):(\d{2})/);
   if (!m) return null;
   // A leading zero means a clock: nobody writes a pace as "04:15", and "@ 09:30"
