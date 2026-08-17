@@ -1190,3 +1190,11 @@ alter table rewards add column if not exists image text;
 -- "First HYROX done" is not a reward for a Tuesday. It belongs to the one session in the block that
 -- happens once, so it sits apart from the rotation rather than turning up in week three.
 alter table users add column if not exists race_reward_images text[];
+
+-- One map instead of three columns (2026-08-17).
+--
+-- reward_images / race_reward_images / strength_reward_images was three parallel arrays and a
+-- fourth kind would have been a fourth column and a fourth branch. `reward_images` is now
+-- {kind: [paths]} — key_session, strength, race — and a new kind is a key rather than a migration.
+-- Empty or missing means no reward screen for that kind, which is the default for everybody.
+alter table users drop column if exists race_reward_images;

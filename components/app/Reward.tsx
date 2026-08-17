@@ -67,7 +67,7 @@ export default function Reward({ r, onDone }: { r: Pending; onDone: () => void }
       }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".14em",
           textTransform: "uppercase", color: "#C6FF5B" }}>
-          {r.reward_kind === "race" ? "Raced" : "Done"}
+          {r.reward_kind === "race" ? "Raced" : r.reward_kind === "strength" ? "Lifted" : "Done"}
           {" · "}{fmt(r.date, { weekday: "long", day: "numeric", month: "long" })}
         </span>
         <span style={{ fontFamily: "var(--display)", fontSize: 29, fontWeight: 750,
@@ -77,14 +77,17 @@ export default function Reward({ r, onDone }: { r: Pending; onDone: () => void }
         <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "rgba(255,255,255,.72)" }}>
           {r.reward_kind === "race"
             ? "Ten weeks of Tuesdays and Sundays, for this. Whatever the clock said, you have raced a Hyrox — and the next one starts from a completely different place."
-            : "That was the session the week turns on. Everything else this week exists to make it possible — and it is behind you."}
+            : r.reward_kind === "strength"
+              ? "Squats, split squats and calves. Nobody enjoys this one and it is the reason the lunges do not end your race."
+              : "That was the session the week turns on. Everything else this week exists to make it possible — and it is behind you."}
         </span>
         <button onClick={dismiss} disabled={going} style={{
           width: "100%", border: 0, borderRadius: 100, padding: 16,
           background: "#C6FF5B", color: "#0E2740", fontSize: 12, fontWeight: 800,
           letterSpacing: ".06em", textTransform: "uppercase", opacity: going ? .6 : 1,
         }}>
-          {going ? "…" : r.reward_kind === "race" ? "Go and sit down" : "Recovery mode"}
+          {going ? "…" : r.reward_kind === "race" ? "Go and sit down"
+            : r.reward_kind === "strength" ? "Protein and a sit down" : "Recovery mode"}
         </button>
       </div>
     </div>

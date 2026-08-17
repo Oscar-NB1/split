@@ -367,46 +367,50 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
        */
       if (done) {
         const [r] = await sql<{
-          user_id: string; title: string; kind: string;
-          images: string[] | null; race_images: string[] | null; earned: number;
+          user_id: string; title: string; kind: string; significance: string | null;
+          images: Record<string, string[]> | null;
         }[]>`
-          select p.user_id, p.title, p.kind,
-                 u.reward_images as images, u.race_reward_images as race_images,
-                 /* Counted per kind, so a race does not advance the weekly rotation and a run does
-                    not burn a race picture. */
-                 (select count(*)::int from rewards w
-                   where w.user_id = p.user_id
-                     and w.kind = case when p.kind = 'race' then 'race' else 'key_session' end
-                 ) as earned
+          select p.user_id, p.title, p.kind, p.significance, u.reward_images as images
             from planned_sessions p join users u on u.id = p.user_id
            where p.id = ${id}
-             and (p.significance = 'key' or p.kind in ('quality_run', 'long_run', 'race'))
         `;
-        /*
-         * Race day gets its own picture, and everything else rotates through the set.
-         *
-         * "First HYROX done" is not a reward for a Tuesday — it belongs to the session that happens
-         * once. And the same picture every week stops being a reward by about the fourth one, so the
-         * key sessions rotate by how many she has already earned.
-         *
-         * The chosen image is written onto the row rather than worked out when the screen opens, so
-         * it cannot change between the notification and her opening the app, and adding a fourth
-         * picture later does not rewrite what an earlier session gave her.
-         */
-        const isRace = r?.kind === "race";
-        const set = (isRace ? r?.race_images : r?.images) ?? [];
-        const image = set.length > 0 ? set[(r?.earned ?? 0) % set.length] : null;
 
-        if (r && image) {
+        /*
+         * Which kind of reward a session earns, if any.
+         *
+         * Three, because the pictures are about three different feelings: the run that hurt, the
+         * gym session that hurt differently, and the one day of the block that happens once.
+         * "First HYROX done" is not a reward for a Tuesday.
+         */
+        const rewardKind = r?.kind === "race" ? "race"
+          : r?.kind === "strength" ? "strength"
+          : (r?.significance === "key" || r?.kind === "quality_run" || r?.kind === "long_run")
+            ? "key_session"
+            : null;
+
+        const set = (rewardKind && r?.images?.[rewardKind]) || [];
+        if (r && rewardKind && set.length > 0) {
+          /*
+           * Rotated by how many of that kind she has already earned, counted per kind — a race must
+           * not advance the weekly rotation and a lift must not burn a race picture. The same
+           * picture every week stops being a reward by about the fourth one.
+           */
+          const [{ earned }] = await sql<{ earned: number }[]>`
+            select count(*)::int as earned from rewards
+             where user_id = ${r.user_id} and kind = ${rewardKind}
+          `;
+          const image = set[earned % set.length];
           const fresh = await sql<{ session_id: string }[]>`
             insert into rewards (session_id, user_id, kind, image)
-            values (${id}, ${r.user_id}, ${isRace ? "race" : "key_session"}, ${image})
+            values (${id}, ${r.user_id}, ${rewardKind}, ${image})
             on conflict (session_id) do nothing
             returning session_id
           `;
           if (fresh.length > 0) {
             await notify(r.user_id, "reward", `reward:${id}`, {
-              title: isRace ? "You raced a Hyrox" : "That is the hard one done",
+              title: rewardKind === "race" ? "You raced a Hyrox"
+                : rewardKind === "strength" ? "Leg day survived"
+                : "That is the hard one done",
               body: `${r.title} — logged. Open the app.`,
               url: "/?reward=1",
             });
