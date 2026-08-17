@@ -387,18 +387,32 @@ export default function Week({
       {/* ----------------------------------------------------------- the day */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
-            textTransform: "uppercase", color: INK55 }}>
-            {fmt(dates[day], { weekday: "long", day: "numeric", month: "long" })}
+          {/*
+            * The date is the anchor of this screen, so it is set like one.
+            *
+            * It was an 11px uppercase caption — "MONDAY 17 AUGUST" — which ranks the day
+            * below the session titles under it and makes the eye land on the wrong thing.
+            * The design has it at display size with the weather inline, and it reads far
+            * better: you know which day you are looking at before you have read a word.
+            */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "var(--display)", fontSize: 23, fontWeight: 700,
+              letterSpacing: "-.02em", lineHeight: 1.1 }}>
+              {fmt(dates[day], { weekday: "short", day: "numeric", month: "short" })}
+            </span>
             {sky[dates[day]] && (
-              <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600,
-                marginLeft: 8, fontSize: 12 }}>
-                {sky[dates[day]].emoji} {Math.round(sky[dates[day]].temp_c)}°
+              <span style={{ fontSize: 15, fontWeight: 600, color: INK55,
+                display: "flex", alignItems: "baseline", gap: 5 }}>
+                <span style={{ fontSize: 16 }}>{sky[dates[day]].emoji}</span>
+                {Math.round(sky[dates[day]].temp_c)}°
               </span>
             )}
           </div>
-          <span style={{ fontSize: 11, color: INK55, textAlign: "right" }}>
-            {dayList.length === 0 ? "Rest day" : `${dayList.length} session${dayList.length > 1 ? "s" : ""}`}
+          {/* Right-aligned and quiet: "Double day" over "feels 30°", as the design has it. */}
+          <span style={{ fontSize: 12.5, color: INK55, textAlign: "right", lineHeight: 1.5 }}>
+            {dayList.length === 0 ? "Rest day"
+              : dayList.length > 1 ? "Double day"
+              : "1 session"}
             {/* Said only when it differs enough to matter — "feels 19°" beside 19° is
                 noise, and the number that changes how you dress is the second one. */}
             {sky[dates[day]] && Math.abs(sky[dates[day]].feels_c - sky[dates[day]].temp_c) >= 2 && (
