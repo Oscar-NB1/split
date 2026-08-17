@@ -54,9 +54,24 @@
  * only .scroll scroll removes the gap and the rubber-banding with it.
  */
 html,body{height:100%;overflow:hidden}
-html{background:var(--off)}
+/*
+ * The page behind the app is the colour of the tab bar, not the colour of the content.
+ *
+ * This is the grey strip. In an iOS standalone PWA `position:fixed; inset:0` resolves to
+ * the layout viewport, which stops above the home indicator — so the shell does not
+ * reach the physical bottom of the screen and whatever is behind it shows through. That
+ * was `--off`, the content grey, which is why the bottom of the screen read as a white
+ * band (the bar) followed by a grey band (the body). Two strips, not one, which is why
+ * every fix aimed at the bar's padding missed.
+ *
+ * Painting the page in `--paper` makes anything below the shell indistinguishable from
+ * the tab bar sitting on top of it — the bar simply continues to the edge of the screen,
+ * which is what a native tab bar does. Works whichever viewport `inset:0` resolves to,
+ * and in both themes, because it is the same variable the bar uses.
+ */
+html{background:var(--paper)}
 body{
-  background:var(--off); color:var(--ink);
+  background:var(--paper); color:var(--ink);
   font-family:var(--font); font-size:14px; line-height:1.45;
   -webkit-font-smoothing:antialiased;
   /* the design is a phone; on desktop it stays a column rather than stretching */
