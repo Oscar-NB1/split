@@ -3,7 +3,8 @@ import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, otherRung, rungFor } from "./ladders";
 import {
-  continuousRun, hyroxClass, hyroxSession, longRun, qualityRun, type LongShape,
+  continuousRun, easyHyrox, hyroxClass, hyroxSession, longRun, qualityRun,
+  type LongShape,
 } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { applyBRaces } from "./braces";
@@ -237,7 +238,7 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         hard: s.hard,
         label: s.label ?? (isBench ? "Benchmark test"
           : isQuality ? thisRung.label
-          : s.kind === "easy_hyrox" ? "Easy Hyrox · ski, row and carries"
+          : s.kind === "easy_hyrox" ? "Easy Hyrox · ski, row and broad jumps"
           : s.kind === "hyrox" && hyroxRung
             ? `Hyrox · ${(hyroxSeen++ === 0 ? hyroxRung : hyroxRung2 ?? hyroxRung).toLowerCase()}`
           : String(s.kind)),
@@ -333,13 +334,16 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
          * the stations too — the intervals are the part it keeps written.
          */
         const asClass = p.session_style === "classes" || p.session_style === "mix";
-        const built = asClass ? hyroxClass(s.label) : hyroxSession(s.label, easyPace);
+        const built = asClass
+          ? hyroxClass(s.label)
+          : hyroxSession(s.label, easyPace, 4, kitFrom(p.equipment), w.n);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title) s.label = built.title;
         if (built.note) s.note_text = built.note;
       } else if (kind === "easy_hyrox") {
-        const built = hyroxSession(s.label, easyPace, 3);
+        const built = easyHyrox();
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
+        if (built.note) s.note_text = built.note;
       } else if (kind === "strength") {
         /*
          * The lifts, which were never written at all — the screen said "no lifts

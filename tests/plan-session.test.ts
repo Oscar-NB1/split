@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { continuousRun, hyroxSession, qualityRun, readRung } from "../lib/plan/session";
+import { continuousRun, easyHyrox, hyroxSession, qualityRun, readRung } from "../lib/plan/session";
 import { parseSteps, parseStrength, repCount } from "../lib/prescription";
 import { kitFrom, strengthTarget } from "../lib/plan/strength";
 
@@ -59,15 +59,48 @@ test("the week can trim the session, and the title follows it", () => {
   assert.ok(tiny.km <= 4.6, `${tiny.km} km`);
 });
 
-test("an easy run says one thing, and a Hyrox session alternates", () => {
+test("an easy run says one thing, and a Hyrox session is a list of things to do", () => {
   const easy = continuousRun(8, 310);
   assert.equal(parseSteps(easy.target).length, 1);
   assert.equal(easy.minutes, 41);
 
+  /*
+   * It used to end "1 station Z4", which is a note to a coach rather than an
+   * instruction: it tells the athlete a station goes here without saying which one,
+   * how much of it, or in what order.
+   */
   const hyrox = hyroxSession("Hyrox · transitions", 310);
-  const groups = parseSteps(hyrox.target);
-  assert.ok(groups.some((g) => /×/.test(g.label)), "it repeats");
-  assert.match(hyrox.target, /station/, "the station is in the session");
+  assert.doesNotMatch(hyrox.target, /1 station/, "no placeholder stations");
+  const named = ["SkiErg", "Sled", "Row", "Wall balls", "burpee", "carry", "lunge"];
+  assert.ok(
+    named.filter((n) => new RegExp(n, "i").test(hyrox.target)).length >= 2,
+    `stations are named and dosed:\n${hyrox.target}`);
+  // Run, station, run, station — the shape of the race.
+  const lines = hyrox.target.split("\n").slice(1, -1);
+  lines.forEach((l, i) => {
+    if (i % 2 === 0) assert.match(l, /400m/, `line ${i} is a run`);
+  });
+});
+
+test("a Hyrox session rotates its stations, and respects the kit", () => {
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const one = hyroxSession("Hyrox · transitions", 310, 4, kit, 1);
+  const five = hyroxSession("Hyrox · transitions", 310, 4, kit, 5);
+  assert.notEqual(one.target, five.target, "week 5 is not week 1's stations again");
+
+  // No sled and no kettlebells: the pattern still gets trained, with what they have.
+  const bare = hyroxSession("Hyrox · transitions", 310, 8,
+    { barbell: false, kettlebells: false, rig: false, sled: false }, 2);
+  assert.doesNotMatch(bare.target, /25 m Sled|100 m Farmers/, "nothing they cannot reach");
+  assert.match(bare.target, /substituted/, "the substitution is stated, not silent");
+});
+
+test("an easy Hyrox session carries no running volume and no heavy stations", () => {
+  const built = easyHyrox();
+  assert.equal(built.km, 0, "compromised work never counts as running volume");
+  assert.doesNotMatch(built.target, /[Ss]led|[Ss]andbag|[Ff]armers/, "nothing heavy on an easy day");
+  assert.match(built.target, /row/i);
+  assert.match(built.target, /Ski/i);
 });
 
 test("a strength session prescribes lifts, from the kit the athlete has", () => {

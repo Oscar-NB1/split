@@ -91,13 +91,37 @@ const say = (sec: number, mode: string) =>
     ? `${(3600 / sec).toFixed(1)} kph`
     : `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")} /km`;
 
-type Item = { main: string; sub: string; work: boolean };
+type Item = {
+  main: string; sub: string; work: boolean;
+  /**
+   * What this step is done on, where it is not running.
+   *
+   * The right-hand column said "Run" on every row, which on a Hyrox session put it
+   * beside twenty-five wall balls. A station is not a run and the row should not
+   * claim it is.
+   */
+  tag?: string;
+};
 type Group = {
   label: string; color: string; items: Item[]; note: string;
   /** how many times the pair repeats; 1 for a block that runs once */
   repeat: number;
   /** the whole set in one line, above the two rows it is made of */
   summary: string;
+};
+
+/** What to call the station in the modality column, in three letters or so. */
+const stationTag = (label: string): string => {
+  const l = label.toLowerCase();
+  if (/ski/.test(l)) return "Ski";
+  if (/row/.test(l)) return "Row";
+  if (/sled/.test(l)) return "Sled";
+  if (/carry/.test(l)) return "Carry";
+  if (/lunge/.test(l)) return "Lunge";
+  if (/burpee|jump/.test(l)) return "BBJ";
+  if (/wall/.test(l)) return "WB";
+  if (/spin|walk/.test(l)) return "Easy";
+  return "Station";
 };
 
 /**
@@ -138,6 +162,36 @@ function groupsFor(
               : isWarm ? "Conversational" : "or slower",
           work: false,
         }],
+      });
+      continue;
+    }
+
+    /*
+     * A Hyrox session is a list, not a rep and a count.
+     *
+     * Everything else in the app is a rep repeated: eight minutes at a pace, six
+     * times. A Hyrox session is eight different things in a fixed order — four
+     * hundred metres, then wall balls, then four hundred metres, then the ski — so
+     * summarising it as "1 × 400 m" and showing the first row would throw away every
+     * station in it. Each step gets its own numbered row, in order, and there is
+     * nothing to repeat.
+     */
+    const stations = g.items.filter((i) => !i.rest && !i.pace && !/^\d+(\.\d+)?km/.test(i.dose));
+    if (stations.length >= 2 && g.repeat === 1) {
+      out.push({
+        label: "The session", color: kindColour(kind), repeat: 1,
+        note: "Work down the list in order. Time your transitions — the roxzone is where a race quietly goes.",
+        summary: `${g.items.filter((i) => !i.rest).length} things to do, in this order`,
+        items: g.items.map((it) => ({
+          // A station is a dose and a movement: "25 reps · Wall balls". A run keeps
+          // its pace, because running off a station is the one thing being trained.
+          main: it.pace
+            ? `${humanDose(it.dose)} at ${sayPace(it.pace, mode)}`
+            : `${humanDose(it.dose)} ${it.label}`.trim(),
+          sub: it.rest ? "Recover, then go again." : "",
+          work: !it.rest,
+          tag: it.pace ? undefined : stationTag(it.label),
+        })),
       });
       continue;
     }
@@ -393,7 +447,7 @@ export default function Brief({
                           </div>
                           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
                             textTransform: "uppercase", color: "var(--ink-40)" }}>
-                            {mode === "Treadmill" ? "TM" : "Run"}
+                            {it.tag ?? (mode === "Treadmill" ? "TM" : "Run")}
                           </span>
                         </div>
                       );

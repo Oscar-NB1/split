@@ -209,17 +209,45 @@ export function allocateSlots(x: SlotInput): SlotPlan {
   }
 
   /*
+   * Two Hyrox sessions in the specific weeks: one hard, one easy.
+   *
+   * Two hard station sessions in the same week is three hard days before the long
+   * run has been counted, and it is not what the phase needs — the second exposure
+   * is worth having for the machines and the transitions, not for the intensity. So
+   * the second one is always the easy machine session: ski, row, broad jumps, and
+   * nothing that needs a rack.
+   *
+   * This used to happen only in absorb weeks, which is why an easy Hyrox session
+   * appeared once in a fifteen-week block: it needed two Hyrox slots, the specific
+   * phase, and an even week all at once. It is a property of the phase, not of the
+   * week, so it is decided here — before the absorb rule, which then has the second
+   * quality run to take rather than this.
+   */
+  if (x.phase === "specific" && isHyrox && counts.hyrox >= 1 && counts.easy_hyrox === 0) {
+    if (counts.hyrox > 1) {
+      counts.hyrox--; counts.easy_hyrox++;
+    } else if (counts.quality_run > 1) {
+      /*
+       * Where the A/B rule has bought a second quality run, that is what pays for it.
+       *
+       * A second interval session in the race-specific weeks is training the thing
+       * the block has already built. The station exposure is what these weeks are
+       * for, and taking it from the easy running instead would leave a week with
+       * three hard days and nothing aerobic under them.
+       */
+      counts.quality_run--; counts.easy_hyrox++;
+    }
+  }
+
+  /*
    * The absorb week: three hard days become two.
    *
-   * Which one goes depends on the phase. Outside the specific weeks it is the second
-   * quality run, and it becomes easy running. Inside them both Hyrox sessions stay —
-   * that is the point of the phase — and the second one becomes the easy machine
-   * session instead, so the race exposure survives and the hard day does not.
+   * The second quality run goes and becomes easy running. Where there is only one,
+   * the second Hyrox session goes instead — the long run and the one interval
+   * session are what the week is built on, and neither is negotiable.
    */
   if (x.absorb && counts.quality_run + counts.hyrox >= 3) {
-    if (x.phase === "specific" && counts.hyrox > 1) {
-      counts.hyrox--; counts.easy_hyrox = (counts.easy_hyrox ?? 0) + 1;
-    } else if (counts.quality_run > 1) {
+    if (counts.quality_run > 1) {
       counts.quality_run--; counts.easy_run++;
     } else if (counts.hyrox > 1) {
       counts.hyrox--; counts.easy_run++;
@@ -255,7 +283,10 @@ export function allocateSlots(x: SlotInput): SlotPlan {
     flags.push(
       "Your week needs one more hard day than your history supports. The quality run and the Hyrox session are both the point of the block, so neither was dropped.",
     );
-  } else if (isHyrox && slots >= 5 && counts.hyrox < 2) {
+  } else if (isHyrox && slots >= 5 && counts.hyrox + counts.easy_hyrox < 2) {
+    // Counting both: in the specific weeks the second one is the easy machine
+    // session by design, and reporting that as a session that "would not fit" is
+    // the plan apologising for a decision it made on purpose.
     flags.push("Two Hyrox sessions would not fit inside your hard-day budget, so there is one.");
   }
 

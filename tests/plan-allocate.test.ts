@@ -84,7 +84,14 @@ test("the second Hyrox session waits for the specific phase", () => {
    */
   assert.equal(slotsFor({ target_sessions: 6, phase: "base" }).counts.hyrox, 1);
   assert.equal(slotsFor({ target_sessions: 6, phase: "build" }).counts.hyrox, 1);
-  assert.equal(slotsFor({ target_sessions: 6, phase: "specific" }).counts.hyrox, 2);
+  /*
+   * Two station sessions in the specific weeks — and the second one is the easy
+   * machine session, not a second hard day. The exposure is what the phase is for;
+   * the intensity was already bought in the build weeks.
+   */
+  const spec = slotsFor({ target_sessions: 6, phase: "specific" }).counts;
+  assert.equal(spec.hyrox + spec.easy_hyrox, 2, "two Hyrox sessions");
+  assert.equal(spec.easy_hyrox, 1, "one of them easy");
 });
 
 test("easy running is a minimum, not a leftover", () => {
@@ -142,7 +149,8 @@ test("hard days are capped by training age, and the cap outranks the second Hyro
   assert.ok(s.flags.some((f) => /hard-day budget/.test(f)), "and it says why");
   // an elite athlete in the specific phase keeps both
   const elite = slotsFor({ target_sessions: 7, max_hard: 5, phase: "specific" });
-  assert.ok(elite.counts.hyrox >= 2, `${elite.counts.hyrox} Hyrox sessions`);
+  assert.ok(elite.counts.hyrox + elite.counts.easy_hyrox >= 2,
+    `${elite.counts.hyrox} hard + ${elite.counts.easy_hyrox} easy Hyrox sessions`);
   assert.ok(!elite.flags.some((f) => /hard-day budget/.test(f)));
 });
 
@@ -237,7 +245,8 @@ test("the station share buys Hyrox sessions, it does not multiply them", () => {
    * holds a slot of its own. A station-dominant athlete gets more station work by
    * training more often, not by giving up the aerobic run.
    */
-  assert.equal(carrier.counts.hyrox, 2, `${carrier.counts.hyrox} for a 40% station share`);
+  assert.equal(carrier.counts.hyrox + carrier.counts.easy_hyrox, 2,
+    `${carrier.counts.hyrox} for a 40% station share`);
   assert.ok(carrier.counts.easy_run >= 1, "and the easy run survives it");
 });
 

@@ -15,6 +15,9 @@
  * Pure: a label and a pace in, lines and totals out.
  */
 
+import type { Kit } from "./strength";
+import { raceOrder, stationsFor } from "./stations";
+
 /** What the ladder rung asks for, once read. */
 export type Work =
   | { shape: "reps"; reps: number; metres: number }
@@ -272,28 +275,94 @@ export function continuousRun(km: number, paceS: number, zone = "Z2"): Built {
 /**
  * The Hyrox session: runs and stations alternating, which is the whole point of it.
  *
- * Written as a repeat block rather than one line, because "compromised running" is
- * not an instruction — running off a station is, and it has to be visible as the
- * shape of the session before anyone can do it properly.
+ * Not a recordable run with a placeholder in the middle. It was written as a repeat
+ * block ending "1 station Z4", which is not an instruction anybody can follow — it
+ * is a note to the coach that a station goes here. A Hyrox session is a list of
+ * things to do in an order, and it should read as one:
+ *
+ *   1. 400 m run
+ *   2. 25 wall balls
+ *   3. 400 m run
+ *   4. 250 m SkiErg
+ *
+ * The stations are named, dosed, in race order, rotated by the week so the block
+ * is not the same two every Saturday, and gated on the equipment the athlete said
+ * they can reach — with the substitution written out rather than the station
+ * quietly dropped.
  */
-export function hyroxSession(label: string, paceS: number, rounds = 4): Built {
+export function hyroxSession(
+  label: string, paceS: number, rounds = 4, kit?: Kit, week = 1,
+): Built {
+  const full = /full simulation/.test(label.toLowerCase());
   const runM = /simulation/.test(label.toLowerCase()) ? 1000 : 400;
-  const n = /full simulation/.test(label.toLowerCase()) ? 8 : rounds;
+  const n = full ? 8 : rounds;
+  const k = kit ?? { barbell: true, kettlebells: true, rig: true, sled: true };
+  const stations = full ? raceOrder(k) : stationsFor(k, n, week);
+
+  /*
+   * Numbered, one line per thing to do, alternating run and station.
+   *
+   * Written flat rather than as an `- Nx` repeat: each round is a different station,
+   * so there is nothing to repeat, and a numbered list is what an athlete standing
+   * in the gym can actually work down.
+   */
   const lines = [
     `- ${doseKm(WARMUP_KM)} Z2 warm up ${between(paceS, Math.round(paceS * 1.08))}`,
-    `- ${n}x`,
+  ];
+  for (let i = 0; i < n; i += 1) {
+    const st = stations[i % stations.length];
     // Running off a station is slower than fresh running, and the target says so
     // rather than setting one nobody hits and everybody chases.
-    `- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`,
-    `- 1 station Z4`,
-    `- ${doseKm(1)} Z1 cool down ${at(paceS)}`,
-  ];
+    lines.push(`- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
+    lines.push(`- ${st.dose} ${st.name}`);
+  }
+  lines.push(`- ${doseKm(1)} Z1 cool down ${at(paceS)}`);
+
   const km = km1(WARMUP_KM + (runM / 1000) * n + 1);
   // A station is roughly the time of the run beside it, plus the transition.
   const stationSeconds = (runM / 1000) * paceS + 60;
   const minutes = Math.round(
     ((WARMUP_KM + 1) * paceS + n * ((runM / 1000) * paceS + stationSeconds)) / 60);
   return { target: lines.join("\n"), km, minutes };
+}
+
+/**
+ * The easy Hyrox session: the aerobic half of the race, without the load.
+ *
+ * It was being written as a three-round Hyrox session, which meant an easy day
+ * cycling through the sled and the sandbag — the two stations that cost the most and
+ * take the longest to recover from. The point of this session is aerobic work on the
+ * machines that make up a quarter of station time, with none of the impact of another
+ * eight kilometres of running and none of the load that would compromise Sunday.
+ *
+ * Machines and bodyweight only: ski, row, burpee broad jumps. No sled, no carry, no
+ * sandbag. If it needs a rack it does not belong on an easy day.
+ */
+export function easyHyrox(rounds = 3): Built {
+  const lines = ["- 5m Z1 easy spin or row to open up"];
+  const block = [
+    ["500m", "row Z2"],
+    ["500m", "SkiErg Z2"],
+    ["20m", "burpee broad jump, unhurried"],
+  ];
+  for (let i = 0; i < rounds; i += 1) {
+    for (const [dose, what] of block) lines.push(`- ${dose} ${what}`);
+    if (i < rounds - 1) lines.push("- 90s Z1 walk or easy spin");
+  }
+  lines.push("- 5m Z1 easy spin");
+  /*
+   * No running kilometres at all.
+   *
+   * Reporting any would put them in the week's running total, and compromised work
+   * never counts towards running volume — that was the whole fault this session was
+   * built to stop repeating.
+   */
+  return {
+    target: lines.join("\n"),
+    km: 0,
+    minutes: 15 + rounds * 12,
+    note: "Conversational the whole way. If you cannot talk through it, it has become a session it was not meant to be.",
+  };
 }
 
 /**
