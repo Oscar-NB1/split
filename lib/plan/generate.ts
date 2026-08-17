@@ -286,7 +286,18 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * they are the slot the week can most afford to lose — until the floors fit, and the
      * week says how many it dropped and why.
      */
-    const FLOOR = { long_run: 5, easy_run: 3, quality_run: 8 };
+    /*
+     * What each slot costs at its smallest — which is not the same for every athlete.
+     *
+     * A quality session for somebody running 4:26/km is about 8 km once its warm-up and
+     * cool-down are counted. For somebody on run/walk intervals at 8:20/km it is 5. Using
+     * the faster athlete's number for both shed every easy run from a beginner's week and
+     * left her running twice, which is the opposite of what a first block should do.
+     */
+    const beginner = p.running_base === "doesnt_run" || p.running_base === "walk_breaks";
+    const FLOOR = beginner
+      ? { long_run: 5, easy_run: 3, quality_run: 5 }
+      : { long_run: 5, easy_run: 3, quality_run: 8 };
     let floor = () => (runSlots.long_run ? FLOOR.long_run : 0)
       + runSlots.easy_run * FLOOR.easy_run
       + runSlots.quality_run * FLOOR.quality_run;

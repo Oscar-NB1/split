@@ -128,7 +128,9 @@ test("a block builds on proven volume rather than doubling it", () => {
 });
 
 test("with nothing recent the peak is unbounded by proof", () => {
-  const r = resolve(base());
+  // Across a long block, where the training-age multiplier is what binds rather than the
+  // number of loading weeks available to climb through.
+  const r = resolve(base({ block_weeks: 30 }));
   assert.equal(r.peak_ceiling, Math.round(r.start_volume * 2.2 * 10) / 10);
 });
 
@@ -154,4 +156,27 @@ test("the week key agrees with what the database buckets by", () => {
   assert.equal(weekKey(new Date("2026-08-16T22:00:00")), "2026-08-10");
   assert.equal(weekKey(new Date("2026-08-10T06:00:00")), "2026-08-10");
   assert.equal(weekKey(new Date("2026-08-17T06:00:00")), "2026-08-17");
+});
+
+test("a race on the calendar raises the ceiling; general fitness does not", () => {
+  /*
+   * A Hyrox contains eight kilometres of running. A 15 km ceiling makes race day more than
+   * half of the biggest week the plan will ever allow — which is not caution, it is a plan
+   * that cannot get its athlete to the start line.
+   */
+  const fitness = resolve(base({ running_base: "walk_breaks", has_race: false }));
+  const racing = resolve(base({ running_base: "walk_breaks", has_race: true }));
+  assert.equal(fitness.ceiling, 15, "training to be fit keeps the protective ceiling");
+  assert.ok(racing.ceiling! >= 28, `${racing.ceiling} km with a race on the calendar`);
+  assert.ok(racing.peak_ceiling > fitness.peak_ceiling, "and the block can reach further");
+
+  // The ramp still governs how fast anybody gets there.
+  assert.equal(racing.ramp_rate, fitness.ramp_rate, "the roof moved, not the climb");
+});
+
+test("somebody who does not run at all is still told the truth", () => {
+  // Raising the roof must not turn into ambition for an athlete ten weeks from a race with
+  // no running behind them.
+  const r = resolve(base({ running_base: "doesnt_run", has_race: true }));
+  assert.ok(r.ceiling! <= 20, `${r.ceiling} km for somebody who does not run`);
 });

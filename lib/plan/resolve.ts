@@ -36,12 +36,40 @@ export const BASE_MATRIX: Record<TrainingAge, Record<number, number>> = {
  * prescribed 30 km in week 1. Training age says what their engine can take;
  * this says what their legs can.
  */
+/**
+ * The most weekly running each base supports — and it is a destination, not a lid.
+ *
+ * These were written to protect somebody from doing too much, and for general fitness they
+ * do that well. For somebody who has entered a race they were preventing the opposite
+ * thing: a Hyrox contains eight kilometres of running, and a 15 km ceiling means race day
+ * is more than half of the biggest week the plan will ever allow. That is not caution, it
+ * is a plan that cannot get its athlete to the start line.
+ *
+ * So there are two tables. The base ceiling is where a block *ends* when there is no race
+ * to prepare for. `RACE_CEILING` is where it ends when there is — roughly double, which is
+ * what it takes for an 8 km race to be a third of a peak week rather than most of one, and
+ * still well inside what the ramp rate can reach in a ten-week block.
+ *
+ * The ramp still governs how fast anybody gets there, and the down weeks still land. This
+ * raises the roof; it does not push anyone towards it.
+ */
 export const RUNNING_CEILING: Record<RunningBase, number | null> = {
   doesnt_run: 8,
   walk_breaks: 15,
   "5k_nonstop": 22,
   runs_regularly: 32,
   half_marathon_fit: 45,
+  marathon_competitive: null,
+};
+
+export const RACE_CEILING: Record<RunningBase, number | null> = {
+  // Still low, deliberately: somebody who does not run and has entered a race in ten
+  // weeks needs the ceiling to be honest with them rather than ambitious.
+  doesnt_run: 16,
+  walk_breaks: 30,
+  "5k_nonstop": 38,
+  runs_regularly: 50,
+  half_marathon_fit: 60,
   marathon_competitive: null,
 };
 
@@ -147,6 +175,16 @@ export type ResolveInput = {
   volume_dial?: number;
   allow_doubles?: boolean;
   recent?: RecentRunning | null;
+  /**
+   * Whether there is a race on the calendar.
+   *
+   * It decides which ceiling applies. Somebody training to be fit and somebody with an
+   * entry in eight weeks need different roofs — the first is protected by a low one and the
+   * second is trapped under it.
+   */
+  has_race?: boolean;
+  /** how many weeks the block runs, so the ramp can be checked against the peak */
+  block_weeks?: number;
 };
 
 export type Resolved = {
@@ -211,7 +249,15 @@ export function resolve(x: ResolveInput): Resolved {
   }
 
   /** What the legs support: the stated base, and the long run behind it. */
-  const stated_ceiling = RUNNING_CEILING[running_base];
+  /*
+   * A race on the calendar raises the roof.
+   *
+   * The general-fitness ceiling is the right number for somebody training to be fit and the
+   * wrong one for somebody with an entry: it made race day more than half of the biggest
+   * week their plan would ever permit.
+   */
+  const stated_ceiling = x.has_race
+    ? RACE_CEILING[running_base] : RUNNING_CEILING[running_base];
   const long_run_ceiling = x.recent?.long_run_km
     ? Math.round(x.recent.long_run_km * LONG_RUN_SHARE) : null;
   const ceiling = stated_ceiling == null ? long_run_ceiling
@@ -289,7 +335,26 @@ export function resolve(x: ResolveInput): Resolved {
   const dial = x.volume_dial ?? 1.0;
   // Not tiered by measurement either, for the same reason: the climb is what
   // the athlete's training and running support, and a test does not change it.
-  const ramp_rate = Math.min(BASE_RAMP[training_age], RUNNING_RAMP[running_base]) * dial;
+  const base_ramp = Math.min(BASE_RAMP[training_age], RUNNING_RAMP[running_base]) * dial;
+  /*
+   * A ramp that cannot reach the peak makes the peak a lie.
+   *
+   * Sarah's block: start 12 km, peak 26.4, ramp 6% a week, six loading weeks after the down
+   * week and the taper come out. Six per cent compounded six times reaches 17 — so the
+   * plan reported a 26 km peak it had no mechanism to arrive at, and she built from 9 to 16
+   * over ten weeks, which is almost no running at all.
+   *
+   * Two honest options: lower the peak to what the ramp reaches, or raise the ramp to what
+   * the block needs. For an athlete with a race entered the second is right up to a limit —
+   * the classic ten per cent rule is the limit, and it exists for exactly this reason. So
+   * the ramp becomes what the block actually requires, capped at 10% a week and never below
+   * what their base supports.
+   *
+   * Where even 10% cannot get there, the peak comes down to what is reachable and the plan
+   * says so, because a number nobody can arrive at is worse than a smaller true one.
+   */
+  const SAFE_MAX_RAMP = 0.10;
+
 
   // Training age sets the peak. Whether a test has been run does not: the same
   // athlete does not become capable of less by declining to be measured.
@@ -310,7 +375,41 @@ export function resolve(x: ResolveInput): Resolved {
   // swing between 20 and 38 km has proven 38.
   const proven = peak_week;
   const proven_cap = proven != null ? proven * PROVEN_HEADROOM : Infinity;
-  const peak_ceiling = Math.round(Math.min(raw_peak, proven_cap) * 10) / 10;
+  let peak_ceiling = Math.round(Math.min(raw_peak, proven_cap) * 10) / 10;
+
+  /*
+   * Now reconcile the ramp with the peak, because one of them is wrong.
+   *
+   * A down week every fourth and a two-week taper leave roughly this many weeks that
+   * actually load. If the ramp cannot reach the peak across them, the plan has been
+   * promising a number it has no mechanism to arrive at.
+   */
+  const weeks = x.block_weeks ?? 12;
+  const loading = Math.max(1, weeks - 2 - Math.floor(weeks / 4));
+  const needed = Math.pow(peak_ceiling / Math.max(1, start_volume), 1 / loading) - 1;
+  let ramp_rate = base_ramp;
+  if (needed > base_ramp) {
+    // Up to the ten per cent rule, which exists for precisely this situation.
+    ramp_rate = Math.min(SAFE_MAX_RAMP, needed);
+    if (needed > SAFE_MAX_RAMP) {
+      /*
+       * Even at 10% the peak is out of reach, so the peak comes down rather than the ramp
+       * going up. A number nobody can arrive at is worse than a smaller true one.
+       */
+      const reachable = Math.round(start_volume * Math.pow(1 + SAFE_MAX_RAMP, loading) * 10) / 10;
+      flags.push(
+        `The block peaks at ${reachable} km rather than ${peak_ceiling} km: from ${
+          start_volume} km, ${loading} loading weeks at the safe limit of 10% a week is as far as it reaches. More than that needs a longer block, not a steeper one.`,
+      );
+      peak_ceiling = reachable;
+    } else {
+      flags.push(
+        `Volume climbs ${Math.round(ramp_rate * 100)}% a week rather than ${
+          Math.round(base_ramp * 100)}%: that is what it takes to reach ${peak_ceiling} km from ${
+          start_volume} km in ${loading} loading weeks, and it stays inside the 10% rule.`,
+      );
+    }
+  }
   if (proven_cap < raw_peak) {
     flags.push(
       `The block peaks at ${peak_ceiling} km rather than ${Math.round(raw_peak * 10) / 10} km: that is ${Math.round((PROVEN_HEADROOM - 1) * 100)}% above your biggest recent week of ${Math.round(proven! * 10) / 10} km, and building further than that inside one block is where people get hurt.`,

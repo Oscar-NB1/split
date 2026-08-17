@@ -95,22 +95,53 @@ test("more sessions than days is refused unless doubles are allowed", () => {
 });
 
 test("the ramp is the lower of the two, and the dial scales it", () => {
-  const r = resolve(base({ general_training_age: "elite", running_base: "walk_breaks" }));
+  /*
+   * With the peak within reach, the running ramp binds — an elite training age does not let
+   * somebody who runs with walk breaks add volume faster than their running supports.
+   */
+  const r = resolve(base({
+    general_training_age: "elite", running_base: "walk_breaks", block_weeks: 30,
+  }));
   assert.equal(Math.round(r.ramp_rate * 100), 6, "the running ramp binds");
   const gentle = resolve(base({
     general_training_age: "elite", running_base: "walk_breaks", volume_dial: 0.6,
+    block_weeks: 30,
   }));
   assert.ok(gentle.ramp_rate < r.ramp_rate);
 });
 
 test("the peak comes from training age, and from nothing else", () => {
-  // the same athlete does not become capable of less by declining to be measured
+  /*
+   * The same athlete does not become capable of less by declining to be measured. Checked
+   * across a long block, where the multiplier is what binds — in a short one the peak is
+   * held to what the ramp can actually reach, which is a different rule tested below.
+   */
   for (const confidence of ["measured", "estimated"] as const) {
-    const advanced = resolve(base({ confidence, general_training_age: "advanced" }));
+    const advanced = resolve(base({ confidence, general_training_age: "advanced", block_weeks: 30 }));
     assert.equal(advanced.peak_ceiling, Math.round(advanced.start_volume * 2.2 * 10) / 10);
-    const novice = resolve(base({ confidence, general_training_age: "novice" }));
+    const novice = resolve(base({ confidence, general_training_age: "novice", block_weeks: 30 }));
     assert.equal(novice.peak_ceiling, Math.round(novice.start_volume * 1.8 * 10) / 10);
   }
+});
+
+test("a peak the ramp cannot reach is lowered, not promised", () => {
+  /*
+   * Sarah's block promised a 26.4 km peak from a 12 km start at 6% a week over six loading
+   * weeks — which arrives at 17. The plan was reporting a number it had no mechanism to get
+   * to, and she built from 9 to 16 km across ten weeks as a result.
+   *
+   * The ramp rises to what the block needs, capped at the ten per cent rule; where even that
+   * cannot reach the peak, the peak comes down and the plan says a longer block is what more
+   * volume would take.
+   */
+  const short = resolve(base({ general_training_age: "advanced", block_weeks: 10 }));
+  const loading = 10 - 2 - Math.floor(10 / 4);
+  const reachable = short.start_volume * Math.pow(1.1, loading);
+  assert.ok(short.peak_ceiling <= Math.round(reachable * 10) / 10 + 0.1,
+    `${short.peak_ceiling} km claimed, ${reachable.toFixed(1)} reachable`);
+  assert.ok(short.ramp_rate <= 0.1 + 1e-9, "and never past the ten per cent rule");
+  assert.ok(short.flags.some((f) => /longer block|10% a week/.test(f)),
+    "and it says which of the two gave way");
 });
 
 // ----------------------------------------------------------------- skeleton

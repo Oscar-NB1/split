@@ -189,6 +189,16 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
      */
     volume_dial: (VOLUME_DIAL[x.volume] ?? 1) * dialFor(extra.volume_feel_delta ?? 0),
     /*
+     * A race raises the volume ceiling.
+     *
+     * The general-fitness ceilings are right for somebody training to be fit and trap
+     * somebody with an entry under a roof lower than their race: a 15 km ceiling makes an
+     * 8 km race day more than half the biggest week the plan will ever allow.
+     */
+    has_race: (x.hasRace ?? "").startsWith("Yes"),
+    // The ramp is checked against the peak across the weeks that actually load.
+    block_weeks: length,
+    /*
      * The difficulty dial, which this generator was ignoring entirely — Steady and
      * Hard produced the same week, and only the older generator's copy read it.
      */
