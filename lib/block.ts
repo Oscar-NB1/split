@@ -40,19 +40,21 @@ export type PlanWeek = {
   start: string;
   km: number;
   /**
-   * The same week's running with the Hyrox sessions taken out.
+   * The running inside this week's Hyrox sessions, which sits on top of `km`.
    *
-   * Both numbers are true and they answer different questions. The total is what the legs
-   * cover, and the running inside a class counts towards it — that is the whole reason his plan
-   * says "every kilometre in this document is running you will actually do, including the
-   * running inside the Hyrox classes". But six of those kilometres arrive in 500 m pieces
-   * between a sled and a set of wall balls, which is not the same training as six kilometres on
-   * a road, and a runner comparing this week against a month of ordinary running wants the
-   * figure that excludes them.
+   * Two numbers, because they answer different questions and because his plan is explicit about
+   * which is which: "every kilometre below is running you will actually do on your own two feet.
+   * The Hyrox classes contain running too — that is a bonus on top, not part of the weekly
+   * number. Skip a class and the week still stands."
    *
-   * Derived from the week's own sessions rather than stored, so it cannot drift from them.
+   * So `km` is the week as written and this is what attending the classes adds. It is the
+   * variable in the block: go to both and week 10 is 58 km, skip them and it is 53, which is
+   * exactly his proven ceiling — and the plan is intact either way.
+   *
+   * Taken from the plan where it says so, and otherwise derived from the week's own sessions, so
+   * a generated block gets the same figure without storing it twice.
    */
-  km_excl_hyrox: number;
+  class_km: number;
   note: string;
   /**
    * The sessions the plan holds for this week.
@@ -116,7 +118,7 @@ export type Row = {
   corrections: Block["corrections"] | null;
   race_date: string | null; race_name: string | null;
   goal_label: string | null; goal_seconds: number | null;
-  volume: { km: number; note?: string }[] | null;
+  volume: { km: number; note?: string; class_km?: number }[] | null;
   intents: IntentRange[] | null;
   weeks: unknown[][] | null;
 };
@@ -142,9 +144,11 @@ function toWeeks(row: Row): PlanWeek[] {
       n: i + 1,
       start: addDays(start, i * 7),
       km: Number(volume[i]?.km ?? 0),
-      km_excl_hyrox: Math.round(shape
-        .filter((d) => d.kind !== "hyrox" && d.kind !== "easy_hyrox")
-        .reduce((n, d) => n + prescribedKm(d.target), 0) * 10) / 10,
+      class_km: volume[i]?.class_km != null
+        ? Number(volume[i]!.class_km)
+        : Math.round(shape
+          .filter((d) => d.kind === "hyrox" || d.kind === "easy_hyrox")
+          .reduce((n, d) => n + prescribedKm(d.target), 0) * 10) / 10,
       note: volume[i]?.note ?? "",
       shape,
     };

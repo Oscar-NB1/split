@@ -297,20 +297,38 @@ function run(detail: string, name: string): { target: string; km: number; minute
  * legs, and the clock on the transitions.
  */
 function hyroxClass(detail: string, name: string): { target: string; km: number; minutes: number; note?: string } | null {
+  /*
+   * The distance is optional, because the plan stopped stating it for the moderate class.
+   *
+   * It used to say "2.5 km of running inside the class"; it now says only what to do in there,
+   * because the running inside a class became a bonus on top of the week rather than part of
+   * its number. A class with no stated distance therefore prescribes no distance — inventing
+   * one would put kilometres back into the week that the author deliberately took out.
+   */
   const m = /(\d+(?:\.\d+)?)\s*km\s*of\s*running/i.exec(detail);
-  if (!m) return null;
-  const km = Number(m[1]);
+  const km = m ? Number(m[1]) : 0;
   const pace = /at\s*(\d{1,2}:[0-5]\d)/i.exec(detail);
   const hard = /hard|sim/i.test(name);
   const zone = hard ? "Z4" : "Z2";
-  const cues = detail.split("·").slice(1).map(clean).filter(Boolean);
-  const lines = [
-    `- ${doseKm(km)} ${zone} running inside the class${pace ? ` @ ${pace[1]}/km` : ""}`,
-  ];
+  const minutes = hard ? 70 : 60;
+  /* With no distance stated, every clause is a cue — there is no leading dose to skip. */
+  const cues = (m ? detail.split("·").slice(1) : detail.split("·")).map(clean).filter(Boolean);
+  const what = /sim/i.test(name) ? "full simulation" : "Hyrox class";
+  const lines = km > 0
+    ? [`- ${doseKm(km)} ${zone} running inside the class${pace ? ` @ ${pace[1]}/km` : ""}`]
+    /*
+     * A class with no prescribed running still has to say what to do in it, and it is stated in
+     * minutes rather than as a distance — the plan no longer counts the running inside it.
+     *
+     * `min` rather than a bare `m`: sixty of those is sixty metres, because the dose grammar
+     * reads `m` under sixty as minutes and everything above it as metres. A one-hour session
+     * would have gone in as a sixty-metre one.
+     */
+    : [`- ${minutes} min ${zone} ${what}${pace ? ` — run reps @ ${pace[1]}/km` : ""}`];
   return {
     target: lines.join("\n"),
     km,
-    minutes: hard ? 70 : 60,
+    minutes,
     note: cues.length ? `${cues.join(". ")}.` : undefined,
   };
 }
@@ -517,6 +535,26 @@ export function parsePlan(text: string, year = 2026): Imported {
   return { title, weeks, problems, notes };
 }
 
-/** Running kilometres a week's sessions come to, which must match what the author stated. */
+/**
+ * The week's own running, which is what the author's weekly number counts.
+ *
+ * The convention changed between revisions of his document, and it matters more than any single
+ * distance did. It used to be "every kilometre in this document is running you will actually do
+ * — including the running inside the Hyrox classes". It is now "every kilometre below is running
+ * you will actually do on your own two feet. The Hyrox classes contain running too — that is a
+ * bonus on top, not part of the weekly number. Skip a class and the week still stands."
+ *
+ * So the classes come out of the figure checked against the document, and are reported beside
+ * it. That is also the better design: the classes are the variable, and a week that still stands
+ * when one is missed is a week somebody can actually keep.
+ */
 export const weekKm = (w: ImportedWeek): number =>
-  km1(w.sessions.reduce((n, s) => n + (s.km ?? 0), 0));
+  km1(w.sessions
+    .filter((s) => s.kind !== "hyrox" && s.kind !== "easy_hyrox")
+    .reduce((n, s) => n + (s.km ?? 0), 0));
+
+/** And the running inside the classes, which sits on top of it. */
+export const classKm = (w: ImportedWeek): number =>
+  km1(w.sessions
+    .filter((s) => s.kind === "hyrox" || s.kind === "easy_hyrox")
+    .reduce((n, s) => n + (s.km ?? 0), 0));

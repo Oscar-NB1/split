@@ -241,10 +241,9 @@ export default function Plan({
 
                 <span style={{ fontSize: 12, color: INK55 }}>
                   {w.km.toFixed(1)} km planned
-                  {/* The class running is part of the total and is not the same training as
-                      road running, so the week says how it splits where the two differ. */}
-                  {w.km_excl_hyrox > 0 && Math.abs(w.km - w.km_excl_hyrox) >= 0.5
-                    && ` (${w.km_excl_hyrox.toFixed(1)} outside the classes)`}
+                  {/* The classes are the variable: their running is a bonus on top of the
+                      week's own number, not part of it. */}
+                  {w.class_km > 0 && ` +${w.class_km.toFixed(1)} in the classes`}
                   {ran != null && ` · ${ran.toFixed(1)} logged`}
                   {ran != null && ran < w.km * .9 && ` · ${(w.km - ran).toFixed(1)} short`}
                 </span>

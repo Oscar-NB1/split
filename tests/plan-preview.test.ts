@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { dialPreview } from "../lib/plan/preview";
 import type { Intake } from "../lib/intake";
 import { toBlock } from "../lib/block";
+import { prescribedKm } from "../lib/prescription";
 
 const base = (o: Partial<Intake> = {}): Intake => ({
   hasRace: "Yes", discipline: "Hyrox doubles", raceDistance: null,
@@ -61,14 +62,14 @@ test("a half-answered form produces a curve rather than a crash", () => {
   assert.ok(p.peak > 0);
 });
 
-test("a week counts its running twice: all of it, and the part outside the classes", () => {
+test("a week counts its own running and what the classes add, separately", () => {
   /*
-   * Both numbers are true and they answer different questions. The running inside a Hyrox class
-   * counts towards the week — it is running, and his plan says so explicitly — but six of those
-   * kilometres arrive in 500 m pieces between a sled and a set of wall balls, which is not the
-   * same training as six on a road.
+   * Two numbers, because his plan is explicit about which is which: every kilometre in the week
+   * is running on your own two feet, and the running inside a Hyrox class is a bonus on top
+   * rather than part of the target. Skip a class and the week still stands.
    *
-   * Derived from the week's own sessions rather than stored, so the two cannot drift apart.
+   * Taken from the plan where it says so, and derived from the week's own sessions otherwise, so
+   * a generated block gets the same figure without storing it twice.
    */
   const block = toBlock({
     id: "b", name: "Block", start_date: "2026-08-17",
@@ -90,7 +91,20 @@ test("a week counts its running twice: all of it, and the part outside the class
   } as never);
 
   const w = block.weeks[0];
-  assert.equal(w.km, 51, "the total is the author's own number");
-  assert.equal(w.km_excl_hyrox, 29, "11 + 18 — the two classes come out");
+  assert.equal(w.km, 51, "the week's own number is the author's");
+  assert.equal(w.class_km, 8.5, "3 + 5.5 inside the classes, derived from the sessions");
   /* Strength contributes nothing, because a lift line has no distance in it. */
+
+  /* And where the plan states it, the plan wins over the derivation. */
+  const stated = toBlock({
+    id: "b", name: "Block", start_date: "2026-08-17",
+    volume: [{ km: 30, note: "", class_km: 4 }],
+    weeks: [[{ day: 2, kind: "hyrox", title: "Class", minutes: 60,
+      target: "- 60 min Z2 Hyrox class" }]],
+    intents: [], race_date: null, race_name: null, goal_label: null, goal_seconds: null,
+    plan_state: null, benchmark: {}, guardrails: [], easy_pace: null, corrections: [],
+  } as never);
+  assert.equal(stated.weeks[0].class_km, 4);
+  /* A class stated in minutes contributes no distance — "60m" would have been 60 metres. */
+  assert.equal(prescribedKm("- 60 min Z2 Hyrox class"), 0);
 });

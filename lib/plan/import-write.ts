@@ -2,7 +2,7 @@ import { sql } from "../db";
 import { materialise } from "../templates";
 import { parseSteps, parseStrength } from "../prescription";
 import { PHASE_LABEL } from "./intents";
-import { type Imported, type ImportedWeek, weekKm } from "./import";
+import { type Imported, type ImportedWeek, classKm, weekKm } from "./import";
 
 /**
  * Putting an authored plan into the app, and refusing to put in a broken one.
@@ -59,8 +59,8 @@ export type WriteResult = {
   weeks: number;
   sessions: number;
   created: number;
-  /** per week: what the document stated against what the sessions come to */
-  volume: { n: number; stated: number; written: number }[];
+  /** per week: what the document stated, what the sessions come to, and the class bonus */
+  volume: { n: number; stated: number; written: number; classes: number }[];
 };
 
 /**
@@ -211,7 +211,7 @@ export async function writeImported(
 ): Promise<WriteResult> {
   const problems = check(imported, opts.tolerance, opts.allow);
   const volume = imported.weeks.map((w) => ({
-    n: w.n, stated: w.stated_km, written: weekKm(w),
+    n: w.n, stated: w.stated_km, written: weekKm(w), classes: classKm(w),
   }));
   const sessions = imported.weeks.reduce((n, w) => n + w.sessions.length, 0);
 
@@ -231,9 +231,23 @@ export async function writeImported(
     volume: ordered.map((w) => ({
       n: w.n,
       /* What the sessions come to, so no two numbers on the screen disagree. */
+      /* The author's own number: running on your own two feet, classes excluded. */
       km: weekKm(w),
+      /* And what the classes add, so a screen can show the week both ways. */
+      class_km: classKm(w),
       phase: w.phase,
-      note: w.label.replace(/^\d.*?-\s*\d+\s*\w+\s*/, "").trim()
+      /*
+       * The week's own label with its date range taken off.
+       *
+       * "14-20 Sep - Down week" is a note that says "Down week". Matched as a whole range rather
+       * than by stripping up to a dash, because the ranges themselves contain dashes and the
+       * months move: "17-23 Aug", "31 Aug - 6 Sep" and "26 Oct - 1 Nov - B-race" all have to
+       * leave the right thing behind, and two earlier attempts left a stray dash and then an end
+       * date standing in as the note.
+       */
+      note: w.label
+        .replace(/^\d{1,2}\s*[A-Za-z]*\s*[-–—]\s*\d{1,2}\s*[A-Za-z]{3,}\.?/, "")
+        .replace(/^[\s-–—]+/, "").trim()
         || (w.deload ? "Down week" : w.taper ? "Taper" : ""),
     })),
     intents: intentsOf(ordered),
