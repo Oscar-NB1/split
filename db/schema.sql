@@ -1089,3 +1089,29 @@ alter table planned_sessions add column if not exists purpose text;
 -- two consecutive reports in the same direction move it one step, clamped, and the moves
 -- are recomputed from the whole history rather than incremented.
 alter table plan_templates add column if not exists volume_feel_delta int not null default 0;
+
+-- Rebuild My Week (2026-08-17).
+--
+-- The sentence is stored with the diff it produced. When a rebuild goes wrong you need the
+-- words that caused it — a proposal on its own tells you what happened and never why.
+--
+-- `applied_at` null means proposed and not taken. Kept either way: two rebuilds a week is
+-- the limit, and the count is of what was asked for rather than what was accepted.
+create table if not exists week_rebuilds (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  week_start  date not null,
+  raw_text    text not null,
+  proposal    jsonb not null,
+  applied_at  timestamptz,
+  created_at  timestamptz not null default now()
+);
+create index if not exists week_rebuilds_lookup
+  on week_rebuilds (user_id, week_start, created_at desc);
+
+-- Where a moved session started (2026-08-17).
+--
+-- A rebuild that moves a long run from Sunday to Friday has to be able to say "from Sunday",
+-- and an undo has to have somewhere to put it back. Reversing the diff would assume nothing
+-- else changed in between, and something usually has.
+alter table planned_sessions add column if not exists original_date date;

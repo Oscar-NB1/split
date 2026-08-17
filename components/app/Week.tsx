@@ -2,6 +2,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { addDays, dow, fmt, mondayOf, today } from "@/lib/dates";
 import { kindColour, kindLabel, weekDates } from "@/lib/coach";
+import {
+  GhostRow, RebuildBar, RebuildCard, RebuildNudge, RebuildSheet, type Proposal,
+} from "./Rebuild";
 import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
 import { prescribedPace } from "@/lib/signals";
 import { parseStrength } from "@/lib/prescription";
@@ -179,6 +182,16 @@ export default function Week({
    * is a prop.
    */
   const sky = useSky(weekDates(monday)[0], weekDates(monday)[6]);
+  /*
+   * Rebuild my week. Three states: closed, describing, previewing.
+   *
+   * The preview replaces the week in place rather than opening a diff screen — they compare
+   * it against the week they already have in their head, not against a list.
+   */
+  const [sheet, setSheet] = useState(false);
+  const [proposal, setProposal] = useState<Proposal | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [nudged, setNudged] = useState(false);
 
   if (!data) return <div style={{ padding: 18 }}><p className="empty">Loading…</p></div>;
 
@@ -336,7 +349,8 @@ export default function Week({
             flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
             gap: 1, color: "var(--ink)",
           }}>
-            <span style={{ fontSize: 12, fontWeight: 700 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, display: "flex",
+              alignItems: "center", gap: 8 }}>
               {week ? `Week ${week.n} of ${block?.weeks.length ?? week.n}`
                 : isThisWeek ? "This week" : "Outside the block"}
             </span>
@@ -384,6 +398,52 @@ export default function Week({
         </div>
       </div>
 
+      {/*
+        * The reactive entry point, which is the better one: it arrives at the moment somebody
+        * would want it rather than waiting to be remembered.
+        */}
+      {/*
+        * Where the design puts it: under the day strip, above the day.
+        *
+        * Not shown on a past week — history is immutable — nor in race week, where it is too
+        * late to be reorganising and the race-day view is what matters.
+        */}
+      {isThisWeek && !proposal && !sheet && week
+        && week.n < (block?.weeks.length ?? 99) && (
+        <RebuildCard onOpen={() => setSheet(true)} />
+      )}
+
+      {isThisWeek && !proposal && !nudged && !sheet && (
+        <RebuildNudge
+          empty={dates
+            .filter((d, i) => d < today() && i < dow(today())
+              && !all.some((s) => s.planned_date === d
+                && ["done", "adjusted", "unplanned"].includes(s.status)))
+            .map((d) => fmt(d, { weekday: "long" }))}
+          onOpen={() => { setNudged(true); setSheet(true); }}
+          onDismiss={() => setNudged(true)}
+        />
+      )}
+
+      {sheet && (
+        <RebuildSheet monday={monday} onClose={() => setSheet(false)}
+          onProposal={(p) => { setSheet(false); setProposal(p); }} />
+      )}
+
+      {proposal && (
+        <RebuildBar p={proposal} busy={applying}
+          onDiscard={() => setProposal(null)}
+          onApply={async () => {
+            setApplying(true);
+            const r = await fetch(`/api/weeks/${monday}/rebuild/apply`, {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ proposal_id: proposal.proposal_id }),
+            });
+            setApplying(false);
+            if (r.ok) { setProposal(null); reload(); }
+          }} />
+      )}
+
       {/* ----------------------------------------------------------- the day */}
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
@@ -421,7 +481,17 @@ export default function Week({
           </span>
         </div>
 
-        {dayList.length === 0 && <p className="empty">Nothing written for this day.</p>}
+        {/*
+          * Dropped sessions stay visible as ghost rows while a proposal is on screen.
+          *
+          * Removing them outright makes the week look thinner than the change actually was,
+          * and hides what was given up — which is the thing to see before agreeing to it.
+          */}
+        {proposal?.dropped
+          .filter((d) => d.day === DAYS[day])
+          .map((d) => <GhostRow key={d.id} label={d.label} why={d.why} />)}
+
+        {dayList.length === 0 && !proposal && <p className="empty">Nothing written for this day.</p>}
 
         {dayList.map((s) => {
           const [m1, m2, m3] = metrics(s);
