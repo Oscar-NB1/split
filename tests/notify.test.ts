@@ -4,6 +4,7 @@ import { isQuiet, nextSendableAt, QUIET_FROM, QUIET_TO } from "../lib/notify";
 import { beats, describe as describeRecord, METRICS } from "../lib/records";
 import { countLeadingSkips } from "../lib/rules";
 import { MAX_SESSION_SECONDS, MAX_SPEED_MS } from "../lib/bounds";
+import { AFTER_A_SESSION, afterLine, occasionOf, weeklyLine } from "../lib/coach-copy";
 
 // ------------------------------------------------------------- quiet hours
 
@@ -132,4 +133,38 @@ test("the activity bounds live in one place, and are the ones that were needed",
   // the watch left running was 68,740 s; a long run is ~2 h
   assert.ok(MAX_SESSION_SECONDS < 68740, "must exclude the nineteen-hour session");
   assert.ok(MAX_SESSION_SECONDS >= 3 * 3600, "must not clip a genuine long run");
+});
+
+test("his own words, and never the same one twice in a row", () => {
+  /*
+   * Fifteen lines he wrote for her, recovered from a design mockup they had been sitting in while
+   * the app sent "Tomorrow's session · Long run · 65 min". The value of them is that they are his:
+   * "I am making dinner after Saturday" is not a line anybody can generate.
+   */
+  const seen = new Set<string>();
+  for (let i = 0; i < AFTER_A_SESSION.length; i += 1) {
+    const line = afterLine(i);
+    assert.ok(!seen.has(line), `"${line}" repeated before the pool was used up`);
+    seen.add(line);
+  }
+  /* And it comes round again rather than running out. */
+  assert.equal(afterLine(AFTER_A_SESSION.length), afterLine(0));
+  assert.equal(afterLine(-1), afterLine(1), "a negative count is still a line, not a crash");
+});
+
+test("a weekly line with nothing to fill it is dropped, not sent with a brace in it", () => {
+  assert.equal(weeklyLine("peak", { km: 22 }), "Biggest week yet, 22 km. You are going to finish it, and I will be right there when you do.");
+  assert.equal(weeklyLine("peak", {}), null, "\"Biggest week yet, {km} km\" is worse than the plain notification");
+  assert.equal(weeklyLine("base", {}), "Nothing scary this week bebezinho, just us building. I love watching you do this.");
+  assert.match(weeklyLine("race_close", { weeks: 2 })!, /Only 2 weeks/);
+});
+
+test("the occasion comes from the week, not from a guess", () => {
+  assert.equal(occasionOf({ phase: "base" }), "base");
+  assert.equal(occasionOf({ phase: "build", deload: true }), "deload");
+  assert.equal(occasionOf({ phase: "build", taper: true }), "taper");
+  assert.equal(occasionOf({ phase: "specific", benchmark: true }), "benchmark");
+  assert.equal(occasionOf({ phase: "build", peak: true }), "peak");
+  /* Three weeks out outranks everything: it is the thing she would want said. */
+  assert.equal(occasionOf({ phase: "base" }, 2), "race_close");
 });

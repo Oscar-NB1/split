@@ -187,10 +187,26 @@ export async function materialise(templateId: string) {
    * future session written by a template that is no longer active is stale whatever
    * wrote it.
    */
+  /*
+   * A session the athlete has moved is not stale.
+   *
+   * This ran hourly and deleted every untouched future session before rewriting from the template,
+   * which is right for a session sitting where the plan put it and catastrophic for one that has
+   * been moved on purpose: he rearranged his week by hand and it reverted, within the hour, every
+   * time. Nothing in the guards noticed, because a moved session is still `planned` with no activity
+   * against it — moving a session is not the same as doing it.
+   *
+   * `source_ref` is "{template}:{date}:{kind}:{slot}", so the date the plan wrote it for is already
+   * recorded on the row. Where that no longer matches `planned_date`, somebody moved it, and it
+   * survives. The rewrite step then finds it by ref, skips the insert, and refreshes its title and
+   * prescription in place without touching the date — so a moved session still gets pace changes
+   * and progressive overload, and stays where it was put.
+   */
   await sql`
     delete from planned_sessions
      where user_id = ${tpl.athlete_id} and source = 'template'
        and planned_date > ${now}
+       and split_part(source_ref, ':', 2) = planned_date::text
        and status = 'planned' and activity_id is null
        and not exists (select 1 from session_comments c where c.session_id = planned_sessions.id)
        and not exists (

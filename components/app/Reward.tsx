@@ -19,22 +19,33 @@ import { fmt } from "@/lib/dates";
  */
 
 export type Pending = {
-  session_id: string; title: string; kind: string; date: string; image: string;
+  session_id: string | null; title: string; kind: string; date: string | null; image: string;
   /** key_session or race — the two have nothing in common except that both are behind her */
   reward_kind?: string;
 };
+
+/** A reward can be a photo or a short clip; the path is the only thing that says which. */
+const isVideo = (src: string) => /\.(mp4|mov|webm)$/i.test(src);
 
 export default function Reward({ r, onDone }: { r: Pending; onDone: () => void }) {
   const [going, setGoing] = useState(false);
   /* Held until the picture is there: half a reward screen is worse than a moment of nothing. */
   const [ready, setReady] = useState(false);
+  /*
+   * Muted to begin with, because that is the only way a phone will play it unprompted — iOS blocks
+   * autoplay with sound, and a reward screen that needs a second tap before anything happens is
+   * not a reward. The sound is offered rather than forced.
+   */
+  const [muted, setMuted] = useState(true);
+  const video = isVideo(r.image);
 
   useEffect(() => {
+    if (video) { setReady(true); return; }
     const img = new Image();
     img.onload = () => setReady(true);
     img.onerror = () => setReady(true);
     img.src = r.image;
-  }, [r.image]);
+  }, [r.image, video]);
 
   async function dismiss() {
     setGoing(true);
@@ -52,30 +63,74 @@ export default function Reward({ r, onDone }: { r: Pending; onDone: () => void }
       display: "flex", flexDirection: "column",
       opacity: ready ? 1 : 0, transition: "opacity .35s ease",
     }}>
-      {/* The picture, filling whatever the phone gives it. */}
-      <div style={{
-        flex: 1, minHeight: 0, backgroundImage: `url(${r.image})`,
-        backgroundSize: "cover", backgroundPosition: "center",
-      }} />
+      {/* The picture, or the clip, filling whatever the phone gives it. */}
+      {video ? (
+        /*
+         * Centred in the space rather than filling it.
+         *
+         * The clip is landscape and the phone is not, so a full-bleed treatment left it floating in a
+         * tall navy band with empty space above and below — which reads as something that failed to
+         * load rather than as a composition. Centred, with the words directly underneath, it is a card.
+         */
+        <div style={{
+          flex: 1, minHeight: 0, position: "relative", display: "flex",
+          alignItems: "center", justifyContent: "center", padding: "0 0 6px",
+        }}>
+          <video
+            src={r.image}
+            autoPlay loop playsInline muted={muted}
+            /*
+             * `contain` rather than `cover`: the clip is landscape and the phone is not, so cropping
+             * to fill would cut most of the subject out of frame. Letterboxed on the same navy the
+             * rest of the screen uses, which reads as deliberate rather than as a gap.
+             */
+            style={{ width: "100%", height: "100%", objectFit: "contain", background: "#0E2740" }}
+          />
+          <button onClick={() => setMuted(!muted)}
+            aria-label={muted ? "Sound on" : "Sound off"}
+            style={{
+              position: "absolute", top: "calc(14px + env(safe-area-inset-top))", right: 14,
+              width: 40, height: 40, borderRadius: "50%", fontSize: 16,
+              background: "rgba(14,39,64,.55)", color: "#fff", border: 0,
+              backdropFilter: "blur(6px)",
+            }}>{muted ? "🔇" : "🔊"}</button>
+        </div>
+      ) : (
+        <div style={{
+          flex: 1, minHeight: 0, backgroundImage: `url(${r.image})`,
+          backgroundSize: "cover", backgroundPosition: "center",
+        }} />
+      )}
 
       <div style={{
         padding: "22px 22px calc(26px + env(safe-area-inset-bottom))",
         display: "flex", flexDirection: "column", gap: 14,
-        /* Lifted off the photo so the words are legible whatever the picture behind them is. */
-        background: "linear-gradient(to top, #0E2740 62%, rgba(14,39,64,0))",
-        marginTop: -90, position: "relative",
+        /*
+         * A photo bleeds to the edges and the words sit on top of it, so they need a gradient under
+         * them and a negative margin to overlap. A centred clip needs neither: the text is already on
+         * solid ground.
+         */
+        ...(video ? {} : {
+          background: "linear-gradient(to top, #0E2740 62%, rgba(14,39,64,0))",
+          marginTop: -90,
+        }),
+        position: "relative",
       }}>
         <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: ".14em",
           textTransform: "uppercase", color: "#C6FF5B" }}>
-          {r.reward_kind === "race" ? "Raced" : r.reward_kind === "strength" ? "Lifted" : "Done"}
-          {" · "}{fmt(r.date, { weekday: "long", day: "numeric", month: "long" })}
+          {r.reward_kind === "welcome" ? "Welcome"
+            : r.reward_kind === "race" ? "Raced"
+            : r.reward_kind === "strength" ? "Lifted" : "Done"}
+          {r.date ? ` · ${fmt(r.date, { weekday: "long", day: "numeric", month: "long" })}` : ""}
         </span>
         <span style={{ fontFamily: "var(--display)", fontSize: 29, fontWeight: 750,
           lineHeight: 1.1, letterSpacing: "-.02em", color: "#fff" }}>
           {r.title}
         </span>
         <span style={{ fontSize: 13.5, lineHeight: 1.55, color: "rgba(255,255,255,.72)" }}>
-          {r.reward_kind === "race"
+          {r.reward_kind === "welcome"
+            ? "Ten weeks, three runs and a gym session a week, and one race at the end of it with me. Every hard session gets you one of these."
+            : r.reward_kind === "race"
             ? "Ten weeks of Tuesdays and Sundays, for this. Whatever the clock said, you have raced a Hyrox — and the next one starts from a completely different place."
             : r.reward_kind === "strength"
               ? "Squats, split squats and calves. Nobody enjoys this one and it is the reason the lunges do not end your race."
@@ -86,7 +141,8 @@ export default function Reward({ r, onDone }: { r: Pending; onDone: () => void }
           background: "#C6FF5B", color: "#0E2740", fontSize: 12, fontWeight: 800,
           letterSpacing: ".06em", textTransform: "uppercase", opacity: going ? .6 : 1,
         }}>
-          {going ? "…" : r.reward_kind === "race" ? "Go and sit down"
+          {going ? "…" : r.reward_kind === "welcome" ? "Let's go"
+            : r.reward_kind === "race" ? "Go and sit down"
             : r.reward_kind === "strength" ? "Protein and a sit down" : "Recovery mode"}
         </button>
       </div>

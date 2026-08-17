@@ -172,6 +172,20 @@ export async function scheduled(now = new Date()) {
   if (now.getDay() === 0) await weeklyRoundUp(); // Sunday
 }
 
+/**
+ * Whether this athlete has somebody's own words to be spoken in.
+ *
+ * A single flag rather than a copy of the lines: the words live in lib/coach-copy, and this only
+ * answers whether to use them. Set per athlete, so the default everywhere else is the plain
+ * wording.
+ */
+async function voiceFor(userId: string): Promise<boolean> {
+  const rows = await sql<{ on: boolean }[]>`
+    select coalesce(coach_voice, false) as on from users where id = ${userId}
+  `;
+  return rows[0]?.on ?? false;
+}
+
 /** A benchmark, race session or long run tomorrow: say so tonight. */
 async function tomorrowsSession() {
   const date = addDays(today(), 1);
@@ -188,9 +202,26 @@ async function tomorrowsSession() {
     // the first line of the coach note is the guardrail, and carrying it is the
     // whole reason for telling someone the night before
     const note = s.coach_note?.split("\n").filter(Boolean)[0];
+
+    /*
+     * In his own words where there are any for her.
+     *
+     * He wrote fifteen lines for her and they sat in a design file while the app sent "Tomorrow's
+     * session · Long run · 65 min". The plain version is still the fallback and still the default
+     * for everybody else — somebody else's partner calling them bebezinho is not a warm surprise —
+     * but where a voice exists, it is the one that goes out.
+     *
+     * The prescription is not replaced by it. "3 × 8 min at 4:35" is the thing she needs to read;
+     * the line is what makes her want to.
+     */
+    const voice = await voiceFor(s.user_id);
     await queue(s.user_id, "upcoming", `upcoming:${s.id}`, {
-      title: s.significance === "benchmark" ? "Benchmark tomorrow"
-        : s.significance === "race" ? "Race tomorrow" : "Tomorrow's session",
+      title: voice
+        ? (s.significance === "benchmark" ? "Test day tomorrow bebezinho"
+          : s.significance === "race" ? "Race day tomorrow amorzinho"
+          : "Tomorrow, my love")
+        : (s.significance === "benchmark" ? "Benchmark tomorrow"
+          : s.significance === "race" ? "Race tomorrow" : "Tomorrow's session"),
       body: [s.title, s.planned_minutes ? mins(s.planned_minutes) : null, note]
         .filter(Boolean).join(" · "),
       url: "/",

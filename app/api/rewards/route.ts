@@ -13,20 +13,21 @@ import { isUuid } from "@/lib/plan";
  */
 
 type Row = {
-  session_id: string; title: string; kind: string; date: string;
-  reward_kind: string; image: string | null;
+  session_id: string | null; title: string | null; kind: string | null; date: string | null;
+  reward_kind: string; image: string | null; own_title: string | null;
 };
 
 export const GET = route(async () => {
   const me = await requireUser();
   const [row] = await sql<Row[]>`
     select r.session_id, p.title, p.kind, p.planned_date::text as date,
-           r.kind as reward_kind,
+           r.kind as reward_kind, r.title as own_title,
            /* The image she was actually given, recorded when it was earned — not recomputed now,
               so the set can grow without rewriting what an earlier session showed her. */
            r.image
       from rewards r
-      join planned_sessions p on p.id = r.session_id
+      /* Left, because a welcome belongs to no session and still has to arrive. */
+      left join planned_sessions p on p.id = r.session_id
      where r.user_id = ${me.id} and r.seen_at is null
      order by r.created_at desc
      limit 1
@@ -38,8 +39,10 @@ export const GET = route(async () => {
   if (!row?.image) return NextResponse.json({ reward: null });
   return NextResponse.json({
     reward: {
-      session_id: row.session_id, title: row.title, kind: row.kind,
-      reward_kind: row.reward_kind, date: row.date, image: row.image,
+      session_id: row.session_id,
+      /* The session's name where there is one, and the reward's own words where there is not. */
+      title: row.own_title ?? row.title ?? "",
+      kind: row.kind, reward_kind: row.reward_kind, date: row.date, image: row.image,
     },
   });
 });

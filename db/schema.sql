@@ -1198,3 +1198,20 @@ alter table users add column if not exists race_reward_images text[];
 -- {kind: [paths]} — key_session, strength, race — and a new kind is a key rather than a migration.
 -- Empty or missing means no reward screen for that kind, which is the default for everybody.
 alter table users drop column if exists race_reward_images;
+
+-- A reward need not belong to a session (2026-08-17).
+--
+-- The welcome one is earned by turning notifications on, which is not a session — so `session_id`
+-- stops being the primary key and becomes nullable, with a unique index instead so a session still
+-- cannot reward twice. `title` carries the words for a reward that has no session to borrow them
+-- from.
+alter table rewards add column if not exists id uuid default gen_random_uuid();
+alter table rewards add column if not exists title text;
+
+-- Whose notifications are written in somebody's own voice (2026-08-17).
+--
+-- He wrote fifteen lines for her — "Test week bebezinho", "I am making dinner after Saturday" —
+-- and they sat in a design mockup while the app sent "Tomorrow's session · Long run · 65 min". This
+-- flag says which athlete gets them. Off by default and off for everybody else, because somebody
+-- else's partner calling them bebezinho is not a warm surprise.
+alter table users add column if not exists coach_voice boolean not null default false;

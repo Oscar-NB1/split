@@ -15,6 +15,7 @@ import { describe, loadNote, startingLoad } from "@/lib/plan/exercises";
 import { nextLoad } from "@/lib/plan/progression";
 import { sayRpe } from "@/lib/plan/strength";
 import { notify } from "@/lib/notify";
+import { afterLine } from "@/lib/coach-copy";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -407,11 +408,24 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
             returning session_id
           `;
           if (fresh.length > 0) {
+            /*
+             * In his words where she has them, counted so a line does not repeat until the pool is
+             * used up. `earned` is the count before this reward, which makes the choice reproducible
+             * rather than random — random sends the same line twice in a week often enough to be
+             * noticed, and being noticed is the one thing this cannot survive.
+             */
+            const [{ voice }] = await sql<{ voice: boolean }[]>`
+              select coalesce(coach_voice, false) as voice from users where id = ${r.user_id}
+            `;
             await notify(r.user_id, "reward", `reward:${id}`, {
-              title: rewardKind === "race" ? "You raced a Hyrox"
-                : rewardKind === "strength" ? "Leg day survived"
-                : "That is the hard one done",
-              body: `${r.title} — logged. Open the app.`,
+              title: voice
+                ? (rewardKind === "race" ? "You did it amorzinho"
+                  : rewardKind === "strength" ? "Leg day survived bebezinho"
+                  : "That was a hard one bebezinho")
+                : (rewardKind === "race" ? "You raced a Hyrox"
+                  : rewardKind === "strength" ? "Leg day survived"
+                  : "That is the hard one done"),
+              body: voice ? afterLine(earned) : `${r.title} — logged. Open the app.`,
               url: "/?reward=1",
             });
           }
