@@ -260,3 +260,28 @@ export function mmss(sec: number): string {
     ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`
     : `${m}:${String(r).padStart(2, "0")}`;
 }
+
+/**
+ * Move every pace in a prescription by a number of seconds.
+ *
+ * The calibration engine decides that an athlete's targets are a few seconds out;
+ * this is what makes that true of the sessions they will actually open. It rewrites
+ * the pace tokens in place — "@ 4:10/km" and "@ 5:26-5:52/km" alike — and touches
+ * nothing else, so the structure, the zones and the rests survive untouched.
+ *
+ * Positive is slower, matching the engine's sign: a plan the athlete is behind moves
+ * its targets away from them, not toward them.
+ */
+export function shiftPaces(target: string | null | undefined, seconds: number): string {
+  if (!target || !seconds) return target ?? "";
+  const move = (mmss: string) => {
+    const [m, s] = mmss.split(":").map(Number);
+    const total = Math.max(120, m * 60 + s + seconds);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+  };
+  return target.replace(
+    /(\d{1,2}:[0-5]\d)(\s*[-–]\s*(\d{1,2}:[0-5]\d))?(\s*\/?\s*km)/g,
+    (_all, a: string, _range: string | undefined, b: string | undefined, unit: string) =>
+      b ? `${move(a)}-${move(b)}${unit}` : `${move(a)}${unit}`,
+  );
+}

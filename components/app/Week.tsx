@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { addDays, dow, fmt, mondayOf, today } from "@/lib/dates";
 import { kindColour, kindLabel, weekDates } from "@/lib/coach";
 import { beforeBlock as isBefore, intentFor, weekOf } from "@/lib/block";
@@ -81,7 +81,8 @@ function metrics(s: Session): [string, string, string] {
 }
 
 export default function Week({
-  data, me, monday, setMonday, openActivity, openSession, reload, openWeek, coaching,
+  data, me, monday, setMonday, openActivity, openSession, reload, openWeek, openForm,
+  coaching,
 }: {
   data: WeekData | null; me: User;
   monday: string;
@@ -92,8 +93,22 @@ export default function Week({
   openActivity: (id: string) => void; openSession: (s: Session) => void; reload: () => void;
   /** the whole week — the overview card is the way into it */
   openWeek: () => void;
+  /** where the pace-change card goes: the screen that shows the sessions behind it */
+  openForm: () => void;
 }) {
   const [day, setDay] = useState(() => dow(today()));
+  /*
+   * A pending change to the pace targets.
+   *
+   * The engine has always been able to work this out and nothing ever told the
+   * athlete: the recommendation sat on the Form tab, which you would only open if you
+   * already suspected something. It is a card here, and it leads to the screen that
+   * shows the sessions behind it — the decision stays the athlete's.
+   */
+  const [shift, setShift] = useState<{ pending: boolean; headline: string | null } | null>(null);
+  useEffect(() => {
+    fetch("/api/calibration").then(async (r) => r.ok && setShift(await r.json()));
+  }, []);
 
   useEffect(() => {
     const t = today();
@@ -405,6 +420,26 @@ export default function Week({
           <span>{kmDone.toFixed(kmDone < 10 ? 1 : 0)}{week?.km ? ` / ${week.km}` : ""} km</span>
         </span>
       </button>
+
+      {shift?.pending && shift.headline && (
+        <button onClick={openForm} style={{
+          width: "100%", textAlign: "left", display: "flex", alignItems: "center",
+          gap: 12, background: "var(--cream)", border: `1px solid #C9A227`,
+          borderRadius: "var(--r-card)", padding: "14px 15px", color: "var(--ink)",
+        }}>
+          <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: ".1em",
+              textTransform: "uppercase", color: "#8A6D14" }}>
+              Your paces can move
+            </span>
+            <span style={{ fontSize: 13, lineHeight: 1.5 }}>{shift.headline}</span>
+            <span style={{ fontSize: 11, color: INK55 }}>
+              Nothing changes until you say so.
+            </span>
+          </span>
+          <span style={{ fontSize: 13, color: INK40 }}>›</span>
+        </button>
+      )}
 
       {/*
         * The block, as context rather than the lead.

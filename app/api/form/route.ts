@@ -2,9 +2,8 @@ import { NextResponse } from "next/server";
 import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { route } from "@/lib/http";
-import { classifySegments, statsFor, type LapRow } from "@/lib/analysis";
-import { prescribedPace, read, type Signal } from "@/lib/signals";
-import { blockFor } from "@/lib/block-db";
+import { read } from "@/lib/signals";
+import { signalsFor } from "@/lib/calibration";
 import type { PlanWeek } from "@/lib/block";
 
 /**
@@ -25,81 +24,9 @@ import type { PlanWeek } from "@/lib/block";
  * because the engine will act on it.
  */
 
-/** Time trials and races say more about fitness than a tempo does. */
-function weightFor(significance: string | null, title: string): number {
-  if (/time trial|benchmark/i.test(title)) return 1.5;
-  if (significance === "race") return 1.5;
-  if (significance === "benchmark") return 1.3;
-  return 1.0;
-}
-
-/**
- * What a projection is judged against when the athlete has no stated target.
- *
- * The goal used to be a constant here — the slow end of one athlete's 55:00–56:30
- * — and so every athlete's form was read against it. It now comes from their own
- * block. Without one there is no target, and the verdict says so rather than
- * being scored against a stranger's race.
- */
 export const GET = route(async () => {
   const me = await requireUser();
-  const block = await blockFor(me.id);
-
-  const rows = await sql<{
-    id: string; title: string; planned_date: string; significance: string | null;
-    activity_id: string | null; kind: string;
-  }[]>`
-    select id, title, planned_date::text as planned_date, significance, activity_id, kind
-      from planned_sessions
-     where user_id = ${me.id}
-       and status in ('done', 'adjusted')
-       and activity_id is not null
-       and (significance = any(array['key','benchmark','race']) or kind = 'run_intervals')
-     order by planned_date
-  `;
-
-  const signals: Signal[] = [];
-  const skipped: { title: string; why: string }[] = [];
-
-  for (const r of rows) {
-    const prescribed = prescribedPace(r.title);
-    if (prescribed == null) {
-      skipped.push({ title: r.title, why: "no pace stated in the title" });
-      continue;
-    }
-    const laps = await sql<LapRow[]>`
-      select lap_index, name, distance_m, moving_seconds, elapsed_seconds,
-             avg_speed_ms, max_speed_ms, avg_hr, max_hr
-        from activity_laps where activity_id = ${r.activity_id} order by lap_index
-    `;
-    if (laps.length === 0) {
-      skipped.push({ title: r.title, why: "no laps imported" });
-      continue;
-    }
-    const n = (v: unknown) => (v == null ? null : Number(v));
-    const { segments } = classifySegments(laps.map((l) => ({
-      ...l,
-      distance_m: n(l.distance_m), moving_seconds: n(l.moving_seconds),
-      elapsed_seconds: n(l.elapsed_seconds), avg_speed_ms: n(l.avg_speed_ms),
-      max_speed_ms: n(l.max_speed_ms), avg_hr: n(l.avg_hr), max_hr: n(l.max_hr),
-    })));
-    const work = statsFor(segments, ["work"]);
-    // fall back to the whole session only when there is no interval structure at
-    // all — a steady tempo is legitimately its own average
-    const stats = work.count > 0 ? work : statsFor(segments, ["steady"]);
-    if (!stats.avg_speed_ms || stats.avg_speed_ms <= 0) {
-      skipped.push({ title: r.title, why: "no usable pace in the laps" });
-      continue;
-    }
-    signals.push({
-      on: r.planned_date,
-      label: r.title,
-      type: r.significance === "benchmark" ? "Benchmark" : r.significance === "race" ? "Race" : "Interval",
-      weight: weightFor(r.significance, r.title),
-      prescribed,
-      achieved: 1000 / stats.avg_speed_ms,
-    });
-  }
+  const { signals, skipped, block } = await signalsFor(me.id);
 
   const verdict = block?.goal_seconds ? read(signals, block.goal_seconds) : null;
 

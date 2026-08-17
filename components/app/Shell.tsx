@@ -293,6 +293,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
             coaching={coaching}
             openActivity={openActivity} openSession={openSession} reload={load}
             openWeek={() => setView("program")}
+            openForm={() => setView("form")}
           />
         )}
         {view === "activity" && openId && <Activity id={openId} meId={me.id} />}

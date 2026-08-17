@@ -22,6 +22,24 @@ type Data = {
 export default function Form({ only }: { only?: "pace" | "volume" }) {
   const [d, setD] = useState<Data | null>(null);
   const [own, setOwn] = useState<"pace" | "volume">("pace");
+  const [applied, setApplied] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  /** Accept or decline the recommended shift. Applying rewrites future sessions. */
+  async function decide(action: "accept" | "decline") {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/calibration", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setApplied(j.error ?? "That did not go through."); return; }
+      setApplied(action === "accept"
+        ? `Applied. ${j.sessions_rewritten ?? 0} future sessions rewritten at the new targets.`
+        : "Left alone. I will not ask again about this one.");
+    } finally { setBusy(false); }
+  }
   // hosted inside Plan's tabs, the screen shows one half and hides its own switch
   const tab = only ?? own;
   const setTab = setOwn;
@@ -108,6 +126,34 @@ export default function Form({ only }: { only?: "pace" | "volume" }) {
                 {v.streak} consecutive sessions {v.sideWord}, trend {secs(v.trend)}. Capped at 6 s/km
                 and applied to pace targets only — never to volume.
               </span>
+
+              {/*
+                * The decision, and it is the athlete's.
+                *
+                * A plan that quietly changes what it asks of you is worse than one
+                * that is a few seconds wrong: you stop being able to tell whether you
+                * improved or the target moved. Declining is remembered, so the same
+                * recommendation does not ask twice.
+                */}
+              {applied == null ? (
+                <div style={{ display: "flex", gap: 8, paddingTop: 2 }}>
+                  <button disabled={busy} onClick={() => decide("accept")} style={{
+                    flex: 1, background: "var(--lime)", border: 0,
+                    borderRadius: "var(--r-pill)", padding: 13, fontSize: 11,
+                    fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+                    color: "var(--on-lime)",
+                  }}>Apply to my plan</button>
+                  <button disabled={busy} onClick={() => decide("decline")} style={{
+                    flex: "none", background: "none", border: "1px solid var(--line)",
+                    borderRadius: "var(--r-pill)", padding: "13px 16px", fontSize: 11,
+                    fontWeight: 700, color: "var(--ink-55)",
+                  }}>Not yet</button>
+                </div>
+              ) : (
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--teal)" }}>
+                  {applied}
+                </span>
+              )}
             </section>
           )}
 

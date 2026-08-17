@@ -1010,3 +1010,14 @@ create table if not exists build_failures (
   payload    jsonb not null default '{}'
 );
 create index if not exists build_failures_at on build_failures (at desc);
+
+-- Pace calibration decisions (2026-08-17).
+--
+-- The engine recommends a shift; the athlete accepts or declines it. Both are
+-- recorded on the plan: the applied shift because every session written afterwards
+-- has to carry it, and the declined value because an athlete who said no to four
+-- seconds should not be asked again about the same four seconds every time they open
+-- the app.
+alter table plan_templates add column if not exists pace_shift_s int not null default 0;
+alter table plan_templates add column if not exists pace_shift_declined_s int;
+alter table plan_templates add column if not exists pace_shift_at timestamptz;

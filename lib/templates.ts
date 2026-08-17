@@ -1,6 +1,7 @@
 import { sql } from "./db";
 import { addDays, diffWeeks, mondayOf, today } from "./dates";
 import { FATIGUE_REASONS } from "./plan";
+import { shiftPaces } from "./prescription";
 
 /**
  * Template engine.
@@ -100,10 +101,10 @@ export function isDeloadWeek(planWeek: number, every: number): boolean {
 export async function materialise(templateId: string) {
   const [tpl] = await sql<{
     id: string; athlete_id: string; author_id: string; start_date: string;
-    weeks: TemplateDay[][]; rules: Rules; horizon: number;
+    weeks: TemplateDay[][]; rules: Rules; horizon: number; pace_shift_s: number;
   }[]>`
     select id, athlete_id, author_id, start_date::text as start_date,
-           weeks, rules, horizon
+           weeks, rules, horizon, pace_shift_s
     from plan_templates where id = ${templateId} and active
   `;
   if (!tpl) return { created: 0 };
@@ -197,6 +198,15 @@ export async function materialise(templateId: string) {
       if (date < now) continue; // never write the past
 
       const minutes = minutesFor(d, planWeek, factor, rules);
+      /*
+       * The calibration shift, applied where the athlete accepted one.
+       *
+       * The template holds the paces the plan was built with; the shift is what the
+       * athlete's own key sessions have since said about them. Applied here rather
+       * than baked into the template so the original prescription is never lost and
+       * a shift can be reversed by setting it back to zero.
+       */
+      const target = shiftPaces(d.target, tpl.pace_shift_s) || null;
 
       // Keyed on the date, not the plan week. The week number is derived, so
       // any change to how it's counted (this commit changed exactly that)
@@ -224,7 +234,7 @@ export async function materialise(templateId: string) {
           (user_id, author_id, planned_date, title, kind, planned_minutes, target,
            coach_note, significance, slot, source, source_ref)
         select ${tpl.athlete_id}, ${tpl.author_id}, ${date}, ${d.title}, ${d.kind},
-               ${minutes}, ${d.target ?? null}, ${note}, ${d.significance ?? null},
+               ${minutes}, ${target}, ${note}, ${d.significance ?? null},
                ${d.slot ?? null}, 'template', ${ref}
         where not exists (
           select 1 from planned_sessions
@@ -243,7 +253,7 @@ export async function materialise(templateId: string) {
         await sql`
           update planned_sessions set
             title = ${d.title}, kind = ${d.kind}, planned_minutes = ${minutes},
-            target = ${d.target ?? null}, coach_note = ${note},
+            target = ${target}, coach_note = ${note},
             significance = ${d.significance ?? null}
           where user_id = ${tpl.athlete_id} and source = 'template'
             and source_ref = ${ref}
