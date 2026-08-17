@@ -1136,3 +1136,17 @@ create table if not exists training_constraints (
   confirmed_at timestamptz,
   updated_at   timestamptz not null default now()
 );
+
+-- Where a plan came from (2026-08-17).
+--
+-- Nothing distinguished a generated block from an authored one, and five separate paths
+-- regenerate a block from the intake answers and rewrite every untouched future session:
+-- confirming an injury constraint, teaching the plan a day preference, applying a benchmark,
+-- and either direction of the volume-feel dial. On a generated plan that is the point. On an
+-- imported one it is silent destruction of the only copy — a plan somebody wrote by hand
+-- cannot be recomputed from a form.
+--
+-- 'generated' is the default so every existing row keeps its behaviour. 'imported' means the
+-- weeks are the record and no regeneration may touch them.
+alter table plan_templates
+  add column if not exists origin text not null default 'generated';

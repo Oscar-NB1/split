@@ -35,11 +35,31 @@ export async function rememberDay(userId: string): Promise<number> {
   // plan they build will read it.
   if (!row) return 0;
 
-  const [tpl] = await sql<{ id: string; volume_feel_delta: number }[]>`
-    select id, volume_feel_delta from plan_templates
+  const [tpl] = await sql<{ id: string; volume_feel_delta: number; origin: string }[]>`
+    select id, volume_feel_delta, origin from plan_templates
      where athlete_id = ${userId} and active order by start_date desc limit 1
   `;
   if (!tpl) return 0;
+
+  /*
+   * An imported plan is never regenerated.
+   *
+   * This function exists because a generated plan can be recomputed from the answers it came
+   * from — a day preference, a measured B-race, a confirmed constraint — and `materialise`
+   * then clears every untouched future session and rewrites them. On a generated block that
+   * is correct and is the whole point.
+   *
+   * On an authored block it is the destruction of the only copy. There is no form to recompute
+   * a plan somebody wrote by hand from, so the weeks are the record and this must not touch
+   * them. Five callers reach here — confirming a constraint, learning a day, applying a
+   * benchmark, and both directions of the volume dial — and every one of them is a small
+   * convenience that is never worth a plan.
+   *
+   * The adaptations those callers wanted still happen; they happen to the sessions in place
+   * rather than by rebuilding the block. Anything that cannot be done in place is declined
+   * out loud rather than silently skipped.
+   */
+  if (tpl.origin !== "generated") return 0;
 
   const intake = toIntake(row);
   const [urow] = await sql<{ hr_max: number | null }[]>`
