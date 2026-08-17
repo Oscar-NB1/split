@@ -38,7 +38,24 @@ export const GET = route(async () => {
       env: mapbox,
       note: mapbox
         ? "Recorded routes render as a Mapbox static image, clipped 200 m at each end."
-        : "Not found under MAPBOX_TOKEN, MAPBOX_PUBLIC_KEY, MAPBOX_ACCESS_TOKEN or NEXT_PUBLIC_MAPBOX_TOKEN. Routes still draw as an outline.",
+        : "Not found under any name this app reads. Routes still draw as an outline.",
+      /*
+       * Every environment variable whose name mentions Mapbox, so "which name did I
+       * use" is a fact rather than a guessing game. Names only — the value of a
+       * secret must never come back from an endpoint, and the whole reason this
+       * exists is that a token under an unread name is indistinguishable from no
+       * token at all.
+       */
+      names_present: Object.keys(process.env).filter((k) => /mapbox/i.test(k)).sort(),
+      names_read: ["MAPBOX_TOKEN", "MAPBOX_PUBLIC_KEY", "MAPBOX_ACCESS_TOKEN",
+        "NEXT_PUBLIC_MAPBOX_TOKEN"],
+      /*
+       * A secret token is refused rather than used: this URL is fetched by the
+       * athlete's browser, so an `sk.` key would be handed to the client on every
+       * map. Reported so a rejected token does not read as a missing one.
+       */
+      rejected_secret: Object.keys(process.env)
+        .some((k) => /mapbox/i.test(k) && (process.env[k] ?? "").startsWith("sk.")),
     },
     weather: {
       // No key, by design. Worth stating so nobody goes looking for one.

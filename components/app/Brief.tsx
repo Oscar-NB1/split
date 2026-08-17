@@ -90,10 +90,59 @@ function useForecast(date: string | null | undefined) {
   return f;
 }
 
-/** What the day looks like, in one glyph. */
-const WEATHER_MARK: Record<string, string> = {
-  hot: "☀", warm: "☀", fine: "○", cold: "❄", wet: "☂", windy: "≋",
-};
+/**
+ * What the day looks like, drawn rather than typed.
+ *
+ * These were text glyphs — ☀ ❄ ☂ ≋ — and at least one of them (U+224B, the wave)
+ * is missing from Inter and from most system fallbacks, so the icon rendered as an
+ * empty box or nothing at all. Every other icon in this app is an inline SVG for
+ * exactly that reason; the weather card had no business being the exception.
+ */
+function WeatherMark({ verdict, colour }: { verdict: string; colour: string }) {
+  const common = {
+    width: 20, height: 20, viewBox: "0 0 24 24", fill: "none",
+    stroke: colour, strokeWidth: 1.9,
+    strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+  switch (verdict) {
+    case "hot":
+    case "warm":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
+        </svg>
+      );
+    case "cold":
+      return (
+        <svg {...common}>
+          <path d="M12 2v20M4 7l16 10M20 7L4 17" />
+        </svg>
+      );
+    case "wet":
+      return (
+        <svg {...common}>
+          <path d="M17.5 15.5a4 4 0 0 0-1.2-7.8 5.5 5.5 0 0 0-10.5 1.6A3.5 3.5 0 0 0 6 15.5z" />
+          <path d="M8 19l-.6 1.6M12 19l-.6 1.6M16 19l-.6 1.6" />
+        </svg>
+      );
+    case "windy":
+      return (
+        <svg {...common}>
+          <path d="M3 8h11a3 3 0 1 0-3-3" />
+          <path d="M3 13h8" />
+          <path d="M3 18h13a3 3 0 1 1-3 3" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="8.2" />
+        </svg>
+      );
+  }
+}
 
 /**
  * What a session write hands back: the server's own answer, or null if it failed.
@@ -403,9 +452,9 @@ export default function Brief({
             background: weather.cost_s >= 6 ? "var(--gold-tint, #FBF3DE)" : "var(--paper)",
             border: `1px solid ${weather.cost_s >= 6 ? "#E8C051" : "var(--line)"}`,
             borderRadius: "var(--r-card)", padding: "13px 15px" }}>
-            <span aria-hidden="true" style={{ fontSize: 20, lineHeight: 1,
-              color: weather.cost_s >= 6 ? "#B08A1E" : "var(--ink-40)" }}>
-              {WEATHER_MARK[weather.verdict] ?? "○"}
+            <span style={{ display: "flex", flex: "none", paddingTop: 1 }}>
+              <WeatherMark verdict={weather.verdict}
+                colour={weather.cost_s >= 6 ? "#B08A1E" : "var(--ink-40)"} />
             </span>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em",
