@@ -626,6 +626,21 @@ export default function Week({
           <span>{doneCount}/{all.length} sessions</span>
           <span>{kmDone.toFixed(kmDone < 10 ? 1 : 0)}{week?.km ? ` / ${week.km}` : ""} km</span>
         </span>
+        {/*
+          * And the same week without the class running.
+          *
+          * Both are true and they answer different questions. The running inside a Hyrox class
+          * counts towards the week — it is running, and his plan says so explicitly — but it
+          * arrives in 500 m pieces between a sled and a set of wall balls, which is not the same
+          * training as the same distance on a road. Shown only where the two differ, because on
+          * a week with no station work a second identical number is noise.
+          */}
+        {week && week.km_excl_hyrox > 0 && Math.abs(week.km - week.km_excl_hyrox) >= 0.5 && (
+          <span style={{ fontSize: 11.5, color: INK55, textAlign: "left" }}>
+            {week.km_excl_hyrox.toFixed(1)} km of that is running outside the classes
+            {" · "}{(week.km - week.km_excl_hyrox).toFixed(1)} km inside them
+          </span>
+        )}
       </button>
 
       {shift?.pending && shift.headline && (

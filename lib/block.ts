@@ -1,4 +1,5 @@
 import { addDays, diffDays, mondayOf } from "./dates";
+import { prescribedKm } from "./prescription";
 
 /**
  * An athlete's training block: what it is, and the questions you can ask it.
@@ -28,6 +29,8 @@ export type PlanDay = {
   title: string;
   slot?: string | null;
   significance?: string | null;
+  /** the prescription, so a screen can read what the session actually asks for */
+  target?: string | null;
 };
 
 export type PlanWeek = {
@@ -36,6 +39,20 @@ export type PlanWeek = {
   /** the Monday it starts, derived from the block start rather than stored */
   start: string;
   km: number;
+  /**
+   * The same week's running with the Hyrox sessions taken out.
+   *
+   * Both numbers are true and they answer different questions. The total is what the legs
+   * cover, and the running inside a class counts towards it — that is the whole reason his plan
+   * says "every kilometre in this document is running you will actually do, including the
+   * running inside the Hyrox classes". But six of those kilometres arrive in 500 m pieces
+   * between a sled and a set of wall balls, which is not the same training as six kilometres on
+   * a road, and a runner comparing this week against a month of ordinary running wants the
+   * figure that excludes them.
+   *
+   * Derived from the week's own sessions rather than stored, so it cannot drift from them.
+   */
+  km_excl_hyrox: number;
   note: string;
   /**
    * The sessions the plan holds for this week.
@@ -119,13 +136,19 @@ function toWeeks(row: Row): PlanWeek[] {
   // knows how many weeks it runs for
   const count = volume.length || (Array.isArray(row.weeks) ? row.weeks.length : 0);
   const shapes = Array.isArray(row.weeks) ? row.weeks : [];
-  return Array.from({ length: count }, (_, i) => ({
-    n: i + 1,
-    start: addDays(start, i * 7),
-    km: Number(volume[i]?.km ?? 0),
-    note: volume[i]?.note ?? "",
-    shape: (Array.isArray(shapes[i]) ? shapes[i] : []) as PlanDay[],
-  }));
+  return Array.from({ length: count }, (_, i) => {
+    const shape = (Array.isArray(shapes[i]) ? shapes[i] : []) as PlanDay[];
+    return {
+      n: i + 1,
+      start: addDays(start, i * 7),
+      km: Number(volume[i]?.km ?? 0),
+      km_excl_hyrox: Math.round(shape
+        .filter((d) => d.kind !== "hyrox" && d.kind !== "easy_hyrox")
+        .reduce((n, d) => n + prescribedKm(d.target), 0) * 10) / 10,
+      note: volume[i]?.note ?? "",
+      shape,
+    };
+  });
 }
 
 export function toBlock(row: Row): Block {

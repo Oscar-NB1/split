@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { dialPreview } from "../lib/plan/preview";
 import type { Intake } from "../lib/intake";
+import { toBlock } from "../lib/block";
 
 const base = (o: Partial<Intake> = {}): Intake => ({
   hasRace: "Yes", discipline: "Hyrox doubles", raceDistance: null,
@@ -58,4 +59,38 @@ test("a half-answered form produces a curve rather than a crash", () => {
     longestRunKm: null, startDate: null }));
   assert.ok(p.weeks.length > 0);
   assert.ok(p.peak > 0);
+});
+
+test("a week counts its running twice: all of it, and the part outside the classes", () => {
+  /*
+   * Both numbers are true and they answer different questions. The running inside a Hyrox class
+   * counts towards the week — it is running, and his plan says so explicitly — but six of those
+   * kilometres arrive in 500 m pieces between a sled and a set of wall balls, which is not the
+   * same training as six on a road.
+   *
+   * Derived from the week's own sessions rather than stored, so the two cannot drift apart.
+   */
+  const block = toBlock({
+    id: "b", name: "Block", start_date: "2026-08-17",
+    volume: [{ km: 51, note: "" }],
+    weeks: [[
+      { day: 0, kind: "quality_run", title: "Threshold", minutes: 60,
+        target: "- 3km Z2 warm up\n- 6x\n- 1000m Z4 @ 4:20/km\n- 90s Z1 walk\n- 2km Z1 cool down" },
+      { day: 2, kind: "hyrox", title: "Class", minutes: 60,
+        target: "- 3km Z2 running inside the class" },
+      { day: 5, kind: "hyrox", title: "Class", minutes: 70,
+        target: "- 5.5km Z4 running inside the class @ 4:26/km" },
+      { day: 3, kind: "strength", title: "Strength", minutes: 45,
+        target: "Trap bar deadlift 4x4 rest 180s" },
+      { day: 6, kind: "long_run", title: "Long run", minutes: 95,
+        target: "- 18km Z2 @ 5:08-5:22/km" },
+    ]],
+    intents: [], race_date: null, race_name: null, goal_label: null, goal_seconds: null,
+    plan_state: null, benchmark: {}, guardrails: [], easy_pace: null, corrections: [],
+  } as never);
+
+  const w = block.weeks[0];
+  assert.equal(w.km, 51, "the total is the author's own number");
+  assert.equal(w.km_excl_hyrox, 29, "11 + 18 — the two classes come out");
+  /* Strength contributes nothing, because a lift line has no distance in it. */
 });
