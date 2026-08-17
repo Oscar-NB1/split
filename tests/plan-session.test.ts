@@ -1,6 +1,29 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { continuousRun, easyHyrox, hyroxSession, qualityRun, readRung } from "../lib/plan/session";
+import { EASY_MAX_KM, generate } from "../lib/plan/generate";
+import { paramsFrom } from "../lib/plan/from-intake";
+import type { Intake } from "../lib/intake";
+
+/** A big week: 70 km at peak, seven sessions, which is where 15 km easy runs came from. */
+const bigWeek = (): Intake => ({
+  hasRace: "Yes", discipline: "Hyrox doubles", raceDistance: null,
+  raceDate: "2026-11-29", role: null, division: "Mixed doubles", longRunDay: "Sun",
+  base: "Several years", runningSelf: "Runs regularly",
+  paceMin: 19, paceSec: 30, paceUnknown: false,
+  peakWeekKm: 70, longestRunKm: 24, volumeSource: "self",
+  goal: "Compete", goalMin: 62, startDate: "2026-08-17",
+  targetSessions: "7", allowDoubles: null, wantRestDay: "No, but keep one easy",
+  sessionPref: "Written sessions", hyroxExp: "Weekly", runDelta: "About the same",
+  stationDelta: "About the same", gymAccess: "Open floor, any time",
+  runStationLink: "Yes, with a walk between",
+  days: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  commitments: [], freq: {}, commitDay: {}, commitMode: {},
+  equipment: ["Sled — race weight", "SkiErg", "Rower", "Wall balls", "Kettlebells", "Barbell"],
+  sled: "Race weight and distance", injuries: "",
+  volume: "Progressive", difficulty: "Hard", benchmark: "scheduled",
+  pastRaces: [], bRaces: [],
+} as Intake);
 import { parseSteps, parseStrength, repCount } from "../lib/prescription";
 import { kitFrom, strengthTarget } from "../lib/plan/strength";
 
@@ -157,4 +180,23 @@ test("no kit still produces a session anyone can do", () => {
   const names = lifts.map((l) => l.name.toLowerCase()).join(" | ");
   assert.ok(!/barbell|kettlebell|pull-up/.test(names), names);
   assert.match(names, /lunge|squat/, names);
+});
+
+test("an easy run is never a long run wearing an easy label", () => {
+  /*
+   * Filling the week's volume from the easy sessions produced 15 km "easy runs":
+   * two thirds of a 22 km long run is still 14.7, which needs its own recovery day
+   * and eats into the next hard session. Eleven is the ceiling, whatever the
+   * arithmetic wants.
+   */
+  const g = generate(paramsFrom(bigWeek(), {
+    recent: null, absences: [], max_hr: 185, measured: false,
+  }));
+  for (const w of g.weeks) {
+    for (const s of w.sessions) {
+      if (String(s.kind) !== "easy_run") continue;
+      assert.ok((s.km ?? 0) <= EASY_MAX_KM + 0.1,
+        `week ${w.n}: a ${s.km} km easy run`);
+    }
+  }
 });

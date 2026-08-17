@@ -143,6 +143,23 @@ a:hover{color:var(--teal-l)}
   padding:15px 0 18px;font-size:10px;font-weight:700;letter-spacing:.04em;
   text-transform:uppercase;color:var(--ink-40);border-top:2px solid transparent;
 }
+/*
+ * The home-indicator inset replaces the button's bottom padding; it does not stack
+ * on top of it.
+ *
+ * In the installed app on a phone with a home indicator, safe-area-inset-bottom is
+ * about 34px. Added to the button's own 18px that is 52px of empty paper under the
+ * labels — a band deep enough to read as a bug, which is exactly what it looks like
+ * on the PWA. The inset already guarantees the labels clear the indicator, so the
+ * padding it duplicates comes back off: 6px is kept so the text never sits flush
+ * against the gesture area.
+ *
+ * In a browser, where the inset is 0, max() resolves to the original 18px and the
+ * bar is unchanged.
+ */
+@supports (padding:max(0px)){
+  .tabbar button{padding-bottom:max(6px, calc(18px - env(safe-area-inset-bottom)))}
+}
 .tabbar button[aria-current="page"]{color:var(--ink);border-top-color:var(--teal)}
 
 /* ------------------------------------------------------------- primitives */

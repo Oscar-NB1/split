@@ -111,6 +111,20 @@ export type Generated = {
  */
 export const LONG_RUN_CAP = 22;
 
+/**
+ * And an easy run stops at eleven.
+ *
+ * Not a proportion of anything. An easy run is a recovery and aerobic-maintenance
+ * session, and past about an hour and ten it stops being either: it needs its own
+ * recovery, it eats into the next hard day, and the aerobic return per kilometre has
+ * long since flattened. Everything above this is a long run wearing an easy label,
+ * and the plan already has one of those.
+ *
+ * Weeks whose volume will not fit under it say so rather than writing a 15 km "easy"
+ * run to balance the arithmetic.
+ */
+export const EASY_MAX_KM = 11;
+
 const SHARE: Partial<Record<SlotKind, number>> = {
   long_run: 0.32, quality_run: 0.22, easy_run: 0.20, hyrox: 0.18, easy_hyrox: 0.10,
 };
@@ -390,16 +404,21 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      */
     const left = Math.max(easies.length * 4, runnable - spent);
     /*
-     * An easy run has a ceiling, and it is the long run.
+     * An easy run has a ceiling, and it is 11 km.
      *
-     * Filling the week from one easy session produced a 19.9 km "easy run" beside a
-     * 19.5 km long run — two long runs, one of them mislabelled. An easy run is
-     * capped at two thirds of the long run; whatever will not fit goes onto the long
-     * run itself, up to its own cap, and anything still left over is said out loud
-     * rather than quietly added to a session that cannot hold it.
+     * Two ceilings, and the lower one wins. Relative to the long run, because filling
+     * the week from one easy session produced a 19.9 km "easy run" beside a 19.5 km
+     * long run — two long runs, one of them mislabelled. And absolute, because two
+     * thirds of a 22 km long run is still 14.7 km, and a 15 km easy run is not an easy
+     * run: it is a second long run with a mild pace target, it takes a day and a half
+     * to recover from, and it exists only because the arithmetic needed somewhere to
+     * put the kilometres.
+     *
+     * Whatever will not fit is said out loud rather than quietly added to a session
+     * that cannot hold it.
      */
     const longKm = long?.km ?? 0;
-    const easyCap = Math.max(6, longKm * 0.67);
+    const easyCap = Math.min(EASY_MAX_KM, Math.max(6, longKm * 0.67));
     let spill = 0;
     for (const s of easies) {
       const want = Math.max(3, left / easies.length);
