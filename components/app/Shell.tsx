@@ -13,6 +13,7 @@ import Awards from "./Awards";
 import Plan from "./Plan";
 import Strategy from "./Strategy";
 import Strava from "./Strava";
+import Intervals from "./Intervals";
 import Empty from "./Empty";
 import PlanBuilder from "./PlanBuilder";
 import Profile from "./Profile";
@@ -58,7 +59,7 @@ const TABS = [
 export type View =
   | "week" | "plan" | "past" | "awards" | "versus"
   | "activity" | "strategy" | "profile" | "brief" | "strength" | "program" | "picker" | "form" | "record" | "editProfile" | "connect" | "build"
-  | "notes" | "inbox" | "bench" | "preflight" | "partners";
+  | "notes" | "inbox" | "bench" | "preflight" | "partners" | "watch";
 
 /** Which tab lights up for a view that isn't itself a tab. */
 const TAB_FOR: Record<View, string> = {
@@ -66,13 +67,14 @@ const TAB_FOR: Record<View, string> = {
   plan: "plan", strategy: "plan",
   past: "past", awards: "awards", versus: "versus", profile: "week",
   brief: "week", strength: "week", program: "plan", picker: "plan", form: "plan", record: "awards", editProfile: "week", connect: "week", build: "week",
-  notes: "week", inbox: "week", bench: "week", preflight: "week",
+  notes: "week", inbox: "week", bench: "week", preflight: "week", watch: "week",
   partners: "versus",
 };
 
 /** Where the back arrow goes, and what it is called. */
 const BACK: Partial<Record<View, { to: View; label: string }>> = {
   activity: { to: "week", label: "Week" },
+  watch: { to: "profile", label: "Profile" },
   brief: { to: "week", label: "Week" },
   strength: { to: "week", label: "Week" },
   program: { to: "plan", label: "Plan" },
@@ -209,6 +211,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "inbox" ? "Between the two of you"
     : view === "bench" ? "What the test found, and what it changed"
     : view === "preflight" ? "The lap protocol, and what to do if you miss one"
+    : view === "watch" ? "Sessions, onto your wrist"
     : coachingName ? `Coaching ${coachingName}`
     : view === "record" ? "Every ranked effort"
     : view === "form" ? "Pace and volume against plan"
@@ -228,6 +231,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "build" ? "Build my plan"
     : view === "notes" ? "Messages" : view === "inbox" ? "Thread"
     : view === "bench" ? "Benchmark" : view === "preflight" ? "Instructions"
+    : view === "watch" ? "Your watch"
     : view === "partners" ? "Connections" : "Hyrox";
 
   return (
@@ -342,6 +346,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         {view === "profile" && (
           <Profile me={me} openEdit={() => setView("editProfile")}
             openConnect={() => setView("connect")}
+            openWatch={() => setView("watch")}
             openBuild={() => setView("build")}
             openCoachee={(id) => { setCoaching(id); setView("week"); }}
             openNotes={(id) => { setWriting(id); setView("notes"); }}
@@ -366,6 +371,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}
         {view === "connect" && <Strava onDone={() => setView("profile")} />}
+        {/* The other direction: Strava brings sessions in, this sends them out. */}
+        {view === "watch" && <div className="pad"><Intervals /></div>}
         {view === "build" && (
           <PlanBuilder onDone={() => { setView("week"); load(); }} />
         )}

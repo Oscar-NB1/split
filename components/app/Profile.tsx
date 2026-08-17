@@ -27,9 +27,10 @@ export type Prof = {
 };
 
 export default function Profile({
-  me, openEdit, openConnect, openBuild, openCoachee, openNotes, openBench, openPreflight,
+  me, openEdit, openConnect, openWatch, openBuild, openCoachee, openNotes, openBench,
+  openPreflight,
 }: {
-  me: User; openEdit: () => void; openConnect: () => void;
+  me: User; openEdit: () => void; openConnect: () => void; openWatch: () => void;
   openBuild: () => void;
   /** enter someone else's week — coaching is a relationship, not a toggle */
   openCoachee: (id: string) => void;
@@ -52,6 +53,15 @@ export default function Profile({
   }, []);
 
   const connected = (p?.connected ?? []).includes("strava");
+  /*
+   * Read separately from the profile payload: the watch connection lives in its own endpoint
+   * because it is the only one that can report what has actually been sent.
+   */
+  const [watchOn, setWatchOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/intervals").then((r) => r.json())
+      .then((j) => setWatchOn(Boolean(j?.connected))).catch(() => setWatchOn(false));
+  }, []);
 
   function flip(t: "light" | "dark") {
     setTheme(t);
@@ -115,6 +125,30 @@ export default function Profile({
               <span style={{ fontSize: 11, fontWeight: 700,
                 color: connected ? TEAL : INK40 }}>
                 {p == null ? "…" : connected ? "Connected" : "Not connected"}
+              </span>
+            </span>
+            <span style={{ fontSize: 18, color: INK40 }}>›</span>
+          </button>
+
+          {/*
+            * The other half of a connection, and the one that was unreachable.
+            *
+            * Strava brings finished sessions in; this sends planned ones out to the watch. The
+            * panel existed only on the /settings web page, which nothing in the app links to —
+            * so the push route told people to add their key in Settings and there was no way to
+            * get there. It belongs here, under the heading somebody actually looks under.
+            */}
+          <button onClick={openWatch} style={{ display: "flex", alignItems: "center",
+            gap: 12, width: "100%", padding: "13px 0", background: "none",
+            color: "var(--ink)", textAlign: "left", borderTop: `1px solid ${LINE}` }}>
+            <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: 9,
+              background: OFF, display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 17 }}>⌚</span>
+            <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Your watch</span>
+              <span style={{ fontSize: 11, fontWeight: 700,
+                color: watchOn ? TEAL : INK40 }}>
+                {watchOn == null ? "…" : watchOn ? "Connected · sessions are sent" : "Not connected"}
               </span>
             </span>
             <span style={{ fontSize: 18, color: INK40 }}>›</span>
