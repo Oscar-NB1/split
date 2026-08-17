@@ -2,6 +2,7 @@ import { sql } from "./db";
 import { deltaFrom, type Feel } from "./strength-feel";
 import { rememberDay } from "./replan";
 import { MAX_STEPS, STEP } from "./plan/volume-dial";
+import { longRunKm, readable, resizeLongRun } from "./plan/adapt";
 
 /**
  * The weekly volume dial, moved by what the athlete says about their runs.
@@ -53,13 +54,20 @@ export async function applyRunFeel(userId: string): Promise<string | null> {
   await sql`update plan_templates set volume_feel_delta = ${after} where id = ${tpl.id}`;
 
   /*
-   * Rebuilt through the same guarded path as a day preference.
+   * A generated block is rebuilt; an authored one has its long runs resized in place.
    *
-   * `rememberDay` regenerates from the stored answers and refuses to write a block
-   * smaller than the live one, which is the guard that exists because a bad regeneration
-   * once deleted a plan. A volume nudge is not worth risking that.
+   * `rememberDay` regenerates from the stored answers and returns having done nothing when
+   * the plan was imported — the weeks are the record there, and there is no form to recompute
+   * them from. But the athlete still said their runs are too short, and a nudge that silently
+   * does nothing is worse than no dial.
+   *
+   * So on an imported plan the change lands where the athlete's own spec allows it to land:
+   * the long run, and only the long run. It is the session with room to give or take a couple
+   * of kilometres without becoming a different session, and its distance is the one length in
+   * the week that is genuinely a dial rather than a prescription.
    */
-  await rememberDay(userId);
+  const rebuilt = await rememberDay(userId);
+  if (rebuilt === 0) await resizeLongRuns(userId, after - before);
 
   const pct = Math.round(Math.abs(after) * STEP * 100);
   if (after === 0) {
@@ -68,4 +76,37 @@ export async function applyRunFeel(userId: string): Promise<string | null> {
   return after > before
     ? `Weekly volume up about ${pct}% from here. Tell me again in a fortnight and it goes up once more.`
     : `Weekly volume down about ${pct}% from here. Better a week you finish than one you abandon.`;
+}
+
+/**
+ * Every future long run, one step longer or shorter.
+ *
+ * Future only, and never a session already logged against — the same boundary every other
+ * write in this app respects. The work inside a long run is untouched: `resizeLongRun` scales
+ * the easy body and leaves a coach's tempo block exactly as written.
+ *
+ * A session whose prescription would come back unreadable, or which cannot honour the request,
+ * keeps the one it has. A dial that damages a session to obey itself is not a dial.
+ */
+async function resizeLongRuns(userId: string, steps: number): Promise<number> {
+  if (!steps) return 0;
+  const rows = await sql<{ id: string; target: string | null }[]>`
+    select id, target from planned_sessions
+     where user_id = ${userId} and kind = 'long_run'
+       and planned_date >= current_date
+       and status = 'planned' and activity_id is null
+     order by planned_date
+  `;
+  let moved = 0;
+  for (const r of rows) {
+    const was = longRunKm(r.target);
+    if (was <= 0) continue;
+    const next = resizeLongRun(r.target, was * (1 + steps * STEP));
+    if (next === r.target || !readable(next)) continue;
+    await sql`
+      update planned_sessions set target = ${next}, updated_at = now() where id = ${r.id}
+    `;
+    moved += 1;
+  }
+  return moved;
 }
