@@ -350,8 +350,40 @@ function forBeginner(shape: HyroxShape, base?: string | null): HyroxShape {
   };
 }
 
-function shapeOf(label: string): HyroxShape {
+/**
+ * How far into the block this session is, as a step of 0, 1 or 2.
+ *
+ * Read off the phase rather than the week number, because the phase is the plan's own
+ * statement about what these weeks are for — and it means a fifteen-week block and a
+ * nine-week block both progress properly rather than one running out of ladder. The
+ * second half of a phase counts as the next step, so a five-week build does not sit on
+ * one setting for five weeks.
+ */
+function stepOf(phase?: string | null, weekInPhase = 0): number {
+  const base = phase === "build" ? 1 : phase === "specific" || phase === "taper" ? 2 : 0;
+  return Math.min(2, base + (weekInPhase >= 2 ? 1 : 0));
+}
+
+/**
+ * The shape, and how it grows.
+ *
+ * It did not. Week 1's compromised running was week 14's — 4 × 800 m off two stations,
+ * every week of the block, with only the choice of station rotating, which is a
+ * different session in the way that a different colour of shirt is a different outfit.
+ * A race-specific session has to get harder for the same reason an interval session
+ * does, and it has three honest dials: how far the runs are, how many stations sit
+ * between them, and how little rest there is.
+ *
+ *   compromised running  the run grows — 600 m, 800 m, 1 km — and a fourth round
+ *                        arrives. The run is the session, so the run is what builds.
+ *   transitions          the count grows — 4 stations, 6, 8 — and the runs stay short.
+ *                        The changeover is the session, so more changeovers is harder.
+ *   simulations          already at race distances, so the rest comes out instead.
+ */
+function shapeOf(label: string, step = 0): HyroxShape {
   const l = label.toLowerCase();
+  const pick = <T,>(a: T[]): T => a[Math.min(step, a.length - 1)];
+
   if (/full simulation/.test(l)) {
     return {
       runM: 1000, perRound: 8, rounds: 1, rest: 0, raceDose: true,
@@ -360,18 +392,21 @@ function shapeOf(label: string): HyroxShape {
   }
   if (/half simulation/.test(l)) {
     return {
-      runM: 1000, perRound: 4, rounds: 1, rest: 0, raceDose: true,
-      cue: "Race order, race weight, race distances — half of it. Hold your race pace on the runs rather than proving something on the first one.",
+      runM: 1000, perRound: 4, rounds: 1, rest: pick([60, 30, 0]), raceDose: true,
+      cue: step >= 2
+        ? "Race order, race weight, race distances, and no rest anywhere. This is the dress rehearsal."
+        : "Race order, race weight, race distances — half of it. Hold your race pace on the runs rather than proving something on the first one.",
     };
   }
   if (/transition/.test(l)) {
     return {
-      runM: 200, perRound: 6, rounds: 2, rest: 0, raceDose: false,
+      runM: 200, perRound: pick([4, 6, 8]), rounds: 2, rest: 0, raceDose: false,
       cue: "Short runs, and no rest anywhere. The changeover is the session — every second you spend deciding what to do next is a second of your race.",
     };
   }
   return {
-    runM: 800, perRound: 2, rounds: 4, rest: 90, raceDose: false,
+    runM: pick([600, 800, 1000]), perRound: 2, rounds: pick([3, 4, 4]),
+    rest: pick([90, 90, 60]), raceDose: false,
     cue: "Long runs off heavy stations. The station is there to wreck your legs; the run is the session, and it should be held at the pace on your card.",
   };
 }
@@ -380,9 +415,12 @@ export function hyroxSession(
   label: string, paceS: number, _rounds = 4, kit?: Kit, week = 1, loads?: Loads | null,
   /** their running base, because the shapes above assume somebody who runs */
   base?: string | null,
+  /** which phase this week is in, and how far into it — the session grows with both */
+  phase?: string | null,
+  weekInPhase = 0,
 ): Built {
   const k = kit ?? { barbell: true, kettlebells: true, rig: true, sled: true };
-  const shape = forBeginner(shapeOf(label), base);
+  const shape = forBeginner(shapeOf(label, stepOf(phase, weekInPhase)), base);
   const need = shape.perRound * shape.rounds;
   /*
    * No prescribed weight for a beginner.
@@ -406,11 +444,17 @@ export function hyroxSession(
   const lines = ["- 10m Z2 warm up — row, bike, ski or jog, your choice"];
 
   /*
-   * One round written out with a repeat count where every round is identical, and all
-   * of them written where they are not — because "× 3" is a lie when round two is a
-   * different station.
+   * Different stations every round, wherever there are enough of them.
+   *
+   * This was backwards: it wrote one round and a repeat count whenever it had enough
+   * stations to fill every round — so "4 ×" meant the same sled push and the same ski,
+   * four times. A race has eight different stations and no repeats, and a session that
+   * rehearses it should rotate too: the run is the constant, the station is the variable.
+   *
+   * A repeat count is only used where there genuinely are not enough stations to go
+   * round, which is an athlete with almost no equipment.
    */
-  const same = shape.rounds > 1 && stations.length >= need;
+  const same = shape.rounds > 1 && stations.length < need;
   const write = (from: number, count: number) => {
     for (let i = 0; i < count; i += 1) {
       const st = stations[(from + i) % stations.length];

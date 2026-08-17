@@ -109,9 +109,8 @@ test("an easy run says one thing, and a Hyrox session is a list of things to do"
    */
   const compro = hyroxSession("Hyrox · compromised running", 310, 4, kit, 1).target
     .split("\n");
-  assert.ok(compro.some((l) => /^- \dx$/.test(l)), `rounds are stated:\n${compro.join("\n")}`);
   assert.ok(compro.some((l) => /rest between rounds/.test(l)),
-    "and so is the rest between them");
+    "compromised running states the rest between its rounds");
   const body = lines.filter((l) => !/warm up|cool down|rest between|^- \dx$/.test(l));
   body.forEach((l, i) => {
     if (i % 2 === 0) assert.match(l, /^- \d+m Z3/, `line ${i} is a run`);
@@ -128,7 +127,7 @@ test("an easy run says one thing, and a Hyrox session is a list of things to do"
   const transitions = shapeOf("Hyrox · transitions");
   const half = shapeOf("Hyrox · half simulation");
   assert.notEqual(compromised, transitions);
-  assert.match(compromised, /800m/, "long runs off heavy stations");
+  assert.match(compromised, /600m|800m|1000m/, "long runs off heavy stations");
   assert.match(transitions, /200m/, "short runs, many changeovers");
   assert.doesNotMatch(transitions, /rest between rounds/, "and no rest in transitions");
   assert.match(half, /1000m/, "race distances in a simulation");
@@ -288,9 +287,9 @@ test("somebody who cannot run yet is not given four times eight hundred metres",
   const walker = hyroxSession("Hyrox · compromised running", 380, 4, kit, 1, loads,
     "doesnt_run");
 
-  assert.match(runner.target, /800m/);
+  assert.match(runner.target, /600m|800m|1000m/, "a runner gets a real run");
   assert.match(walker.target, /200m/, "short enough to run without stopping");
-  assert.doesNotMatch(walker.target, /800m/);
+  assert.doesNotMatch(walker.target, /600m|800m|1000m/);
   assert.ok(walker.km < runner.km, `${walker.km} km against ${runner.km} km`);
 
   /*
@@ -310,4 +309,63 @@ test("a simulation is not prescribed to somebody who cannot run it", () => {
   const sim = hyroxSession("Hyrox · full simulation", 380, 4, kit, 1, null, "doesnt_run");
   assert.doesNotMatch(sim.target, /1000m/, "no kilometre repeats");
   assert.ok(sim.km <= 2, `${sim.km} km of running in a beginner's simulation`);
+});
+
+test("a race-specific session builds across the block", () => {
+  /*
+   * Week 1's compromised running was week 14's: 4 × 800 m off two stations, every week,
+   * with only the choice of station rotating — which is a different session in the way
+   * that a different colour of shirt is a different outfit.
+   */
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const at = (phase: string, wk: number) =>
+    hyroxSession("Hyrox · compromised running", 310, 4, kit, wk + 1, null,
+      "runs_regularly", phase, wk);
+
+  const early = at("base", 0);
+  const mid = at("build", 1);
+  const late = at("specific", 1);
+
+  assert.match(early.target, /600m/, "the run starts shorter");
+  assert.match(mid.target, /800m/);
+  assert.match(late.target, /1000m/, "and finishes at a kilometre");
+  assert.ok(early.km < mid.km && mid.km < late.km,
+    `${early.km} → ${mid.km} → ${late.km} km`);
+  assert.ok(early.minutes < late.minutes);
+});
+
+test("transitions builds by adding changeovers, not by lengthening the runs", () => {
+  // The changeover is the session, so more of them is what harder means.
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const at = (phase: string, wk: number) =>
+    hyroxSession("Hyrox · transitions", 310, 4, kit, 1, null, "runs_regularly", phase, wk);
+  const early = at("base", 0);
+  const late = at("specific", 1);
+  /*
+   * Measured as work, not as printed lines. There are only eight stations in a Hyrox, so
+   * a sixteen-slot session writes one round and a repeat count — the same total work,
+   * written more compactly.
+   */
+  assert.ok(late.minutes > early.minutes,
+    `${early.minutes} → ${late.minutes} minutes of work`);
+  assert.match(early.target, /200m/, "and the runs stay short throughout");
+  assert.match(late.target, /200m/);
+  assert.doesNotMatch(late.target, /800m|1000m/);
+});
+
+test("the stations change between rounds rather than repeating one", () => {
+  /*
+   * This was backwards: a repeat count was used whenever there were *enough* stations
+   * to fill every round, so "4 ×" meant the same sled push and the same ski, four
+   * times. A race has eight different stations and no repeats.
+   */
+  const kit = { barbell: true, kettlebells: true, rig: true, sled: true };
+  const s = hyroxSession("Hyrox · compromised running", 310, 4, kit, 1, null,
+    "runs_regularly", "build", 1);
+  const names = s.target.split("\n")
+    .filter((l) => !/Z[0-9]|warm|cool|^- \dx$/.test(l))
+    .map((l) => l.replace(/^- \S+\s*(m|reps)?\s*/, ""));
+  assert.ok(new Set(names).size >= 3,
+    `only ${new Set(names).size} distinct stations in ${names.length}: ${names.join(", ")}`);
+  assert.doesNotMatch(s.target, /^- \dx$/m, "no repeat count where the rounds differ");
 });

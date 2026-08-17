@@ -444,7 +444,9 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
         // The loads come from the division they entered, so every station carries the
         // weight they will actually race.
         const built = hyroxSession(
-          s.label, easyPace, 4, kitFrom(p.equipment), w.n, p.standards, p.running_base);
+          s.label, easyPace, 4, kitFrom(p.equipment), w.n, p.standards, p.running_base,
+          // The session grows with the block, the same way the interval ladders do.
+          String(w.phase), inPhase);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title) s.label = built.title;
         if (built.note) s.note_text = built.note;
