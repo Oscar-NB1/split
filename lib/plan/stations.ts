@@ -64,6 +64,33 @@ export const STATIONS: Station[] = [
 const canDo = (s: Station, kit: Kit) => s.needs === "none" || kit[s.needs];
 
 /**
+ * The load, in kilograms, from the division the athlete entered.
+ *
+ * Stations were named and dosed and carried no weight at all — "25 m Sled push" is
+ * half an instruction, and the half it leaves out is the half that decides whether the
+ * session is the session. The weights come from the standards table the intake already
+ * populates from their division, so a mixed-doubles athlete pushes the mixed-doubles
+ * sled rather than a number this file invented.
+ */
+export type Loads = {
+  sled_push_total_kg: number; sled_pull_total_kg: number;
+  farmers_kg: number; lunge_kg: number; wall_ball_kg: number;
+};
+
+export function loadFor(id: string, loads?: Loads | null): string | null {
+  if (!loads) return null;
+  switch (id) {
+    // Total sled weight, which is how a venue and a gym both label it.
+    case "sled_push": return `${loads.sled_push_total_kg} kg total`;
+    case "sled_pull": return `${loads.sled_pull_total_kg} kg total`;
+    case "carry": return `${loads.farmers_kg} kg each hand`;
+    case "lunge": return `${loads.lunge_kg} kg`;
+    case "wall_ball": return `${loads.wall_ball_kg} kg`;
+    default: return null;   // machines and bodyweight carry no load
+  }
+}
+
+/**
  * The stations for one session, in race order, starting where the block is.
  *
  * Rotated by the week so an athlete is not doing the ski and the sled every Saturday
@@ -72,8 +99,8 @@ const canDo = (s: Station, kit: Kit) => s.needs === "none" || kit[s.needs];
  * with no sled still has to train the pattern.
  */
 export function stationsFor(
-  kit: Kit, count: number, week = 1,
-): { name: string; dose: string; note?: string }[] {
+  kit: Kit, count: number, week = 1, loads?: Loads | null,
+): { name: string; dose: string; load?: string | null; note?: string }[] {
   const usable = STATIONS.map((s) => ({
     s,
     available: canDo(s, kit),
@@ -84,13 +111,17 @@ export function stationsFor(
   return ordered.slice(0, Math.max(1, count)).map(({ s, available }) => ({
     name: available ? s.name : `${s.name} — substituted`,
     dose: available ? s.training : s.instead,
+    load: available ? loadFor(s.id, loads) : null,
     ...(available ? {} : { note: `You said you have no ${s.needs}. ${s.instead}.` }),
   }));
 }
 
 /** The full event, for a simulation: every station at its race dose. */
-export const raceOrder = (kit: Kit): { name: string; dose: string }[] =>
+export const raceOrder = (
+  kit: Kit, loads?: Loads | null,
+): { name: string; dose: string; load?: string | null }[] =>
   STATIONS.map((s) => ({
     name: canDo(s, kit) ? s.name : `${s.name} (substituted)`,
     dose: canDo(s, kit) ? s.race : s.instead,
+    load: canDo(s, kit) ? loadFor(s.id, loads) : null,
   }));

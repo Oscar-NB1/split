@@ -51,6 +51,16 @@ export type Params = ResolveInput & {
    */
   longest_run_km?: number | null;
   /**
+   * The station loads for the division the athlete entered.
+   *
+   * A station without a weight is half an instruction, and the half it leaves out is
+   * the half that decides whether the session was the session.
+   */
+  standards?: {
+    sled_push_total_kg: number; sled_pull_total_kg: number;
+    farmers_kg: number; lunge_kg: number; wall_ball_kg: number;
+  } | null;
+  /**
    * Days the athlete has taught the plan, by session kind. 0 = Monday.
    *
    * Learned from them moving a session and saying "always", rather than asked for in
@@ -251,7 +261,13 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      */
     let qualitySeen = 0;
     /** Which ladder each quality run came from, so it can be paced as itself. */
-    const secondLadder = otherLadder(ladder, stations);
+    /*
+     * The second hard session trains what is actually costing them time.
+     *
+     * Their role comes from the intake's own five-point deltas, so this is the
+     * athlete's own account of which half of the race they lose it in.
+     */
+    const secondLadder = otherLadder(ladder, stations, role);
     /*
      * Two Hyrox sessions in a week were the same session twice — the same rung, the
      * same name, on consecutive days. The second takes the next rung of the
@@ -411,13 +427,38 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
          * A class where the athlete said they train in classes. "Mix" is classes for
          * the stations too — the intervals are the part it keeps written.
          */
+        /*
+         * The written session, always — even for an athlete who trains in classes.
+         *
+         * A class used to replace the prescription with a note to itself: "Hyrox class
+         * / 2 km running inside it / Stations at race weight", which the session screen
+         * then printed as a numbered list of instructions. It is not a session and
+         * nobody can do it.
+         *
+         * The session is now always written out, station by station, at their division's
+         * weights — and the screen offers it beside guidance on which class to book.
+         * An athlete who goes to a class ignores the prescription; one whose class is
+         * cancelled has the session in their hand.
+         */
         const asClass = p.session_style === "classes" || p.session_style === "mix";
-        const built = asClass
-          ? hyroxClass(s.label)
-          : hyroxSession(s.label, easyPace, 4, kitFrom(p.equipment), w.n);
+        // The loads come from the division they entered, so every station carries the
+        // weight they will actually race.
+        const built = hyroxSession(
+          s.label, easyPace, 4, kitFrom(p.equipment), w.n, p.standards);
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;
         if (built.title) s.label = built.title;
         if (built.note) s.note_text = built.note;
+        /*
+         * The class note survives, as a note.
+         *
+         * It was never a prescription — it is what to look for on a timetable, which is
+         * the right thing to say to somebody who trains in classes and the wrong thing
+         * to put in a numbered list of steps.
+         */
+        if (asClass) {
+          const cls = hyroxClass(s.label);
+          if (cls.note) s.note_text = cls.note;
+        }
       } else if (kind === "easy_hyrox") {
         const built = easyHyrox();
         s.km = built.km; s.target_text = built.target; s.minutes = built.minutes;

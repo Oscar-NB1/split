@@ -16,7 +16,7 @@
  */
 
 import type { Kit } from "./strength";
-import { raceOrder, stationsFor } from "./stations";
+import { type Loads, raceOrder, stationsFor } from "./stations";
 
 /** What the ladder rung asks for, once read. */
 export type Work =
@@ -291,38 +291,65 @@ export function continuousRun(km: number, paceS: number, zone = "Z2"): Built {
  * quietly dropped.
  */
 export function hyroxSession(
-  label: string, paceS: number, rounds = 4, kit?: Kit, week = 1,
+  label: string, paceS: number, rounds = 4, kit?: Kit, week = 1, loads?: Loads | null,
 ): Built {
   const full = /full simulation/.test(label.toLowerCase());
   const runM = /simulation/.test(label.toLowerCase()) ? 1000 : 400;
-  const n = full ? 8 : rounds;
   const k = kit ?? { barbell: true, kettlebells: true, rig: true, sled: true };
-  const stations = full ? raceOrder(k) : stationsFor(k, n, week);
 
   /*
-   * Numbered, one line per thing to do, alternating run and station.
+   * Rounds, not one long list — and every movement with its load.
    *
-   * Written flat rather than as an `- Nx` repeat: each round is a different station,
-   * so there is nothing to repeat, and a numbered list is what an athlete standing
-   * in the gym can actually work down.
+   * The first version wrote one flat sequence of run, station, run, station. That is
+   * readable but it is not how anybody does the session: a self-written Hyrox workout
+   * is a short block repeated, with a known rest between rounds, and the athlete needs
+   * to know how many times and how long to stand still. Written flat, an eight-item
+   * list also gave no way to say "that again, twice more".
+   *
+   * And a station without a weight is half an instruction. The loads come from the
+   * division the athlete entered, so "25 m sled push" becomes "25 m sled push at
+   * 202 kg total" — the number that decides whether this was the session or a warm-up.
    */
+  const perRound = full ? 8 : 2;
+  const roundCount = full ? 1 : Math.max(2, Math.round(rounds / perRound) + 1);
+  const stations = full
+    ? raceOrder(k, loads)
+    : stationsFor(k, perRound * roundCount, week, loads);
+
   const lines = [
     `- ${doseKm(WARMUP_KM)} Z2 warm up ${between(paceS, Math.round(paceS * 1.08))}`,
   ];
-  for (let i = 0; i < n; i += 1) {
-    const st = stations[i % stations.length];
-    // Running off a station is slower than fresh running, and the target says so
-    // rather than setting one nobody hits and everybody chases.
-    lines.push(`- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
-    lines.push(`- ${st.dose} ${st.name}`);
+  /*
+   * One round written out, then a repeat count — unless the stations differ between
+   * rounds, in which case every round is written, because "× 3" is a lie when round
+   * two is a different station.
+   */
+  const sameEveryRound = roundCount > 1 && stations.length >= perRound * roundCount;
+  if (sameEveryRound) {
+    lines.push(`- ${roundCount}x`);
+    for (let i = 0; i < perRound; i += 1) {
+      const st = stations[i];
+      lines.push(`- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
+      lines.push(`- ${st.dose} ${st.name}${st.load ? ` at ${st.load}` : ""}`);
+    }
+    // The rest between rounds, stated. Standing still for an unknown length is how a
+    // session becomes a different session.
+    lines.push("- 90s Z1 rest between rounds");
+  } else {
+    for (const st of stations) {
+      lines.push(`- ${runM}m Z3 ${at(Math.round(paceS * 0.94))}`);
+      lines.push(`- ${st.dose} ${st.name}${st.load ? ` at ${st.load}` : ""}`);
+    }
   }
   lines.push(`- ${doseKm(1)} Z1 cool down ${at(paceS)}`);
 
-  const km = km1(WARMUP_KM + (runM / 1000) * n + 1);
+  const runs = sameEveryRound ? perRound * roundCount : stations.length;
+  const km = km1(WARMUP_KM + (runM / 1000) * runs + 1);
   // A station is roughly the time of the run beside it, plus the transition.
   const stationSeconds = (runM / 1000) * paceS + 60;
   const minutes = Math.round(
-    ((WARMUP_KM + 1) * paceS + n * ((runM / 1000) * paceS + stationSeconds)) / 60);
+    ((WARMUP_KM + 1) * paceS + runs * ((runM / 1000) * paceS + stationSeconds)) / 60
+    + (sameEveryRound ? (roundCount - 1) * 1.5 : 0));
   return { target: lines.join("\n"), km, minutes };
 }
 

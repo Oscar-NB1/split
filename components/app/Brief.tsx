@@ -4,6 +4,7 @@ import { fmt } from "@/lib/dates";
 import { kindColour, kindLabel } from "@/lib/coach";
 import type { Forecast } from "@/lib/weather";
 import { warmupFor } from "@/lib/warmup";
+import { classGuideFor } from "@/lib/class-guide";
 import { humanDose, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
@@ -274,11 +275,23 @@ function groupsFor(
      * nothing to repeat.
      */
     const stations = g.items.filter((i) => !i.rest && !i.pace && !/^\d+(\.\d+)?km/.test(i.dose));
-    if (stations.length >= 2 && g.repeat === 1) {
+    if (stations.length >= 1 && g.items.filter((i) => !i.rest).length >= 2) {
+      /*
+       * Rounds, where the prescription says rounds.
+       *
+       * A self-written Hyrox session is a short block repeated, so the count matters as
+       * much as the contents — "× 3" above the list, and the rest between rounds at the
+       * bottom of it, which the parser already carries as the group's rest step.
+       */
       out.push({
-        label: "The session", color: kindColour(kind), repeat: 1,
-        note: "Work down the list in order. Time your transitions — the roxzone is where a race quietly goes.",
-        summary: `${g.items.filter((i) => !i.rest).length} things to do, in this order`,
+        label: g.repeat > 1 ? "The round" : "The session",
+        color: kindColour(kind), repeat: g.repeat,
+        note: g.repeat > 1
+          ? "Work down the round in order, then go again. Time your transitions — the roxzone is where a race quietly goes."
+          : "Work down the list in order. Time your transitions — the roxzone is where a race quietly goes.",
+        summary: g.repeat > 1
+          ? `${g.items.filter((i) => !i.rest).length} things to do, ${g.repeat} rounds`
+          : `${g.items.filter((i) => !i.rest).length} things to do, in this order`,
         items: g.items.map((it) => ({
           // A station is a dose and a movement: "25 reps · Wall balls". A run keeps
           // its pace, because running off a station is the one thing being trained.
@@ -382,7 +395,21 @@ export default function Brief({
   const noteLines = s.coach_note?.split("\n").filter(Boolean) ?? [];
   const why = noteLines[0];
   const pace = prescribedPace(s.title);
-  const groups = groupsFor(d.steps, pace, mode, s.kind);
+  /*
+   * A Hyrox session's toggle is self-workout against class, not outdoor against
+   * treadmill: nobody does compromised running on a treadmill, and everybody has to
+   * choose between writing it and booking it.
+   */
+  const guide = classGuideFor(s.kind, s.title);
+  const MODES = guide ? ["Self-workout", "Class"] : ["Outdoor", "Treadmill"];
+  /*
+   * A mode that belongs to the other kind of session shows neither button as
+   * selected, which happens the moment somebody opens a Hyrox session after a run.
+   * The first option is the default for whichever pair applies.
+   */
+  const active = MODES.includes(mode) ? mode : MODES[0];
+  const asClass = guide != null && active === "Class";
+  const groups = groupsFor(d.steps, pace, active, s.kind);
   const accent = kindColour(s.kind);
 
   async function skip() {
@@ -515,24 +542,68 @@ export default function Brief({
 
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
 
-      {groups.length > 0 && (
+      {(groups.length > 0 || guide) && (
         <div style={{ padding: "20px 18px 8px", display: "flex", flexDirection: "column", gap: 12 }}>
+          {/*
+            * Two different questions, depending on the session.
+            *
+            * A run asks where you are running it, because a treadmill needs km/h. A
+            * Hyrox session asks something else entirely: are you writing this session
+            * yourself, or are you going to a class? The plan can say exactly what to do
+            * in the first case and only what to look for in the second — and it used to
+            * pretend it could do both, printing "1. Hyrox class, 2. 2 km running inside
+            * it" as though that were a set of instructions.
+            */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".1em",
               textTransform: "uppercase", color: "var(--ink-55)" }}>What to do</span>
             <div style={{ display: "flex", gap: 3, background: "var(--paper)",
               border: "1px solid var(--line)", borderRadius: "var(--r-pill)", padding: 3 }}>
-              {["Outdoor", "Treadmill"].map((m) => (
+              {MODES.map((m) => (
                 <button key={m} onClick={() => setMode(m)} style={{
                   borderRadius: "var(--r-pill)", padding: "7px 13px", fontSize: 11, fontWeight: 700,
-                  background: mode === m ? "var(--navy)" : "transparent",
-                  color: mode === m ? "#fff" : "var(--ink-55)",
+                  background: active === m ? "var(--navy)" : "transparent",
+                  color: active === m ? "#fff" : "var(--ink-55)",
                 }}>{m}</button>
               ))}
             </div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {asClass && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10,
+              background: "var(--paper)", border: "1px solid var(--line)",
+              borderRadius: "var(--r-card)", padding: "15px 16px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".08em",
+                  textTransform: "uppercase", color: "var(--ink-40)" }}>Look for</span>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{guide.looking_for}</span>
+                <span style={{ fontSize: 12, color: "var(--ink-55)", lineHeight: 1.5 }}>
+                  {guide.why} About {guide.minutes} minutes.
+                </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {guide.must.map((m) => (
+                  <span key={m} style={{ display: "flex", gap: 8, fontSize: 12.5, lineHeight: 1.5 }}>
+                    <b style={{ color: "var(--teal)", flex: "none" }}>✓</b>{m}
+                  </span>
+                ))}
+                {guide.avoid.map((a) => (
+                  <span key={a} style={{ display: "flex", gap: 8, fontSize: 12.5,
+                    lineHeight: 1.5, color: "var(--ink-55)" }}>
+                    <b style={{ color: "#C07A3E", flex: "none" }}>✕</b>{a}
+                  </span>
+                ))}
+              </div>
+              {/* What to do when the only class available is the wrong shape, which is
+                  most weeks for most people. */}
+              <span style={{ fontSize: 12, lineHeight: 1.5, color: "var(--ink-70)",
+                borderTop: "1px dashed var(--line)", paddingTop: 10 }}>
+                {guide.fallback}
+              </span>
+            </div>
+          )}
+
+          <div style={{ display: asClass ? "none" : "flex", flexDirection: "column", gap: 12 }}>
             {groups.map((g, gi) => {
               let n = groups.slice(0, gi).reduce((a, x) => a + x.items.length, 0);
               return (
@@ -570,7 +641,7 @@ export default function Brief({
                           </div>
                           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".08em",
                             textTransform: "uppercase", color: "var(--ink-40)" }}>
-                            {it.tag ?? (mode === "Treadmill" ? "TM" : "Run")}
+                            {it.tag ?? (active === "Treadmill" ? "TM" : "Run")}
                           </span>
                         </div>
                       );

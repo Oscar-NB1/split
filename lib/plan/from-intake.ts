@@ -1,5 +1,5 @@
 import { addDays, mondayOf, today } from "../dates";
-import type { Intake } from "../intake";
+import { standardsFor, type Intake } from "../intake";
 import type { Absence } from "./intake-rules";
 import type { Commitment } from "./slots";
 import type { Goal } from "./allocate";
@@ -195,6 +195,8 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
      * memory, and a memory beats nothing.
      */
     longest_run_km: extra.recent?.long_run_km ?? x.longestRunKm ?? null,
+    // Asked, never derived: a woman racing mixed doubles pushes the mixed-doubles sled.
+    standards: standardsFor(x),
 
     // ------- the rest
     length,

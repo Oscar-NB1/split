@@ -22,13 +22,15 @@ export default function Strength({
 }) {
   const { d, setD, err, load, send } = useSession(id);
   /*
-   * Open by default here, unlike on a run.
+   * Closed, like every other session screen.
    *
-   * There was no warm-up on this screen at all — an athlete opened a squat session
-   * and the first thing on it was a working set. A cold heavy first set is the most
-   * avoidable injury in the plan, and hiding the fix behind a tap made it optional.
+   * It opened by default on the reasoning that a cold heavy first set is the most
+   * avoidable injury in the plan — but six expanded rows push the actual session
+   * below the fold, so the screen opens on somebody else's mobility list rather than
+   * on the lifts. An athlete who wants the warm-up taps once; an athlete who knows it
+   * gets their sets.
    */
-  const [warmOpen, setWarmOpen] = useState(true);
+  const [warmOpen, setWarmOpen] = useState(false);
 
   if (err) return <div className="pad"><div className="errbox" role="alert">{err}</div></div>;
   if (!d) return <div className="pad"><p className="empty">Loading…</p></div>;
@@ -104,17 +106,21 @@ export default function Strength({
         </div>
       </div>
 
-      {warmOpen && (
-        <WarmupCard kind="strength" title={d.session.title} onHide={() => setWarmOpen(false)} />
-      )}
-      {!warmOpen && (
-        <div style={{ padding: "12px 18px 0" }}>
-          <button onClick={() => setWarmOpen(true)} style={{ fontSize: 11, fontWeight: 700,
-            letterSpacing: ".06em", textTransform: "uppercase", color: "var(--teal)" }}>
-            Show warm-up
-          </button>
-        </div>
-      )}
+      {/* Spacing below either state: the warm-up card sat flush against the first
+          exercise, so the two read as one block. */}
+      <div style={{ paddingBottom: 14 }}>
+        {warmOpen
+          ? <WarmupCard kind="strength" title={d.session.title}
+            onHide={() => setWarmOpen(false)} />
+          : (
+            <div style={{ padding: "14px 18px 0" }}>
+              <button onClick={() => setWarmOpen(true)} style={{ fontSize: 11, fontWeight: 700,
+                letterSpacing: ".06em", textTransform: "uppercase", color: "var(--teal)" }}>
+                Show warm-up
+              </button>
+            </div>
+          )}
+      </div>
 
       {byExercise.length === 0 && (
         <div className="band">

@@ -187,12 +187,49 @@ export const canDoStations = (variant: string) => variant !== "field";
  * here is deliberate: threshold and CV are the two that complement each other, and
  * where the athlete cannot do stations the race-specific ladder is not an option.
  */
-export function otherLadder(first: LadderId, canDoStations: boolean): LadderId {
+export function otherLadder(
+  first: LadderId, canDoStations: boolean,
+  /**
+   * Which half of the race limits this athlete, where it is known.
+   *
+   * The second quality session should train the thing that is losing them time. A
+   * run-limited athlete — the one whose partner protects them on the stations — gets
+   * their finish decided by the eight runs, so their second hard session is running:
+   * threshold, then race pace. A station carrier is already the stronger runner, and
+   * a second interval session is the least useful hour in their week when the sled and
+   * the sandbag are what cost them minutes.
+   *
+   * Without this, both got the same pairing and the plan trained whichever quality the
+   * cycle happened to land on.
+   */
+  role?: string | null,
+): LadderId {
   const pair: Record<LadderId, LadderId> = {
     L1: "L2", L2: "L1", L3: "L4", L4: "L3", L5: "L3",
     L6: canDoStations ? "L4" : "L3",
   };
-  return pair[first];
+  const other = pair[first];
+
+  /*
+   * The limiter overrides the pairing, but never invents a session they cannot do.
+   *
+   * A run-limited athlete never gets the race-specific ladder as their second hard
+   * session — they already have a Hyrox session in the week and their problem is not
+   * exposure to stations. A station carrier gets it wherever they can reach one.
+   */
+  /*
+   * "Protected" is the run-limited case under another name.
+   *
+   * The intake stores four roles and two of them mean the same thing here: an athlete
+   * whose partner protects them on the stations is one whose finish time is decided by
+   * their running.
+   */
+  const runLimited = role === "run_limiter" || role === "protected";
+  if (runLimited && other === "L6") return "L3";
+  if (role === "station_carrier" && canDoStations && (other === "L3" || other === "L4")) {
+    return "L6";
+  }
+  return other;
 }
 
 /**

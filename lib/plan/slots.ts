@@ -326,6 +326,16 @@ export const PENALTY = {
   commitmentBeforeKey: 8,
   longRunTooSoonAfterQuality: 6,
   strengthBeforeLongRun: 5,
+  /*
+   * Above strength, below two hard days in a row.
+   *
+   * A Hyrox session is the thing that empties the legs — a sled, carries and a hundred
+   * wall balls — so a long run the next morning is the worst-placed long run in the
+   * week. Not a hard rule: a week with six sessions, a fixed class and a preferred
+   * Sunday may have nowhere else to put it, and then the plan should say so rather
+   * than refuse to schedule.
+   */
+  hyroxBeforeLongRun: 8,
   noRestDay: 4,
   /*
    * Below the physiological penalties on purpose.
@@ -425,8 +435,25 @@ export function score(week: Placed[], x: PlaceInput): number {
   if (quality != null && long != null && long - quality < 2) {
     cost += PENALTY.longRunTooSoonAfterQuality;
   }
-  if (long != null && (byDay.get(long - 1) ?? []).some((p) => p.kind === "strength")) {
+  /*
+   * Anything hard the day before the long run, not only strength.
+   *
+   * This charged for strength on Saturday and said nothing about a Hyrox session
+   * there — so fourteen of his fifteen weeks put a Saturday Hyrox class immediately
+   * before a Sunday long run, every week, with no respite. Running twenty kilometres
+   * on legs that did a sled and a hundred wall balls yesterday is a session done
+   * badly, and doing it every week of a block is not a training decision, it is what
+   * the arrangement happened to be.
+   *
+   * A Hyrox session costs more here than strength does, because it is the one that
+   * empties the legs.
+   */
+  const before = byDay.get(long == null ? -99 : long - 1) ?? [];
+  if (long != null && before.some((p) => p.kind === "strength")) {
     cost += PENALTY.strengthBeforeLongRun;
+  }
+  if (long != null && before.some((p) => p.kind === "hyrox")) {
+    cost += PENALTY.hyroxBeforeLongRun;
   }
   /*
    * Two key sessions on one day. placeWeek refuses to do this; the penalty exists

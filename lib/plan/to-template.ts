@@ -128,6 +128,18 @@ function note(s: Session, w: GeneratedWeek): string | undefined {
    * under "why this session matters", and it was getting whichever flag the pace
    * prescription happened to carry.
    */
+  /*
+   * Lines, not one paragraph — and the first line is the message.
+   *
+   * These were joined with a space, so a Hyrox session arrived as a nine-sentence wall:
+   * the coach note, the class note, the alternation rule, the scoring caveat and the
+   * pace provenance, all run together. The session screen shows the first line as the
+   * coach's message and everything after it is detail, which is only true if the join
+   * is a newline.
+   *
+   * And each bit is said once. The pace-source flag repeated most of what the coach
+   * note had already said about compromised running.
+   */
   const bits: string[] = [];
   if (s.why_text) bits.push(s.why_text);
   if (s.note_text) bits.push(s.note_text);
@@ -136,10 +148,29 @@ function note(s: Session, w: GeneratedWeek): string | undefined {
   }
   if (s.commitment) bits.push("Yours, not prescribed — the week is built around it.");
   if (w.deload) bits.push("Down week: the point is to arrive fresh, not to be tired.");
-  // Only a pace carries flags; the fallbacks are self-describing by construction.
+  /*
+   * The pace provenance, only where it is not already obvious.
+   *
+   * It is worth saying that targets came from a goal rather than a measurement, and
+   * not worth repeating on every session that fresh running is quicker than
+   * compromised running — the coach note for a Hyrox session opens with that.
+   */
   const p = s.prescription;
-  if (p?.kind === "pace") for (const f of p.flags) bits.push(f.message);
-  return bits.length ? bits.join(" ") : undefined;
+  if (p?.kind === "pace") {
+    for (const f of p.flags) {
+      if (f.code === "paces_from_race" && /compromised/i.test(bits.join(" "))) continue;
+      bits.push(f.message);
+    }
+  }
+  // Deduplicated: two sources occasionally produce the same sentence.
+  const seen = new Set<string>();
+  const lines = bits.filter((b) => {
+    const k = b.trim().toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return lines.length ? lines.join("\n") : undefined;
 }
 
 /** One week of the plan, as days. */

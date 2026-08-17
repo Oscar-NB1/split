@@ -5,6 +5,7 @@ import { badRequest, notFound, route } from "@/lib/http";
 import { applyLengthFeel } from "@/lib/strength-apply";
 import { isUuid } from "@/lib/plan";
 import { parseSteps, parseStrength, repCount } from "@/lib/prescription";
+import { describe, loadNote, startingLoad } from "@/lib/plan/exercises";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -77,11 +78,34 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
   const lastFor = (name: string) =>
     lastLoads.find((r) => r.exercise.toLowerCase() === name.toLowerCase())?.load_kg ?? null;
 
+  /*
+   * And a starting number for anything they have never lifted here.
+   *
+   * History is best and there is none in a first block, so every set showed "—" and
+   * the athlete guessed — which is the one part of a strength session a plan can
+   * genuinely help with. Nobody can know a stranger's back squat, but a coach handed a
+   * new athlete does not shrug: they look at bodyweight and training history, name a
+   * number, and correct it after the first set.
+   *
+   * Bodyweight is required rather than assumed. Guessing it would make every number
+   * downstream a guess about a guess, and the screen can ask for one instead.
+   */
+  const [body] = isStrength && lifts.length > 0
+    ? await sql<{ weight_kg: number | null; general_training_age: string | null }[]>`
+        select weight_kg, general_training_age from users where id = ${s.user_id}
+      `
+    : [];
+  const guessFor = (name: string, reps: number) => startingLoad(
+    name, reps, body?.weight_kg ? Number(body.weight_kg) : null,
+    body?.general_training_age ?? "intermediate",
+  );
+
   if (isStrength && lifts.length > 0) {
     // seed one row per prescribed set, once. `on conflict do nothing` is what
     // makes re-opening the screen harmless.
     for (const [ord, lift] of lifts.entries()) {
-      const seed = lift.load ?? lastFor(lift.name);
+      // Their own history first, then the bodyweight estimate, then nothing.
+      const seed = lift.load ?? lastFor(lift.name) ?? guessFor(lift.name, lift.reps);
       for (let n = 1; n <= Math.max(1, lift.sets); n++) {
         await sql`
           insert into session_sets
@@ -113,11 +137,35 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
 
   const steps = isStrength ? [] : parseSteps(s.target);
 
+  /*
+   * What each movement is, sent with the session.
+   *
+   * "Rear-foot elevated split squat" is a sentence in a language somebody has to
+   * already speak. The description travels with the lift so the screen can put it
+   * behind a tap rather than shipping a glossary.
+   */
+  const guidance = lifts.map((l) => {
+    const ex = describe(l.name);
+    const estimate = lastFor(l.name) === null && l.load == null
+      ? guessFor(l.name, l.reps) : null;
+    return {
+      name: l.name,
+      what: ex?.what ?? null,
+      how: ex?.how ?? null,
+      /** set only where the number came from bodyweight rather than their own history */
+      estimated_load: estimate,
+      note: estimate ? loadNote(Boolean(ex?.perHand)) : null,
+    };
+  });
+
   return NextResponse.json({
     session: s,
     steps,
     reps: repCount(steps),
     lifts,
+    guidance,
+    /** so the screen can ask for a bodyweight rather than showing empty boxes */
+    needs_bodyweight: isStrength && lifts.length > 0 && !body?.weight_kg,
     sets: sets.map((r) => ({
       ...r,
       prescribed_load: r.prescribed_load == null ? null : Number(r.prescribed_load),

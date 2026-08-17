@@ -99,9 +99,13 @@ test("an easy run says one thing, and a Hyrox session is a list of things to do"
   assert.ok(
     named.filter((n) => new RegExp(n, "i").test(hyrox.target)).length >= 2,
     `stations are named and dosed:\n${hyrox.target}`);
-  // Run, station, run, station — the shape of the race.
-  const lines = hyrox.target.split("\n").slice(1, -1);
-  lines.forEach((l, i) => {
+  // Run, station, run, station — the shape of the race — inside a repeated round.
+  const lines = hyrox.target.split("\n");
+  assert.ok(lines.some((l) => /^- \dx$/.test(l)), `rounds are stated:\n${hyrox.target}`);
+  assert.ok(lines.some((l) => /rest between rounds/.test(l)),
+    "and so is the rest between them");
+  const body = lines.filter((l) => !/warm up|cool down|rest between|^- \dx$/.test(l));
+  body.forEach((l, i) => {
     if (i % 2 === 0) assert.match(l, /400m/, `line ${i} is a run`);
   });
 });
@@ -114,7 +118,7 @@ test("a Hyrox session rotates its stations, and respects the kit", () => {
 
   // No sled and no kettlebells: the pattern still gets trained, with what they have.
   const bare = hyroxSession("Hyrox · transitions", 310, 8,
-    { barbell: false, kettlebells: false, rig: false, sled: false }, 2);
+    { barbell: false, kettlebells: false, rig: false, sled: false }, 2, null);
   assert.doesNotMatch(bare.target, /25 m Sled|100 m Farmers/, "nothing they cannot reach");
   assert.match(bare.target, /substituted/, "the substitution is stated, not silent");
 });
