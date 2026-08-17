@@ -18,7 +18,43 @@ const MAX_URL = 8192;
 /** Dark, because the app is. Route colour is supplied by the caller. */
 const STYLE = "mapbox/dark-v11";
 
-export const hasBasemap = () => Boolean(process.env.MAPBOX_TOKEN);
+/**
+ * The token, under whichever name it was set.
+ *
+ * `MAPBOX_TOKEN` is what this file was written for, but a Mapbox public key gets
+ * added to a dashboard under whatever name is in the operator's head at the time —
+ * `MAPBOX_PUBLIC_KEY`, `MAPBOX_ACCESS_TOKEN`, or the `NEXT_PUBLIC_` variant that
+ * every Mapbox tutorial uses. The failure when the name does not match is silent:
+ * `hasBasemap()` returns false, the client quietly draws its own outline, and the
+ * map looks like a feature that was never built.
+ *
+ * Cheaper to accept the four plausible names than to debug that. The value is still
+ * only ever read on the server — the `NEXT_PUBLIC_` name is accepted, not required,
+ * and nothing here forwards it to the browser.
+ */
+const NAMES = [
+  "MAPBOX_TOKEN", "MAPBOX_PUBLIC_KEY", "MAPBOX_ACCESS_TOKEN",
+  "NEXT_PUBLIC_MAPBOX_TOKEN",
+] as const;
+
+export function mapboxToken(): string | null {
+  for (const name of NAMES) {
+    const v = process.env[name];
+    // A Mapbox public token starts `pk.`; a secret one starts `sk.` and must never
+    // be used here, because this URL is what the athlete's browser fetches.
+    if (v && v.trim() && !v.startsWith("sk.")) return v.trim();
+  }
+  return null;
+}
+
+/** Which name it was found under, for the diagnostics route. Never the value. */
+export const mapboxTokenName = (): string | null =>
+  NAMES.find((n) => {
+    const v = process.env[n];
+    return Boolean(v && v.trim() && !v.startsWith("sk."));
+  }) ?? null;
+
+export const hasBasemap = () => Boolean(mapboxToken());
 
 /**
  * Drop every nth point until the encoded polyline fits the URL budget.
@@ -116,7 +152,7 @@ export function staticMapUrl(
   width = 900,
   height = 460,
 ): string | null {
-  const token = process.env.MAPBOX_TOKEN;
+  const token = mapboxToken();
   if (!token || points.length < 2) return null;
 
   // hex without the '#': Mapbox wants 3 or 6 bare hex digits

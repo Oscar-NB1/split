@@ -36,6 +36,19 @@ export type Signal = {
    * a real signal and arguably a stronger one than the same run in still air.
    */
   conditions_s?: number;
+  /**
+   * Each work rep's pace, seconds per kilometre.
+   *
+   * The engine reads a session as one number — the average of its work laps — which
+   * is the right way to compare sessions and the wrong way to read one. A set where
+   * every rep beat its target is not the same evidence as a set that averaged the
+   * same figure by going out fast and hanging on, and the difference is exactly what
+   * "am I fitter" turns on.
+   *
+   * Empty where the laps were not imported, which is why nothing here can be
+   * required.
+   */
+  reps?: number[];
 };
 
 export type Read = {
@@ -62,6 +75,32 @@ export const BAND = 2;
 export const MIN_STREAK = 3;
 /** And never move a pace target by more than this. */
 export const MAX_SHIFT = 6;
+
+/**
+ * How many reps a single session needs before it can speak on its own.
+ *
+ * Three. Two reps quicker than target is a good day or a downhill; three or more,
+ * every one of them, is a prescription that has stopped describing the athlete —
+ * and waiting three sessions to say so means three weeks of training at a pace they
+ * have already outgrown.
+ */
+export const CLEAN_SWEEP_REPS = 3;
+
+/**
+ * Whether one session beat its target outright.
+ *
+ * Every rep, by more than the tolerance band, with no rep slower than prescribed.
+ * The last condition is what keeps this honest: a set of five where four flew and
+ * one blew up is a pacing story, not a fitness one, and it should wait for the
+ * streak like everything else.
+ */
+export function cleanSweep(s: Signal, band = BAND): boolean {
+  const reps = s.reps ?? [];
+  if (reps.length < CLEAN_SWEEP_REPS) return false;
+  // Conditions do not enter this. They are only ever an excuse for being slow, and
+  // a set of reps run faster than target in bad air is stronger evidence, not weaker.
+  return reps.every((r) => r <= s.prescribed - band);
+}
 
 /**
  * The read. `goalSeconds` is the target the projection is measured against.
@@ -115,14 +154,43 @@ export function read(signals: Signal[], goalSeconds: number, band = BAND): Read 
   // The verdict follows the same evidence as the streak: direction from the run
   // of sessions, magnitude from the weighted trend. Both have to agree, so one
   // freak session cannot move it.
+  /*
+   * A clean sweep counts as being ahead on its own.
+   *
+   * Otherwise the two halves of this disagree: the shift would move on one sweeping
+   * session while the state — which is what the screen puts in its headline — still
+   * read "on plan", and the athlete would be offered a change to a plan the app had
+   * just told them was fine.
+   */
+  const sweptLast = cleanSweep(points[points.length - 1], band);
   const state: Read["state"] =
-    lastSide === -1 && trend <= -band ? "ahead"
+    lastSide === -1 && (trend <= -band || sweptLast) ? "ahead"
     : lastSide === 1 && trend >= band ? "behind"
     : "on";
 
-  const shift = state === "on" || streak < MIN_STREAK
-    ? 0
-    : Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, Math.round(trend * 0.6)));
+  /*
+   * One session can be enough, if it swept.
+   *
+   * The streak rule exists so a single freak session cannot move a plan, and it is
+   * the right default. But a set where every rep came in ahead of target is not a
+   * freak session — it is a prescription that has stopped fitting, and making the
+   * athlete prove it three times means three more weeks of training at a pace they
+   * have already outgrown. The bar is deliberately higher than the streak's:
+   * *every* rep, by more than the band, and nothing slower than prescribed.
+   *
+   * It only ever unlocks the quick direction. Nothing about one bad session
+   * justifies making a plan easier on the spot.
+   */
+  const last = points[points.length - 1];
+  const swept = sweptLast && last.delta <= -band;
+  const enough = streak >= MIN_STREAK || (swept && lastSide === -1);
+
+  const shift = state === "on" ? 0
+    : !enough ? 0
+    : Math.max(-MAX_SHIFT, Math.min(MAX_SHIFT, Math.round(
+      // A sweeping session speaks for itself rather than through a trend that is
+      // still averaging in the weeks before it.
+      (swept && streak < MIN_STREAK ? last.delta : trend) * 0.6)));
 
   return {
     points, trend, streak, state, shift,

@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/session";
 import { badRequest, route } from "@/lib/http";
 import { materialise } from "@/lib/templates";
 import { signalsFor } from "@/lib/calibration";
-import { read, secs } from "@/lib/signals";
+import { read, secs, MIN_STREAK, cleanSweep } from "@/lib/signals";
 
 /**
  * Whether the plan's pace targets should move, and the athlete's answer.
@@ -25,6 +25,17 @@ export const GET = route(async () => {
   if (!block) return NextResponse.json({ pending: false });
 
   const v = read(signals, block.goal_seconds ?? 0);
+  /*
+   * Which rule justified the recommendation.
+   *
+   * A streak of three and a single session where every rep beat target are both
+   * grounds to move, and the athlete should be told which one happened — the streak
+   * message sent for a one-session verdict has them hunting for two sessions that do
+   * not exist.
+   */
+  const last = v.points[v.points.length - 1];
+  const swept = Boolean(last) && v.streak < MIN_STREAK && cleanSweep(last);
+
   const applied = block.pace_shift_s ?? 0;
   const declined = block.pace_shift_declined_s ?? null;
 
@@ -46,11 +57,21 @@ export const GET = route(async () => {
     streak: v.streak,
     confidence: v.confidence,
     sessions: v.points.length,
-    /** what the card says, in one line */
+    /*
+     * What the card says, in one line — and it says which evidence fired.
+     *
+     * "Your last 3 key sessions" and "every rep of Tuesday's session" are different
+     * claims about an athlete, and being told the wrong one is worse than being told
+     * nothing: they go looking for the three sessions and find one.
+     */
     headline: v.shift === 0 ? null
-      : v.shift < 0
-        ? `Your last ${v.streak} key sessions came in ahead of prescription. The plan can move ${secs(v.shift)}.`
-        : `Your last ${v.streak} key sessions came in behind prescription. The plan can ease ${secs(v.shift)}.`,
+      : swept
+        ? `Every rep of ${last?.label ?? "your last session"} came in ahead of target. That is a prescription you have outgrown — the plan can move ${secs(v.shift)}.`
+        : v.shift < 0
+          ? `Your last ${v.streak} key sessions came in ahead of prescription. The plan can move ${secs(v.shift)}.`
+          : `Your last ${v.streak} key sessions came in behind prescription. The plan can ease ${secs(v.shift)}.`,
+    /** which rule fired, so the Form screen can show the right sessions */
+    basis: v.shift === 0 ? null : swept ? "single_session" : "streak",
   });
 });
 

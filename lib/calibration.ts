@@ -121,6 +121,17 @@ export async function signalsFor(userId: string): Promise<Gathered> {
       if (f) conditions_s = conditionsCost(f);
     }
 
+    /*
+     * Every work rep's pace, so one session can speak for itself.
+     *
+     * The average is the right way to compare sessions and the wrong way to read
+     * one: a set where every rep beat target is different evidence from a set that
+     * averaged the same figure by going out fast and hanging on.
+     */
+    const reps = segments
+      .filter((sg) => sg.role === "work" && sg.avg_speed_ms)
+      .map((sg) => 1000 / (sg.avg_speed_ms as number));
+
     signals.push({
       on: r.planned_date,
       label: r.title,
@@ -129,6 +140,7 @@ export async function signalsFor(userId: string): Promise<Gathered> {
       prescribed,
       achieved: 1000 / stats.avg_speed_ms,
       conditions_s,
+      reps,
     });
   }
 
