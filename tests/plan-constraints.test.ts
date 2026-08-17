@@ -27,13 +27,36 @@ test("a confirmed constraint replaces the lift rather than leaving a hole", () =
   const before = liftsFor("build", 1, KIT);
   const after = liftsFor("build", 1, KIT, 0, [knee]);
 
-  assert.ok(before.some((l) => pattern(l.name) === "single_leg"),
-    "the session has single-leg work to begin with");
-  assert.equal(after.filter((l) => pattern(l.name) === "single_leg").length, 0,
-    "and none after");
+  assert.ok(before.some((l) => /rear-foot elevated split squat/i.test(l.name)),
+    "the session has the loaded single-leg lift to begin with");
+  assert.ok(!after.some((l) => /rear-foot elevated split squat/i.test(l.name)),
+    "and not after");
   assert.equal(after.length, before.length,
     "the session is the same length: 200 m of race lunges still has to be trained");
-  assert.ok(after.some((l) => /split squat, short range/i.test(l.name)));
+  /*
+   * And the replacement is still single-leg work, deliberately.
+   *
+   * A knee that dislikes deep lunging is managed by shortening the range, not by giving up
+   * on the pattern — the race asks for 200 m of lunges either way. The earlier version of
+   * this test asserted no single-leg work remained, which only passed because the substitute
+   * had no description and therefore no pattern behind it.
+   */
+  const sub = after.find((l) => /split squat, short range/i.test(l.name));
+  assert.ok(sub, "the short-range split squat is there");
+  assert.equal(pattern(sub!.name), "single_leg");
+  assert.match(sub!.note ?? "", /as deep as is comfortable|comfortable/i);
+});
+
+test("applying constraints twice changes nothing the second time", () => {
+  /*
+   * The substitute shares a pattern with the thing it replaced, so a second pass could match
+   * its own output — and, finding the substitute already present, drop the lift entirely.
+   * `resizeStrength` was non-idempotent once already and grew a session nine accessories
+   * deep, so this is worth holding.
+   */
+  const once = liftsFor("build", 1, KIT, 0, [knee]);
+  const twice = applyToLifts(once, [knee], pattern);
+  assert.deepEqual(twice, once);
 });
 
 test("the swap says whose words it came from", () => {

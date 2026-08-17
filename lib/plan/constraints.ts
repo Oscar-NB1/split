@@ -107,6 +107,10 @@ const SUBSTITUTE: Partial<Record<Pattern, Lift>> = {
   },
 };
 
+/** Whether this lift is one this module put there. */
+const isSubstitute = (name: string): boolean =>
+  Object.values(SUBSTITUTE).some((sub) => sub?.name === name);
+
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim();
 
 /** Whether a constraint bites on a named movement. */
@@ -134,6 +138,18 @@ export function applyToLifts(
   if (constraints.length === 0) return lifts;
   const out: Lift[] = [];
   for (const l of lifts) {
+    /*
+     * A substitute is never itself substituted.
+     *
+     * The replacement for a knee that dislikes lunging is a short-range split squat, which
+     * is still single-leg work — that is the point, since you manage the range rather than
+     * stop training the pattern. But it means a second pass would match its own output, find
+     * the substitute already present, and drop the lift entirely: a hole where a session
+     * should be. `liftsFor` always builds from the scheme rather than from a previous result,
+     * so this cannot happen today; it is guarded because `resizeStrength` was not idempotent
+     * once already and grew a session nine accessories deep before anyone noticed.
+     */
+    if (isSubstitute(l.name)) { out.push(l); continue; }
     const hit = constraints.find((c) => blocks(c, l.name, patternOf(l.name)));
     if (!hit) { out.push(l); continue; }
 

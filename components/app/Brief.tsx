@@ -26,6 +26,24 @@ export type SessionDetail = {
     /** seconds between sets, where the plan prescribed them */
     rest: number | null;
   }[];
+  /**
+   * What each lift is, what effort to take it to, and where its number came from.
+   *
+   * Sent with the session since the loads were pre-filled and never displayed, so the
+   * screen showed an estimated weight with nothing to say it was an estimate — which is
+   * the one thing an athlete needs to know about a number nobody has earned yet.
+   */
+  guidance?: {
+    name: string;
+    what: string | null; how: string | null;
+    rpe: number | null; rpe_means: string | null;
+    source: "your last session" | "your bodyweight" | null;
+    estimated_load: number | null;
+    progression: { verdict: string; why: string } | null;
+    note: string | null;
+  }[];
+  /** so the screen can ask for a bodyweight rather than showing empty boxes */
+  needs_bodyweight?: boolean;
   sets: SetRow[];
   feedback: { rpe: number | null; length_feel: string | null; note: string | null } | null;
   comments: { id: string; body: string; created_at: string; author_id: string; display_name: string }[];

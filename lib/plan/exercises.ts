@@ -175,6 +175,45 @@ export const EXERCISES: Record<string, Exercise> = {
     how: "Band at eye height, pull to your face, elbows high. Light, controlled, and never rushed.",
     pattern: "pull", bw: null,
   },
+
+  /*
+   * The substitutions, described like everything else.
+   *
+   * These are what a confirmed constraint puts in place of a lift somebody cannot do (see
+   * ./constraints), which makes them the exercises an athlete is least likely to have met —
+   * they arrive precisely because the familiar one was taken away. Leaving them out of here
+   * meant the one lift needing an explanation was the one with no info button behind it.
+   */
+  "Split squat, short range": {
+    what: "The single-leg strength a Hyrox lunge needs, taken only as deep as the knee allows. Range is the thing being managed, not load.",
+    how: "Back foot on the floor behind you, chest tall. Go down until it is firm rather than sore, and stop there. The same depth every set.",
+    pattern: "single_leg", bw: 0.15, perHand: true,
+  },
+  "Leg press or sled march": {
+    what: "Heavy work through both legs with you choosing the range, which is what makes it usable when a squat is not. The sled push is a leg press you do standing up.",
+    how: "Feet flat, push through the whole foot. Stop short of locking out, and never let your knees fall inwards.",
+    pattern: "squat", bw: 1.2,
+  },
+  "Hip thrust": {
+    what: "Glutes and hamstrings with the spine out of it — the posterior chain a hinge trains, loaded without loading the back.",
+    how: "Shoulders on a bench, bar over your hips, chin tucked. Finish with your hips level, not arched past it.",
+    pattern: "hinge", bw: 0.8,
+  },
+  "Floor press or press-up": {
+    what: "Pressing strength with the shoulder kept out of the deep overhead position that a sore one dislikes.",
+    how: "Elbows about 45 degrees from your body. On the floor the range stops itself, which is the point.",
+    pattern: "press", bw: 0.5,
+  },
+  "Chest-supported row": {
+    what: "The pulling work the row and the sled pull ask for, done with the shoulder supported so the position cannot drift.",
+    how: "Chest against the bench, pull to your ribs rather than your chest. Shoulder blade moves, torso does not.",
+    pattern: "pull", bw: 0.4, perHand: true,
+  },
+  "Seated calf raise": {
+    what: "Calf strength taken off the achilles: seated puts the load through the muscle with the tendon under far less stretch. Two hundred metres of lunges and every metre of the sled is a calf station.",
+    how: "Slow down, pause at the bottom without bouncing, drive up. Stop the set when the range shortens.",
+    pattern: "calf", bw: 0.4,
+  },
 };
 
 /** Names differ by kit; the description should not. Matched on the leading words. */
