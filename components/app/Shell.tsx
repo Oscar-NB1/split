@@ -14,6 +14,7 @@ import Plan from "./Plan";
 import Strategy from "./Strategy";
 import Strava from "./Strava";
 import Intervals from "./Intervals";
+import Reward, { type Pending as PendingReward } from "./Reward";
 import Empty from "./Empty";
 import PlanBuilder from "./PlanBuilder";
 import Profile from "./Profile";
@@ -110,6 +111,19 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
    * should land on the messages again rather than on your own week.
    */
   const [writing, setWriting] = useState<string | null>(null);
+
+  /*
+   * A reward waiting to be seen, checked once on open.
+   *
+   * Before the week rather than somewhere in it: the whole point is that the first thing she sees
+   * after a key session is that she did it. Only ever her own — a coach reading somebody else's
+   * week is not owed their reward, and `coaching` deliberately does not reach this.
+   */
+  const [reward, setReward] = useState<PendingReward | null>(null);
+  useEffect(() => {
+    fetch("/api/rewards").then((r) => r.json())
+      .then((j) => setReward(j?.reward ?? null)).catch(() => {});
+  }, []);
 
   // Strava's callback returns into the app rather than a settings page, so the
   // outcome arrives as a query parameter. Opening the connections view is what
@@ -235,6 +249,9 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
     : view === "partners" ? "Connections" : "Hyrox";
 
   return (
+    <>
+      {/* First, and over everything: it is the screen she opened the app for. */}
+      {reward && <Reward r={reward} onDone={() => setReward(null)} />}
     <div className="app" ref={shell}>
       <header className="appbar">
         {back ? (
@@ -393,6 +410,7 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         ))}
       </nav>
     </div>
+    </>
   );
 }
 

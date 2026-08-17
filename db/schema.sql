@@ -1150,3 +1150,43 @@ create table if not exists training_constraints (
 -- weeks are the record and no regeneration may touch them.
 alter table plan_templates
   add column if not exists origin text not null default 'generated';
+
+-- A reward waiting to be seen (2026-08-17).
+--
+-- Sarah finishes her key session, gets the notification, opens the app, and the first thing she
+-- sees is the reward rather than next week's training. That ordering is the whole feature: a plan
+-- that only ever shows you what is still to come never tells you that you did the thing.
+--
+-- One row per session, so a session cannot reward twice however many times it is ticked and
+-- unticked, and `seen_at` rather than a delete because a reward that has been seen is a record of
+-- a session that earned one.
+create table if not exists rewards (
+  session_id  uuid primary key references planned_sessions(id) on delete cascade,
+  user_id     uuid not null references users(id) on delete cascade,
+  kind        text not null default 'key_session',
+  created_at  timestamptz not null default now(),
+  seen_at     timestamptz
+);
+create index if not exists rewards_pending on rewards (user_id, seen_at) where seen_at is null;
+
+-- Whose reward looks like what.
+--
+-- Per athlete rather than one for everybody: the picture is hers, it is of her cat, and handing it
+-- to somebody else would be a stranger's in-joke. Null means no reward screen, which is the
+-- default and is why nothing changes for an athlete nobody has set one for.
+alter table users add column if not exists reward_image text;
+
+-- Three pictures rather than one (2026-08-17), and which one she was given.
+--
+-- The same image every time stops being a reward by about the fourth key session. `reward_images`
+-- is the set, rotated by how many she has already earned; `rewards.image` records the one she was
+-- actually shown, so it cannot change under her between the notification and opening the app —
+-- and so adding a fourth picture does not silently rewrite what an earlier session gave her.
+alter table users   add column if not exists reward_images text[];
+alter table rewards add column if not exists image text;
+
+-- And a picture for race day (2026-08-17).
+--
+-- "First HYROX done" is not a reward for a Tuesday. It belongs to the one session in the block that
+-- happens once, so it sits apart from the rotation rather than turning up in week three.
+alter table users add column if not exists race_reward_images text[];

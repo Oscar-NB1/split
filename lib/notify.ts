@@ -19,11 +19,18 @@ import { pushConfigured, sendTo, type Payload } from "./push";
 
 export type Kind =
   | "partner_trained" | "session_paired" | "record"
-  | "upcoming" | "missed" | "race" | "weekly" | "comment";
+  | "upcoming" | "missed" | "race" | "weekly" | "comment" | "reward";
 
 const DEFAULTS: Record<Kind, boolean> = {
   partner_trained: true, session_paired: true, record: true, upcoming: true,
   missed: true, race: true, weekly: true, comment: true,
+  /*
+   * The one notification that is not about something still to come.
+   *
+   * Everything else here tells somebody what is next or what they have missed. This one says the
+   * hard session is behind them, and it is the only one whose whole purpose is to be opened.
+   */
+  reward: true,
 };
 
 export const QUIET_FROM = 21;

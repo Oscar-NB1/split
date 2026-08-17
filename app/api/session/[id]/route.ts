@@ -14,6 +14,7 @@ import { parseSteps, parseStrength, repCount } from "@/lib/prescription";
 import { describe, loadNote, startingLoad } from "@/lib/plan/exercises";
 import { nextLoad } from "@/lib/plan/progression";
 import { sayRpe } from "@/lib/plan/strength";
+import { notify } from "@/lib/notify";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -353,6 +354,65 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
            set status = ${done ? "done" : "planned"}, updated_at = now()
          where id = ${id}
       `;
+      /*
+       * A key session finished earns a reward, once.
+       *
+       * Queued rather than shown, because she will be standing outside with a phone in a sweaty
+       * hand and this is not the moment: the notification arrives, and the screen is waiting when
+       * she opens the app. Only for an athlete who has a reward image set — the picture is hers,
+       * and handing somebody else's in-joke to a different athlete is worse than no reward.
+       *
+       * `on conflict do nothing` on the session, so ticking a session off and on again does not
+       * queue a second. The first time is the achievement.
+       */
+      if (done) {
+        const [r] = await sql<{
+          user_id: string; title: string; kind: string;
+          images: string[] | null; race_images: string[] | null; earned: number;
+        }[]>`
+          select p.user_id, p.title, p.kind,
+                 u.reward_images as images, u.race_reward_images as race_images,
+                 /* Counted per kind, so a race does not advance the weekly rotation and a run does
+                    not burn a race picture. */
+                 (select count(*)::int from rewards w
+                   where w.user_id = p.user_id
+                     and w.kind = case when p.kind = 'race' then 'race' else 'key_session' end
+                 ) as earned
+            from planned_sessions p join users u on u.id = p.user_id
+           where p.id = ${id}
+             and (p.significance = 'key' or p.kind in ('quality_run', 'long_run', 'race'))
+        `;
+        /*
+         * Race day gets its own picture, and everything else rotates through the set.
+         *
+         * "First HYROX done" is not a reward for a Tuesday — it belongs to the session that happens
+         * once. And the same picture every week stops being a reward by about the fourth one, so the
+         * key sessions rotate by how many she has already earned.
+         *
+         * The chosen image is written onto the row rather than worked out when the screen opens, so
+         * it cannot change between the notification and her opening the app, and adding a fourth
+         * picture later does not rewrite what an earlier session gave her.
+         */
+        const isRace = r?.kind === "race";
+        const set = (isRace ? r?.race_images : r?.images) ?? [];
+        const image = set.length > 0 ? set[(r?.earned ?? 0) % set.length] : null;
+
+        if (r && image) {
+          const fresh = await sql<{ session_id: string }[]>`
+            insert into rewards (session_id, user_id, kind, image)
+            values (${id}, ${r.user_id}, ${isRace ? "race" : "key_session"}, ${image})
+            on conflict (session_id) do nothing
+            returning session_id
+          `;
+          if (fresh.length > 0) {
+            await notify(r.user_id, "reward", `reward:${id}`, {
+              title: isRace ? "You raced a Hyrox" : "That is the hard one done",
+              body: `${r.title} — logged. Open the app.`,
+              url: "/?reward=1",
+            });
+          }
+        }
+      }
       return NextResponse.json({ ok: true });
     }
 
