@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/session";
 import Strava from "@/components/app/Strava";
+import Intervals from "@/components/app/Intervals";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,10 @@ export default async function Settings() {
       </header>
       <div className="scroll">
         <Strava />
+        {/* The other half of a connection: Strava brings sessions in, this sends them out. */}
+        <div className="pad" style={{ borderTop: "1px solid var(--line)", paddingTop: 22 }}>
+          <Intervals />
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { isRunnable } from "../lib/session-kinds";
 import {
   CODE_ALPHABET, CODE_LEN, INVITE_TTL_DAYS, actionFor, canRedeem, codeFrom,
   expiresAt, normaliseCode, pairOf, since, type Invite,
@@ -108,4 +109,25 @@ test("how long ago reads as a person would say it", () => {
   assert.equal(ago(3), "3 days ago");
   assert.equal(ago(8), "a week ago");
   assert.equal(ago(21), "3 weeks ago");
+});
+
+test("the sessions a watch can take", () => {
+  /*
+   * This guard was `kind.startsWith("run")`, which was true when the kinds were `run_easy`,
+   * `run_long` and `run_intervals`. They are `easy_run`, `long_run` and `quality_run` now — the
+   * word moved to the end — so it had been false for every session in the app since the rename.
+   * The button answered "only structured runs can be sent to the watch" for all of them and the
+   * hourly cron pushed nothing. Nothing failed; it quietly did no work, which is why it survived.
+   */
+  for (const k of ["easy_run", "long_run", "quality_run", "benchmark"]) {
+    assert.equal(isRunnable(k), true, k);
+  }
+  /* The old names are still in old plans. */
+  for (const k of ["run_easy", "run_long", "run_intervals"]) {
+    assert.equal(isRunnable(k), true, k);
+  }
+  /* And a class, a lift, a commitment and the race are not structured runs. */
+  for (const k of ["hyrox", "easy_hyrox", "strength", "kickboxing", "race"]) {
+    assert.equal(isRunnable(k), false, k);
+  }
 });

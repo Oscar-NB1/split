@@ -4,6 +4,35 @@ import { requireUser } from "@/lib/session";
 import { pushUpcoming, verifyIntervals } from "@/lib/intervals";
 import { badRequest, route } from "@/lib/http";
 
+/**
+ * Whether it is connected, and what has reached the watch.
+ *
+ * The screen that offers to connect had no way of knowing whether it already was, because there
+ * was no screen: the push route told people to "add your API key in Settings" and Settings only
+ * ever showed Strava. Names only — an API key never comes back out of an endpoint.
+ */
+export const GET = route(async () => {
+  const me = await requireUser();
+  const [row] = await sql<{ athlete_id: string; since: string }[]>`
+    select provider_user_id as athlete_id, updated_at::text as since
+      from oauth_accounts where user_id = ${me.id} and provider = 'intervals'
+  `;
+  const [{ pushed }] = await sql<{ pushed: number }[]>`
+    select count(*)::int as pushed from planned_sessions
+     where user_id = ${me.id} and intervals_event_id is not null
+  `;
+  const [{ due }] = await sql<{ due: number }[]>`
+    select count(*)::int as due from planned_sessions
+     where user_id = ${me.id} and status = 'planned' and target is not null
+       and planned_date >= current_date and planned_date < current_date + 10
+       and (kind like '%\_run' or kind like 'run\_%' or kind = 'benchmark')
+  `;
+  return NextResponse.json({
+    connected: Boolean(row), athlete_id: row?.athlete_id ?? null,
+    since: row?.since ?? null, pushed, due,
+  });
+});
+
 /** Store an intervals.icu API key + athlete id, then push the next 10 days. */
 export const POST = route(async (req: NextRequest) => {
   const me = await requireUser();

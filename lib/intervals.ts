@@ -1,4 +1,5 @@
 import { sql } from "./db";
+import { isRunnable } from "./session-kinds";
 
 /**
  * intervals.icu bridge - this is how a programmed session reaches the watch.
@@ -115,7 +116,7 @@ const load = (sessionId: string) => sql<Row[]>`
 export async function pushSession(sessionId: string): Promise<string | null> {
   const [s] = await load(sessionId);
   if (!s) return null;
-  if (!s.kind.startsWith("run")) return null; // only structured runs reach the watch
+  if (!isRunnable(s.kind)) return null; // only structured runs reach the watch
 
   // a session that is no longer on the plan should come off the watch instead
   if (s.status === "skipped" || s.status === "moved") return removeSession(sessionId);
