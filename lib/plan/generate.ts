@@ -182,6 +182,46 @@ export const LONG_RUN_CAP = 22;
 export const EASY_HYROX_KM = 6;
 
 /**
+ * What the race itself asks a runner for: eight kilometres, in eight pieces.
+ *
+ * It is the one distance in a Hyrox block that is not negotiable. Sarah's long run sat at
+ * 5.0 km for five weeks and reached 6.1 by week 8, ten weeks out from a race containing
+ * 8 km of running — because the long run was sized as a share of a 20 km week and nothing
+ * in the arithmetic knew what she had entered. A share is the right way to grow a long run
+ * and the wrong way to decide whether it is long enough.
+ */
+export const RACE_RUN_KM = 8;
+
+/**
+ * The floor under a long run: what they have already run, and what they have entered.
+ *
+ * The first stops a block halving somebody's own longest run — a flat 32% of the week is a
+ * sensible guide and a terrible floor. The second matters for an athlete with no history at
+ * all: the race asks for eight kilometres of running on the day whether or not the block ever
+ * built up to it, so the long run climbs towards that across the block rather than towards a
+ * share of a small week. It arrives near the end and does not go past — this is a Hyrox, and
+ * there is no reason for a beginner's longest run to exceed what the race contains.
+ *
+ * Running races keep the share: their own distance is the target, and `longest_run_km` with
+ * the ramp is what sizes it.
+ *
+ * A deload or taper week has no floor at all. Those weeks are meant to be shorter, and a
+ * floor that held the long run up through a taper would defeat the taper.
+ */
+function longRunFloorFor(
+  w: { taper?: boolean; deload?: boolean },
+  p: { discipline: Params["discipline"]; longest_run_km?: number | null },
+  progress: number,
+): number {
+  if (w.taper || w.deload) return 0;
+  const known = p.longest_run_km ?? 0;
+  const own = known < 6 ? 0 : Math.min(LONG_RUN_CAP, known * 0.9);
+  const towardsRace = p.discipline === "running" ? 0
+    : Math.min(RACE_RUN_KM, 5 + (RACE_RUN_KM - 5) * Math.min(1, progress / 0.8));
+  return Math.max(own, towardsRace);
+}
+
+/**
  * And an easy run stops at eleven.
  *
  * Not a proportion of anything. An easy run is a recovery and aerobic-maintenance
@@ -239,6 +279,10 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
   const weeks: GeneratedWeek[] = adjusted.map((w: Week & { reason?: string }) => {
     const inPhase = seenPhase.get(w.phase) ?? 0;
     seenPhase.set(w.phase, inPhase + 1);
+
+    /* How far through the block this week is. Needed both to size the long run and to
+       check whether the week's floors fit, so it is read once, up here. */
+    const progress = p.length > 1 ? (w.n - 1) / (p.length - 1) : 0;
 
     const allocation = allocationFor(role, p.goal, w.phase,
       p.discipline === "singles" ? "singles" : "doubles");
@@ -378,7 +422,17 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     const FLOOR = beginner
       ? { long_run: 5, easy_run: 3, quality_run: 5 }
       : { long_run: 5, easy_run: 3, quality_run: 8 };
-    let floor = () => (runSlots.long_run ? FLOOR.long_run : 0)
+    /*
+     * The long run's floor here is the size it will actually be, not the smallest a long run
+     * can be.
+     *
+     * These two had drifted apart: the check used 5 km while the race floor below made
+     * Sarah's week 6 long run 7.1, so the week passed a test at 16 km of floors and then
+     * prescribed 19.3 against a curve asking 16.3. A floor test that does not know what the
+     * session will be is not a floor test.
+     */
+    const longFloor = Math.max(FLOOR.long_run, longRunFloorFor(w, p, progress));
+    let floor = () => (runSlots.long_run ? longFloor : 0)
       + runSlots.easy_run * FLOOR.easy_run
       + runSlots.quality_run * FLOOR.quality_run;
     let shed = 0;
@@ -387,16 +441,43 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       shed += 1;
     }
     if (shed > 0) {
-      const idx = placed.week.findIndex((x) => x.kind === "easy_run");
+      /*
+       * The shed runs become machine work rather than nothing.
+       *
+       * Deleting them kept the running honest and broke a different promise: Sarah asked for
+       * seven sessions a week and got four, every week, because a 12 km week cannot hold
+       * three easy runs above their floor. "Fewer runs, not shorter ones" was the right
+       * answer to the volume question and the wrong answer to what she actually asked for.
+       *
+       * A row, a ski and some broad jumps is the session a beginner runner training for a
+       * Hyrox should be doing with that slot anyway: aerobic time with no extra impact, on
+       * the machines the race is half made of. It is the one substitution that costs her
+       * nothing — she is short of running capacity, not of time or willingness.
+       *
+       * A running-race athlete has no station work to convert into, so for them the run
+       * still goes. The week is what it can carry either way.
+       */
+      const toMachines = p.discipline === "running" ? 0 : shed;
+      let converted = 0;
       for (let i = 0; i < shed; i += 1) {
         const at = placed.week.findIndex((x) => x.kind === "easy_run");
-        if (at >= 0) placed.week.splice(at, 1);
+        if (at < 0) break;
+        if (converted < toMachines) {
+          /* Placed where the run was, so her week keeps its shape. The label is rewritten
+             below from the kind, so it is cleared here rather than left saying "Easy run". */
+          placed.week[at] = { ...placed.week[at], kind: "easy_hyrox", label: undefined, hard: false };
+          runSlots.easy_hyrox += 1;
+          converted += 1;
+        } else {
+          placed.week.splice(at, 1);
+        }
       }
-      void idx;
       flags.push({
         code: "sessions_over_target",
-        message: `Week ${w.n}: ${shed} easy run${shed > 1 ? "s" : ""} dropped. Your week is ${
-          runnable} km and a session has a floor — an easy run is not an easy run below 3 km — so the honest way to hit that number is fewer runs, not shorter ones.`,
+        message: converted > 0
+          ? `Week ${w.n}: ${converted} of your easy runs ${converted > 1 ? "are" : "is"} machine work instead. Your week is ${runnable} km of running and a session has a floor — an easy run is not an easy run below 3 km — so the honest way to hit that number is fewer runs. The slot stays: row, ski and broad jumps, which is aerobic time without the impact.`
+          : `Week ${w.n}: ${shed} easy run${shed > 1 ? "s" : ""} dropped. Your week is ${
+            runnable} km and a session has a floor — an easy run is not an easy run below 3 km — so the honest way to hit that number is fewer runs, not shorter ones.`,
       });
     }
 
@@ -563,7 +644,6 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * moved has an easy pace that has moved too, and holding easy at the old number
      * would slowly turn it into a steady run.
      */
-    const progress = p.length > 1 ? (w.n - 1) / (p.length - 1) : 0;
     const cvPace = sharpen(p.anchor?.cv_pace_s_per_km ?? 300, progress);
     // Easy is a fixed distance from the critical-velocity pace: there is no
     // separate easy anchor, and inventing one here would be a second opinion.
@@ -645,9 +725,8 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
        * A deload or taper week is exempt. Those weeks are meant to be shorter, and a
        * floor that held the long run up through a taper would defeat the taper.
        */
-      const easing = w.taper || w.deload;
       const known = p.longest_run_km ?? 0;
-      const floor = easing || known < 6 ? 0 : Math.min(LONG_RUN_CAP, known * 0.9);
+      const floor = longRunFloorFor(w, p, progress);
       const guide = Math.min(LONG_RUN_CAP, w.km * 0.32, runnable * 0.36);
       /*
        * And the floor stops at 40% of the week, because the ramp outranks it.
@@ -662,7 +741,15 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
        * thing to tell somebody who has run 19 km inside a 37 km week: the Sunday is
        * not the problem.
        */
-      const ceiling = Math.max(guide, w.km * 0.40);
+      /*
+       * Forty per cent of the week, or forty-five on a small one.
+       *
+       * A long-run-dominant week is normally a warning sign. On twenty kilometres it is the
+       * only sensible shape: four 4 km runs train less of what a Hyrox asks for than one
+       * 8 km run and some machine work, and the alternative to a 40% share is not a safer
+       * week — it is an athlete who has never run 8 km arriving at a race that contains it.
+       */
+      const ceiling = Math.max(guide, w.km * (w.km < 25 ? 0.45 : 0.40));
       const km = Math.max(5, Math.min(Math.max(guide, floor), ceiling));
       if (floor > ceiling + 0.5) {
         flags.push({
@@ -806,7 +893,18 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * being a smaller week: the second interval session becomes an easy run of the
      * same volume, not a shorter one.
      */
-    const left = Math.max(easies.length * 4, runnable - spent);
+    /*
+     * Floored at what an easy run actually is, which is three kilometres and not four.
+     *
+     * Four was a second, higher floor that disagreed with the one the shedding rule uses —
+     * so a week could pass the "do the floors fit" test at three and then be filled at four,
+     * and come out over the curve it had just been checked against. Sarah's week 6 asked for
+     * 16.3 km and prescribed 21.3: the long run took its share, `runnable - spent` went
+     * negative, and two easy runs were floored into existence at 8 km between them.
+     *
+     * One floor, in one place, used by both.
+     */
+    const left = Math.max(easies.length * FLOOR.easy_run, runnable - spent);
     /*
      * An easy run has a ceiling, and it is 11 km.
      *

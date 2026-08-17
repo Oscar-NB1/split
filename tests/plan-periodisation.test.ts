@@ -165,3 +165,83 @@ test("the easy Hyrox session holds volume rather than costing it", () => {
   assert.ok(worst > peak * 0.6,
     `specific bottoms at ${worst} km against a build peak of ${peak}`);
 });
+
+/*
+ * A beginner's first block. Sarah gave no peak week and no longest run, asked for seven
+ * sessions and is racing in ten weeks — which is the case that exposed both of these.
+ */
+const beginner = () => built({
+  base: "3 to 12 months", runningSelf: "Runs with walk breaks",
+  peakWeekKm: null, longestRunKm: null, targetSessions: "7",
+  raceDate: "2026-10-28", difficulty: "Challenging",
+  commitments: [], freq: {}, commitDay: {}, commitMode: {},
+});
+
+test("the long run climbs towards what the race contains, not towards a share of a small week", () => {
+  /*
+   * Hers sat at 5.0 km for five weeks and reached 6.1 by week 8, ten weeks out from a race
+   * with 8 km of running in it, because the long run was sized as a share of a 20 km week
+   * and nothing in the arithmetic knew what she had entered. A share is the right way to
+   * grow a long run and the wrong way to decide whether it is long enough.
+   */
+  const g = beginner();
+  const loading = g.weeks.filter((w) => !w.taper && !w.deload);
+  const longest = Math.max(...loading.map((w) =>
+    of(w).find((s) => s.kind === "long_run")?.km ?? 0));
+  assert.ok(longest >= 7.5, `her longest run in the block is ${longest} km against a race with 8`);
+  assert.ok(longest <= 8.1, `${longest} km is past what the race contains — no reason to go there`);
+});
+
+test("an athlete who asks for seven sessions gets seven", () => {
+  /*
+   * She got four, every week, because a 12 km week cannot hold three easy runs above their
+   * floor and the shed runs were deleted. "Fewer runs, not shorter ones" answered the volume
+   * question correctly and quietly broke a different promise.
+   */
+  const g = beginner();
+  for (const w of g.weeks) {
+    /* Race week is deliberately two sessions and two clear days. It is not a broken promise. */
+    if (of(w).some((s) => String(s.kind) === "race")) continue;
+    assert.ok(w.sessions.length >= 6,
+      `week ${w.n} has ${w.sessions.length} sessions against the seven she asked for`);
+    /* And the slot that is no longer a run is machine work, not a gap. */
+    const runs = of(w).filter((s) =>
+      ["long_run", "easy_run", "quality_run", "benchmark"].includes(String(s.kind))).length;
+    const machines = of(w).filter((s) => s.kind === "easy_hyrox").length;
+    if (runs < 4) {
+      assert.ok(machines > 0,
+        `week ${w.n} has ${runs} runs and no machine session to hold the slot`);
+    }
+  }
+});
+
+test("the reallocation does not raise the week past what the curve allowed", () => {
+  /* A bigger long run takes from the easy runs. It must not take from the safety rule. */
+  const g = beginner();
+  for (const w of g.weeks) {
+    if (of(w).some((s) => String(s.kind) === "race")) continue;
+    assert.ok(w.km <= (w.target_km ?? w.km) + 2.5,
+      `week ${w.n}: ${w.km} km prescribed against a curve asking ${w.target_km}`);
+  }
+});
+
+test("race day is inside the block", () => {
+  /*
+   * It was not, for her. Sarah starts Monday 17 August and races Wednesday 28 October: 71
+   * days, which the block length rounded to 10 weeks ending on 25 October — three days
+   * before the gun. There was no race session, no race-week taper and no last hard week,
+   * because the race-week rebuild is gated on the race falling inside the block and so
+   * silently did nothing. A plan week is a Monday; what matters is how many Mondays there
+   * are between the one she starts in and the one she races in, counting both.
+   */
+  for (const race of ["2026-10-28", "2026-11-29", "2026-10-31", "2026-11-02"]) {
+    const g = built({ startDate: "2026-08-17", raceDate: race });
+    const has = g.weeks.some((w) => of(w).some((s) => String(s.kind) === "race"
+      && (s.label ?? "").toLowerCase().includes("race day")));
+    assert.ok(has, `no race day in a block starting 2026-08-17 and racing ${race}`);
+    /* And it is in the last week, not somewhere in the middle. */
+    const last = g.weeks[g.weeks.length - 1];
+    assert.ok(of(last).some((s) => String(s.kind) === "race"),
+      `racing ${race}: the block does not end on race week`);
+  }
+});

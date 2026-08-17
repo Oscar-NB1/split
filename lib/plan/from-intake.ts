@@ -155,10 +155,23 @@ export function paramsFrom(x: Intake, extra: Extra): Params {
    * Block length from the calendar, not from a preference. Clamped because a
    * six-month block is not a block and a two-week one is not trainable — both
    * are surfaced as flags by the generator rather than silently accepted.
+   *
+   * Counted in plan weeks, Monday to Monday, and inclusive of race week — not as a
+   * rounded number of days.
+   *
+   * Rounding the gap put Sarah's race outside her own plan. She starts Monday 17 August
+   * and races Wednesday 28 October: 71 days, which rounds to a 10-week block ending on
+   * 25 October, three days before the gun. There was no race session, no race-week taper
+   * and no last hard week — the race-week rebuild is gated on the race falling inside the
+   * block, so it silently did nothing, and her final week was an ordinary taper.
+   *
+   * A plan week is a Monday. What matters is how many of them there are between the one
+   * she starts in and the one she races in, counting both.
    */
   const length = race
-    ? Math.max(4, Math.min(24, Math.round(
-        (Date.parse(`${race}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 604_800_000,
+    ? Math.max(4, Math.min(24, 1 + Math.round(
+        (Date.parse(`${mondayOf(race)}T00:00:00Z`) - Date.parse(`${anchor}T00:00:00Z`))
+        / 604_800_000,
       )))
     : 12;
 
