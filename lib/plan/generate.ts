@@ -245,7 +245,35 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * longer has to write. The credit still exists for the load budget; it no longer
      * reduces what gets prescribed.
      */
-    const runnable = Math.max(3, Math.round(w.km * 10) / 10);
+    /*
+     * And the week's volume is capped by how many runs there are to put it in.
+     *
+     * The curve ramps to 60 km. A week of four sessions — strength, a Hyrox session, one
+     * quality run and a long run — has two running slots in it, and two runs cannot carry
+     * sixty kilometres: it would take a 19 km long run and a 41 km interval session. So
+     * the curve asked for 55 km and the sessions delivered 34, every week, silently.
+     *
+     * Capacity is the sum of what each slot can actually hold: the long run up to its own
+     * cap, easy runs up to 11 km each, a quality session about 12 km once its warm-up and
+     * cool-down are counted. Where the curve exceeds that, the week is what the sessions
+     * can carry and it says so — because the honest answer to "why am I not at 55 km" is
+     * "you are running four times a week", not a number quietly missed.
+     */
+    const runSlots = slotPlan.counts;
+    const longCap = Math.min(LONG_RUN_CAP, Math.max(0, (p.longest_run_km ?? 0) * 0.9) || LONG_RUN_CAP);
+    const capacity = (runSlots.long_run ? longCap : 0)
+      + runSlots.easy_run * EASY_MAX_KM
+      + (runSlots.quality_run + (benchmarks.has(w.n) ? 1 : 0)) * 12;
+    const asked = Math.round(w.km * 10) / 10;
+    const runnable = Math.max(3, Math.min(asked, Math.round(capacity * 10) / 10));
+    if (asked - runnable > 2) {
+      flags.push({
+        code: "volume_capacity",
+        message: `Week ${w.n}: the curve asks for ${asked} km and your ${
+          runSlots.long_run + runSlots.easy_run + runSlots.quality_run
+        } running sessions can carry about ${runnable} km. More volume needs another run, not longer ones — an easy run is capped at ${EASY_MAX_KM} km and your long run at ${Math.round(longCap)} km.`,
+      });
+    }
 
     /*
      * The athlete's running comes into the choice, not just the phase.
@@ -412,7 +440,16 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
       const absorbWeek = !w.deload && !w.taper && w.n % 2 === 0;
       const shape: LongShape = !p.long_run_pace || !absorbWeek ? "steady"
         : (p.quality_target ?? 1) < 2 ? "finish"
-        : w.n % 4 === 0 ? "timed"
+        /*
+         * A timed long run belongs in the down week, not on a peak.
+         *
+         * It fired on `w.n % 4 === 0` while the down week came from the skeleton on its
+         * own schedule, so the hardest single session in the block — a 19.5 km run held
+         * at threshold, 97 minutes in Z3 — landed on weeks 4 and 8, which are the two
+         * biggest volume weeks of the block. Nobody chose that; the two cycles simply
+         * never agreed. Drop the volume, then test.
+         */
+        : w.deload ? "timed"
         : "blocks";
       const steady = Math.round(cvPace * 1.12);
       /*
