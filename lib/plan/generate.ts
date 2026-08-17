@@ -2,7 +2,7 @@ import { type Allocation, type Goal, type Role, allocationFor, roleFrom } from "
 import { applyAbsences, benchmarkWeeks, creditFor } from "./adjust";
 import { type Absence } from "./intake-rules";
 import { canDoStations, ladderFor, otherLadder, otherRung, rungFor } from "./ladders";
-import { hyroxKindFor } from "./zone-budget";
+import { hyroxKindFor, simulationWindow } from "./zone-budget";
 import {
   continuousRun, easyHyrox, hyroxClass, hyroxSession, longRun, qualityRun,
   type LongShape,
@@ -128,6 +128,14 @@ export type Session = {
 export type GeneratedWeek = PlanWeek & {
   phase: PhaseName; allocation: Allocation; benchmark: boolean;
   sessions: Session[];
+  /**
+   * Something worth doing this week that the plan has not scheduled.
+   *
+   * A simulation, for now. Most athletes will not do one and a session somebody reliably
+   * skips is worse than no session — so it is an offer attached to the week rather than
+   * a hole in it, and the week is complete either way.
+   */
+  suggestion?: { kind: "half" | "full"; why: string };
 };
 
 export type Generated = {
@@ -264,7 +272,22 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
      * simulate. Each of the four trains something different and each belongs somewhere,
      * which is a statement about phases rather than about week numbers.
      */
+    // How many weeks remain, counting this one as zero.
+    const weeksLeft = p.length - w.n;
     const hyroxRung = stations ? hyroxKindFor(w.phase, inPhase, true) : null;
+    /*
+     * And a simulation, suggested rather than scheduled.
+     *
+     * Most athletes will not do one — eight stations at race weight, a kilometre between
+     * each, two hours and usually a venue — and a session somebody reliably skips is
+     * worse than no session: it teaches them the plan does not know what their life looks
+     * like, and once they believe that they start skipping the sessions that mattered.
+     *
+     * So the week says it would be a good week for one, and stays complete if they do not.
+     */
+    const sim = stations
+      ? simulationWindow(w.phase, weeksLeft, Boolean(w.deload))
+      : null;
     /*
      * A second one in the same week is the other half of the phase's mix.
      *
@@ -677,6 +700,13 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
        * 22.8 km". The trip is the reason; the down week is a consequence of it.
        */
       note: w.reason ?? w.note,
+      /*
+       * The simulation suggestion, carried on the week rather than as a session.
+       *
+       * The week screen shows it as an offer — "this would be a good week for a full
+       * simulation" — and the week is complete whether or not it is taken.
+       */
+      suggestion: sim ?? undefined,
     };
   });
 

@@ -158,12 +158,59 @@ export const z5Share = (phase: PhaseName): number => ZONE_BUDGET[phase]?.z5 ?? 0
  *   taper     one half simulation at most, and only early in the phase. A full one
  *             inside three weeks of a race costs more than it teaches.
  */
+/*
+ * No simulations in the mix, deliberately.
+ *
+ * A full simulation needs eight stations at race weight, a kilometre of running between
+ * each, two hours and usually a venue — and most people will not do one, which means
+ * prescribing it produces a week with a hole in it every time. A session an athlete
+ * reliably skips is worse than no session: it teaches them that the plan does not know
+ * what their life looks like, and once they believe that they start skipping the
+ * sessions that mattered.
+ *
+ * So the scheduled work is the two an athlete can actually do in a normal gym, and the
+ * simulation becomes a suggestion attached to the weeks that could carry one — see
+ * `simulationWindow`. If they do it, it replaces that week's Hyrox session; if they do
+ * not, the week was always complete.
+ */
 export const HYROX_MIX: Record<PhaseName, Record<string, number>> = {
-  base:     { compromised: 0.85, transitions: 0.15, half: 0, full: 0 },
-  build:    { compromised: 0.55, transitions: 0.35, half: 0.10, full: 0 },
-  specific: { compromised: 0.30, transitions: 0.35, half: 0.20, full: 0.15 },
-  taper:    { compromised: 0.50, transitions: 0.35, half: 0.15, full: 0 },
+  base:     { compromised: 0.85, transitions: 0.15 },
+  build:    { compromised: 0.60, transitions: 0.40 },
+  specific: { compromised: 0.45, transitions: 0.55 },
+  taper:    { compromised: 0.60, transitions: 0.40 },
 };
+
+/**
+ * Whether this week could carry a simulation, and what to say about it.
+ *
+ * A suggestion, not a session. The weeks that can hold one are specific enough to be
+ * worth naming: far enough into the block that there is something to simulate, not a
+ * down week, and clear of the race by enough that a two-hour effort still pays for
+ * itself. Everything else gets nothing rather than a vague encouragement.
+ */
+export function simulationWindow(
+  phase: PhaseName, weeksToRace: number, isDown: boolean,
+): { kind: "half" | "full"; why: string } | null {
+  if (isDown || phase === "base") return null;
+  /*
+   * Nothing inside three weeks. A full simulation is a race, and racing three weeks out
+   * costs more than it teaches — which is the one thing the taper exists to protect.
+   */
+  if (weeksToRace <= 3) return null;
+  if (phase === "specific" && weeksToRace >= 4 && weeksToRace <= 6) {
+    return {
+      kind: "full",
+      why: "This is the week for a full simulation if you are going to do one — far enough out to recover from it, close enough that the numbers still describe race day. All eight stations at race weight, 1 km between each, and record every split.",
+    };
+  }
+  if (phase === "build" || phase === "specific") {
+    return {
+      kind: "half",
+      why: "A good week for a half simulation: four stations in race order at race weight with 1 km runs between them. Worth doing instead of this week's Hyrox session rather than as well as it.",
+    };
+  }
+  return null;
+}
 
 const HYROX_LABEL: Record<string, string> = {
   compromised: "compromised running",

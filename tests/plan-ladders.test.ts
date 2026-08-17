@@ -7,7 +7,9 @@ import {
 import {
   ENTRY, LADDERS, canDoStations, ladderFor, rungFor,
 } from "../lib/plan/ladders";
-import { ZONE_BUDGET, ladderMix, z5Share } from "../lib/plan/zone-budget";
+import {
+  ZONE_BUDGET, hyroxKindFor, ladderMix, simulationWindow, z5Share,
+} from "../lib/plan/zone-budget";
 
 // ------------------------------------------------------------------- paces
 
@@ -218,4 +220,29 @@ test("the race share belongs to the Hyrox session, not to the interval session",
   for (let w = 0; w < 10; w++) {
     assert.notEqual(ladderFor("specific", w, true, "runs_regularly"), "L6");
   }
+});
+
+test("a simulation is suggested, never scheduled", () => {
+  /*
+   * Eight stations at race weight, a kilometre between each, two hours and usually a
+   * venue. Most people will not do one, and a session somebody reliably skips is worse
+   * than no session: it teaches them the plan does not know what their life looks like,
+   * and once they believe that they start skipping the sessions that mattered.
+   */
+  for (const phase of ["base", "build", "specific", "taper"] as const) {
+    for (let w = 0; w < 10; w++) {
+      const kind = hyroxKindFor(phase, w, true);
+      assert.doesNotMatch(kind, /simulation/,
+        `${phase} week ${w} scheduled a ${kind}`);
+    }
+  }
+
+  // It is offered where a week could carry one, and nowhere else.
+  assert.equal(simulationWindow("base", 12, false), null, "nothing to simulate yet");
+  assert.equal(simulationWindow("build", 9, true), null, "not in a down week");
+  assert.equal(simulationWindow("specific", 3, false), null,
+    "and never inside three weeks of the race");
+  assert.equal(simulationWindow("specific", 5, false)?.kind, "full");
+  assert.equal(simulationWindow("build", 9, false)?.kind, "half");
+  assert.match(simulationWindow("specific", 5, false)!.why, /instead of|record every split/i);
 });
