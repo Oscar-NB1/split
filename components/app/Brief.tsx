@@ -379,8 +379,12 @@ function groupsFor(
 }
 
 export default function Brief({
-  id, meId, openActivity, onChanged,
-}: { id: string; meId: string; openActivity: (a: string) => void; onChanged: () => void }) {
+  id, meId, openActivity, onChanged, openStrategy,
+}: {
+  id: string; meId: string; openActivity: (a: string) => void; onChanged: () => void;
+  /** the race builder, which a race session is the one place anybody wants it from */
+  openStrategy?: () => void;
+}) {
   const { d, err, load, send } = useSession(id);
   const [warmOpen, setWarmOpen] = useState(false);
   const [mode, setMode] = useState("Outdoor");
@@ -542,6 +546,39 @@ export default function Brief({
       </div>
 
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
+
+      {/*
+        * A race session leads to the race builder.
+        *
+        * The builder exists — every segment, the roxzone, the projection, and a push to
+        * the watch — and there was no way to reach it from the one screen where an
+        * athlete would look for it. A race day showed "Mark it done" and a feedback
+        * form, as though the plan had nothing to say about the race it was built for.
+        */}
+      {s.kind === "race" && openStrategy && (
+        <div style={{ padding: "16px 18px 0" }}>
+          <button onClick={openStrategy} style={{
+            width: "100%", textAlign: "left", background: "var(--navy)", color: "#fff",
+            borderRadius: "var(--r-card)", padding: "15px 16px",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          }}>
+            <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em",
+                textTransform: "uppercase", color: "rgba(255,255,255,.6)" }}>
+                Race builder
+              </span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>
+                Set your splits, station by station
+              </span>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,.7)", lineHeight: 1.45 }}>
+                Eight runs, eight stations and the roxzone, built from your goal — then
+                sent to your watch as a workout.
+              </span>
+            </span>
+            <span aria-hidden="true" style={{ fontSize: 20, color: "var(--lime)" }}>›</span>
+          </button>
+        </div>
+      )}
 
       {(groups.length > 0 || guide) && (
         <div style={{ padding: "20px 18px 8px", display: "flex", flexDirection: "column", gap: 12 }}>

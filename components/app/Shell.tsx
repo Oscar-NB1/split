@@ -298,7 +298,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
         )}
         {view === "activity" && openId && <Activity id={openId} meId={me.id} />}
         {view === "brief" && sessionId && (
-          <Brief id={sessionId} meId={me.id} openActivity={openActivity} onChanged={load} />
+          <Brief id={sessionId} meId={me.id} openActivity={openActivity} onChanged={load}
+            openStrategy={() => setView("strategy")} />
         )}
         {view === "strength" && sessionId && (
           <Strength id={sessionId} meId={me.id} onChanged={load} startRest={setRest} />
