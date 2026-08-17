@@ -35,15 +35,22 @@ export default function Bench({ athleteId }: { athleteId?: string }) {
   const [busy, setBusy] = useState(false);
 
   const url = `/api/benchmarks${athleteId ? `?athlete=${athleteId}` : ""}`;
+  const [rounds, setRounds] = useState(0);
   useEffect(() => {
-    fetch(url).then(async (r) => setAttempts(r.ok ? (await r.json()).attempts : []));
+    fetch(url).then(async (r) => {
+      const j = r.ok ? await r.json() : { attempts: [] };
+      setAttempts(j.attempts ?? []);
+      setRounds(j.protocol?.legs ? Math.round(j.protocol.legs.length / 2) : 4);
+    });
   }, [url]);
 
   if (!attempts) return null;
+  /* A coach reads results; they do not log them. */
+  const mine = !athleteId;
 
   if (attempts.length === 0) {
     return (
-      <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ padding: "18px 18px 26px", display: "flex", flexDirection: "column", gap: 14 }}>
         <span style={{ fontFamily: "var(--display)", fontSize: 24, fontWeight: 700,
           lineHeight: 1.15, letterSpacing: "-.02em" }}>No test logged yet</span>
         <span style={{ fontSize: 13, lineHeight: 1.6, color: INK55 }}>
@@ -52,6 +59,8 @@ export default function Bench({ athleteId }: { athleteId?: string }) {
           training and your running — but the paces are worked out from your answers
           rather than measured, and they are labelled that way wherever they appear.
         </span>
+        {mine && <LogTest rounds={rounds} url={url}
+          onSaved={(a) => setAttempts(a)} />}
       </div>
     );
   }
@@ -200,10 +209,23 @@ export default function Bench({ athleteId }: { athleteId?: string }) {
               <div style={{ background: "var(--off)", border: `1px solid ${LINE}`, borderTop: 0,
                 borderRadius: "0 0 var(--r-card) var(--r-card)", padding: "13px 16px",
                 display: "flex", flexDirection: "column", gap: 6 }}>
+                {/*
+                  * The band and the headline only where a reading produced them.
+                  *
+                  * Not every line that moves has a finding behind it: easy pace follows from
+                  * measured speed, and the Recovery reading it is filed under needs heart-rate
+                  * data that a hand-timed test does not have. Rendered unconditionally it read
+                  * "Because · Recovery —" above an empty line, which is worse than the rule on
+                  * its own.
+                  */}
                 <span style={{ ...caps, fontSize: 9, color: TEAL }}>
-                  Because · {c.dim} {c.band}
+                  Because · {c.dim}{c.band && c.band !== "—" ? ` ${c.band}` : ""}
                 </span>
-                <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.45 }}>{c.headline}</span>
+                {c.headline && (
+                  <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.45 }}>
+                    {c.headline}
+                  </span>
+                )}
                 <span style={{ fontSize: 12, lineHeight: 1.6, color: INK70 }}>{c.rule}</span>
                 <span style={{ fontSize: 11, lineHeight: 1.55, color: INK55 }}>
                   In training · {c.feel}
@@ -213,6 +235,8 @@ export default function Bench({ athleteId }: { athleteId?: string }) {
           </div>
         ))}
       </div>
+
+      {mine && <LogTest rounds={rounds} url={url} onSaved={(x) => { setAttempts(x); setAt(x.length - 1); }} />}
 
       {a.changes.length > 0 && (
         <>
@@ -230,6 +254,139 @@ export default function Bench({ athleteId }: { athleteId?: string }) {
       )}
     </div>
   );
+}
+
+/**
+ * Logging a test, by hand.
+ *
+ * The preflight page has always promised this — "every number below can be recorded by hand"
+ * — and there was no way to do it: no screen wrote a benchmark, and the table had never held
+ * a row. Four run times is the whole measurement, because fade across the rounds is what
+ * changes the plan; the station times are taken where somebody has them and left alone where
+ * they do not, since a missing station time costs one finding and a guessed one corrupts
+ * three.
+ *
+ * mm:ss, because that is how a stopwatch reads and asking somebody to convert 1:47 into 107
+ * is asking them to make a mistake.
+ */
+function LogTest({ rounds, url, onSaved }: {
+  rounds: number; url: string; onSaved: (attempts: Attempt[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [runs, setRuns] = useState<string[]>(() => Array(rounds || 4).fill(""));
+  const [stations, setStations] = useState<string[]>(() => Array(rounds || 4).fill(""));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [problems, setProblems] = useState<string[]>([]);
+
+  const parsed = runs.map(secondsOf);
+  const enough = parsed.filter((n) => n != null).length >= 2;
+
+  async function save() {
+    setBusy(true); setErr(null); setProblems([]);
+    const body = {
+      action: "record",
+      rounds: parsed.map((run, i) => ({
+        run_s: run, station_s: secondsOf(stations[i]) ?? undefined,
+      })).filter((r) => r.run_s != null),
+    };
+    const r = await fetch(url, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const j = await r.json().catch(() => ({}));
+    setBusy(false);
+    if (!r.ok) { setErr(j.error ?? "That did not save."); return; }
+    setProblems(j.problems ?? []);
+    setOpen(false);
+    onSaved(j.attempts ?? []);
+  }
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{
+        width: "100%", background: "none", border: `1px solid ${LINE}`,
+        borderRadius: "var(--r-pill)", padding: 14, fontSize: 11, fontWeight: 700,
+        letterSpacing: ".06em", textTransform: "uppercase", color: INK55,
+      }}>Log a test I have done</button>
+    );
+  }
+
+  return (
+    <div style={{ border: `1px solid ${TEAL}`, borderRadius: "var(--r-card)",
+      padding: "15px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <span style={{ fontSize: 14, fontWeight: 700 }}>Your four rounds</span>
+      <span style={{ fontSize: 11.5, lineHeight: 1.55, color: INK55 }}>
+        The run time from each round, as mm:ss. Station times if you have them — they add a
+        finding, and a guess at them would take three away.
+      </span>
+
+      <div style={{ display: "grid", gridTemplateColumns: "26px 1fr 1fr", gap: 7,
+        alignItems: "center" }}>
+        <span />
+        <span style={{ ...caps, fontSize: 9 }}>Run</span>
+        <span style={{ ...caps, fontSize: 9 }}>Station</span>
+        {runs.map((v, i) => (
+          <Row key={i} n={i + 1} run={v} station={stations[i]}
+            onRun={(x) => setRuns(runs.map((y, j) => (j === i ? x : y)))}
+            onStation={(x) => setStations(stations.map((y, j) => (j === i ? x : y)))} />
+        ))}
+      </div>
+
+      {err && <div className="errbox" role="alert">{err}</div>}
+      {problems.map((pb) => (
+        <span key={pb} style={{ fontSize: 11.5, color: GOLD, lineHeight: 1.5 }}>{pb}</span>
+      ))}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button onClick={() => setOpen(false)} style={{ padding: "12px 14px", fontSize: 12,
+          fontWeight: 700, color: INK55 }}>Cancel</button>
+        <button onClick={save} disabled={!enough || busy} style={{
+          flex: 1, background: enough ? LIME : "var(--off)", border: 0,
+          borderRadius: "var(--r-pill)", color: enough ? "#12314D" : INK55, padding: 13,
+          fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase",
+          opacity: busy ? .6 : 1,
+        }}>{busy ? "Reading it…" : "Save the test"}</button>
+      </div>
+      <span style={{ fontSize: 11, color: INK40, lineHeight: 1.5 }}>
+        Nothing changes in your plan until you have seen what it would do and agreed to it.
+      </span>
+    </div>
+  );
+}
+
+const Row = ({ n, run, station, onRun, onStation }: {
+  n: number; run: string; station: string;
+  onRun: (v: string) => void; onStation: (v: string) => void;
+}) => (
+  <>
+    <span style={{ fontSize: 11, fontWeight: 700, color: INK40 }}>R{n}</span>
+    <input className="mono" inputMode="numeric" value={run} onChange={(e) => onRun(e.target.value)}
+      placeholder="1:47" aria-label={`Round ${n} run time`}
+      style={{ padding: "9px 0", textAlign: "center", borderRadius: 9, fontSize: 14,
+        fontWeight: 700 }} />
+    <input className="mono" inputMode="numeric" value={station}
+      onChange={(e) => onStation(e.target.value)}
+      placeholder="—" aria-label={`Round ${n} station time`}
+      style={{ padding: "9px 0", textAlign: "center", borderRadius: 9, fontSize: 14,
+        fontWeight: 700 }} />
+  </>
+);
+
+/**
+ * mm:ss, or bare seconds where somebody typed those instead.
+ *
+ * A stopwatch reads 1:47 and asking for 107 is asking for a mistake — but somebody who types
+ * 107 anyway means 107 seconds, and a parser that rejects it is being pedantic about a number
+ * it understood perfectly well.
+ */
+function secondsOf(v: string): number | null {
+  const t = v.trim();
+  if (!t) return null;
+  const m = /^(\d{1,2}):(\d{1,2})$/.exec(t);
+  if (m) return Number(m[1]) * 60 + Number(m[2]);
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : null;
 }
 
 const caps: React.CSSProperties = {

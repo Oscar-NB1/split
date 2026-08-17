@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { EXPECTED_LAPS, FALLBACKS, isRunLap } from "@/lib/plan/capture";
 
 const TEAL = "#0A8FB0", LIME = "#C6FF5B";
@@ -9,8 +9,9 @@ const LINE = "var(--line)", PAPER = "var(--paper)", NAVY = "var(--navy)";
 export type Protocol = {
   variant: string;
   /** in order: the run and station doses, alternating */
-  legs: { label: string; dose: string }[];
+  legs: { label: string; dose: string; load?: string | null }[];
   duration_min: number;
+  note?: string;
 };
 
 /**
@@ -21,15 +22,27 @@ export type Protocol = {
  * the page's job is to be finished with before the athlete starts.
  */
 export default function Preflight({
-  protocol, onPush, onDone, pushable,
+  athleteId, onPush, onDone, pushable,
 }: {
-  protocol: Protocol | null;
+  athleteId?: string;
   /** send it to the watch as a structured workout */
   onPush: () => Promise<boolean>;
   onDone: () => void;
   pushable: boolean;
 }) {
   const [state, setState] = useState<"idle" | "busy" | "sent" | "failed">("idle");
+  /*
+   * The protocol comes from the API rather than from a prop.
+   *
+   * It is a function of the kit they said they have and the division they entered — the
+   * stations are substituted for anything they cannot reach and the loads are their own — so
+   * it is not something a parent screen can know.
+   */
+  const [protocol, setProtocol] = useState<Protocol | null>(null);
+  useEffect(() => {
+    fetch(`/api/benchmarks${athleteId ? `?athlete=${athleteId}` : ""}`)
+      .then((r) => r.json()).then((j) => setProtocol(j.protocol ?? null)).catch(() => {});
+  }, [athleteId]);
 
   async function push() {
     setState("busy");
@@ -46,7 +59,17 @@ export default function Preflight({
           lineHeight: 1.15, letterSpacing: "-.02em" }}>
           The benchmark, in one page
         </span>
+        {protocol && (
+          <span style={{ fontSize: 12, color: INK55 }}>
+            About {protocol.duration_min} minutes, warm-up aside.
+          </span>
+        )}
       </div>
+
+      {/* What the test is for, before what to press. */}
+      {protocol?.note && (
+        <span style={{ fontSize: 12.5, lineHeight: 1.6, color: INK70 }}>{protocol.note}</span>
+      )}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         <button onClick={push} disabled={!pushable || state === "busy" || state === "sent"}
@@ -83,7 +106,9 @@ export default function Preflight({
                 <span style={{ fontSize: 12, fontWeight: 700 }}>{l.label}</span>
                 <span style={{ display: "flex", alignItems: "baseline",
                   justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: INK55 }}>{l.dose}</span>
+                  <span style={{ fontSize: 11, color: INK55 }}>
+                    {l.dose}{l.load ? ` at ${l.load}` : ""}
+                  </span>
                   <span style={{ fontSize: 10, fontWeight: 800, color: TEAL }}>lap {i + 1}</span>
                 </span>
               </div>
@@ -91,8 +116,8 @@ export default function Preflight({
           </div>
         ) : (
           <span style={{ fontSize: 12, lineHeight: 1.6, color: INK55 }}>
-            The protocol is set when the plan is built, from the equipment you
-            said you have. Build a plan and it appears here.
+            The protocol comes from the equipment you said you have and the division you
+            entered. Answer the setup questions and it appears here.
           </span>
         )}
 

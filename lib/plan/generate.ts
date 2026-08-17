@@ -9,6 +9,8 @@ import {
 } from "./session";
 import { kitFrom, strengthNote, strengthTarget } from "./strength";
 import { type TrainingConstraint, sayConstraints } from "./constraints";
+import { BENCHMARK_NOTE, ROUNDS, benchmarkTarget, protocolFor } from "./benchmark";
+import { RUN_DISTANCE_M } from "./capture";
 import { applyBRaces } from "./braces";
 import { whyFor } from "./why";
 import { purposeFor } from "./purpose";
@@ -773,7 +775,22 @@ function build(p: Params, r: Resolved): Omit<Generated, "violations"> {
     for (const s of sessions) {
       const kind = String(s.kind);
       if (kind === "long_run") continue;
-      if (kind === "quality_run" || kind === "benchmark") {
+      if (kind === "benchmark") {
+        /*
+         * The benchmark is the benchmark, not a quality run with a different name.
+         *
+         * It went through `qualityRun` like everything else, so a session titled "Benchmark
+         * test" prescribed 4 × 8 min at threshold — which is a good session and is not the
+         * test. Nothing downstream could read it either: the whole results path expects four
+         * rounds of a 400 and a station, and no plan has ever asked for one.
+         */
+        const proto = protocolFor(kitFrom(p.equipment), p.standards, cvPace);
+        s.target_text = benchmarkTarget(proto);
+        s.note_text = BENCHMARK_NOTE;
+        s.minutes = proto.duration_min + 15;
+        /* Only the running counts towards the week: the stations are not running. */
+        s.km = (ROUNDS * RUN_DISTANCE_M) / 1000 + 3;
+      } else if (kind === "quality_run") {
         // No single session may exceed 40% of the week — the bound the plan asserts
         // against itself, applied where the session is built rather than checked
         // after the fact.

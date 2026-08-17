@@ -357,12 +357,11 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Inbox withId={writing} withName={nameOf(writing)} meId={me.id} />
         )}
         {view === "bench" && <Bench athleteId={coaching ?? undefined} />}
-        {/* No protocol and no push yet: the doses per variant are not defined
-            anywhere the app can read, and nothing here talks to a watch. The
-            screen says both out loud rather than rendering a button that claims
-            to do something it cannot. */}
+        {/* The protocol is real now and comes from their own kit and division. There is
+            still no watch push — nothing here talks to a watch — so the screen goes on
+            saying that out loud rather than rendering a button that claims otherwise. */}
         {view === "preflight" && (
-          <Preflight protocol={null} pushable={false}
+          <Preflight athleteId={coaching ?? undefined} pushable={false}
             onPush={async () => false} onDone={() => setView("profile")} />
         )}
         {view === "editProfile" && <EditProfile onSaved={() => setView("profile")} />}

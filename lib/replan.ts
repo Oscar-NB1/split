@@ -61,6 +61,28 @@ export async function rememberDay(userId: string): Promise<number> {
   }));
   const { recent } = await recentFor(userId, conn?.ok ?? false);
   const measured = await measuredFor(userId);
+
+  /*
+   * A benchmark that has been applied, if it is newer than the race that measured them.
+   *
+   * `measuredFor` reads race results only, so the capability an applied benchmark writes had
+   * nowhere to go — the apply button wrote a row nothing read. Both numbers are the same
+   * quantity: an average run split off a station, which is what `anchorFromRaceSplit` takes.
+   *
+   * Newer wins rather than one kind always beating the other. A race is the real thing and a
+   * gym test is a proxy, but a test taken last week describes this athlete better than a race
+   * from three months ago, and the honest tiebreak between two measurements of the same thing
+   * is which one is more recent.
+   */
+  const [bench] = await sql<{ value: number; captured_at: string }[]>`
+    select value, captured_at::text as captured_at from capabilities
+     where athlete_id = ${userId} and field = 'run_pace_s_per_km' and source = 'benchmark'
+     order by captured_at desc limit 1
+  `;
+  const raceAt = measured.from?.race_date ?? null;
+  const runSplit = bench && (!raceAt || bench.captured_at.slice(0, 10) > raceAt)
+    ? Number(bench.value)
+    : measured.run_split_s;
   /*
    * What they confirmed they are training around.
    *
@@ -86,7 +108,7 @@ export async function rememberDay(userId: string): Promise<number> {
     recent, absences, max_hr: urow?.hr_max ?? null,
     measured: intake.benchmark === "logged",
     hyrox_races: races + (intake.pastRaces?.length ?? 0),
-    measured_race_run_split_s: measured.run_split_s,
+    measured_race_run_split_s: runSplit,
     // What their runs have said about the volume, since they answered the dial.
     volume_feel_delta: tpl.volume_feel_delta,
     constraints,
