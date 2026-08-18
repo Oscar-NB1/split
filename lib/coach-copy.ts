@@ -69,11 +69,21 @@ export function occasionOf(w: {
   phase?: string; deload?: boolean; taper?: boolean; benchmark?: boolean;
   km?: number; peak?: boolean;
 }, weeksToRace?: number | null): Occasion {
-  if (weeksToRace != null && weeksToRace <= 3) return "race_close";
-  if (w.benchmark) return "benchmark";
+  /*
+   * What the week IS beats how close the race is.
+   *
+   * Nearness came first, and it swallowed everything in the last month of a block: her peak week —
+   * 22.3 km, the biggest she will ever have run — got "only 2 weeks till our Hyrox" instead of the
+   * line he wrote for exactly that moment, and race week got "only 0 weeks", which is not a
+   * sentence. The taper line already says the thing race week needs said: nothing left to do but
+   * rest.
+   */
   if (w.taper) return "taper";
+  if (w.benchmark) return "benchmark";
   if (w.deload) return "deload";
   if (w.peak) return "peak";
+  /* And the countdown only where a countdown means something: a month out, not on the day. */
+  if (weeksToRace != null && weeksToRace >= 1 && weeksToRace <= 4) return "race_close";
   return w.phase === "base" ? "base" : "build";
 }
 
@@ -90,7 +100,9 @@ export function weeklyLine(
   if (!raw) return null;
   const out = raw
     .replace("{km}", fill.km != null ? String(Math.round(fill.km)) : "{km}")
-    .replace("{weeks}", fill.weeks != null ? String(fill.weeks) : "{weeks}");
+    .replace("{weeks}", fill.weeks != null ? String(fill.weeks) : "{weeks}")
+    /* "Only 1 weeks till our Hyrox" is the kind of thing that makes a warm line read as generated. */
+    .replace(/\b1 weeks\b/, "1 week");
   return /[{}]/.test(out) ? null : out;
 }
 

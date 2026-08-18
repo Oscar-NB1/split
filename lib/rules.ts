@@ -1,6 +1,7 @@
 import { sql } from "./db";
-import { addDays, diffDays, fmt, today } from "./dates";
+import { addDays, diffDays, fmt, mondayOf, today } from "./dates";
 import { notify, partnerOf, queue } from "./notify";
+import { occasionOf, weeklyLine } from "./coach-copy";
 import { describe, recordValue, recordsFor, type NewRecord } from "./records";
 import { weekStart } from "./scoring";
 
@@ -169,7 +170,66 @@ const NOTABLE = ["key", "hard", "benchmark", "race"];
 export async function scheduled(now = new Date()) {
   await tomorrowsSession();
   await raceCountdown();
-  if (now.getDay() === 0) await weeklyRoundUp(); // Sunday
+  if (now.getDay() === 0) await weeklyRoundUp(); // Sunday: what was run
+  if (now.getDay() === 1) await weekAhead();     // Monday: what is coming
+}
+
+/**
+ * Monday morning: what this week is, and what it is for.
+ *
+ * The Sunday round-up looks back at what was run. This looks forward, which is the half that was
+ * missing — and it is where his own lines belong: "Biggest week yet, {km} km. You are going to
+ * finish it, and I will be right there when you do" is a Monday sentence, not a Sunday one.
+ *
+ * The plain version says the same thing in the app's voice, because a week ahead is worth telling
+ * anybody about and only one athlete has somebody writing for her.
+ */
+async function weekAhead() {
+  const ws = weekStart();
+  const rows = await sql<{
+    id: string; volume: { n: number; km: number; note: string; phase: string;
+      class_km?: number }[] | null;
+    start_date: string; race_date: string | null;
+  }[]>`
+    select u.id, t.volume, t.start_date::text as start_date, t.race_date::text as race_date
+      from users u
+      join plan_templates t on t.athlete_id = u.id and t.active
+  `;
+
+  for (const r of rows) {
+    const volume = Array.isArray(r.volume) ? r.volume : [];
+    if (volume.length === 0) continue;
+    /* Which week of the block this Monday is. Derived from the start date, never stored. */
+    const n = Math.floor(diffDays(ws, mondayOf(r.start_date)) / 7) + 1;
+    const w = volume[n - 1];
+    if (!w) continue; // before the block, or past the end of it
+
+    const peak = Math.max(...volume.map((x) => x.km));
+    const weeksToRace = r.race_date
+      ? Math.max(0, Math.round(diffDays(r.race_date, ws) / 7))
+      : null;
+    const occasion = occasionOf({
+      phase: w.phase,
+      deload: /down/i.test(w.note ?? ""),
+      taper: /taper|race week/i.test(w.note ?? "") || w.phase === "taper",
+      benchmark: /benchmark|test/i.test(w.note ?? ""),
+      peak: w.km === peak,
+    }, weeksToRace);
+
+    const voice = await voiceFor(r.id);
+    const line = voice ? weeklyLine(occasion, { km: w.km, weeks: weeksToRace }) : null;
+    const classes = w.class_km ? ` (+${w.class_km} in the classes)` : "";
+
+    await queue(r.id, "weekly", `ahead:${ws}:${r.id}`, {
+      title: line ? `Week ${n}` : `Week ${n} · ${w.km} km`,
+      /*
+       * His line where there is one, and the numbers either way. A sentence without the week's
+       * kilometres in it is lovely and tells her nothing she can plan around.
+       */
+      body: line ? `${line}\n${w.km} km${classes}` : `${w.km} km${classes}. ${w.note || ""}`.trim(),
+      url: "/",
+    });
+  }
 }
 
 /**

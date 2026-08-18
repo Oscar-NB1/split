@@ -168,3 +168,24 @@ test("the occasion comes from the week, not from a guess", () => {
   /* Three weeks out outranks everything: it is the thing she would want said. */
   assert.equal(occasionOf({ phase: "base" }, 2), "race_close");
 });
+
+test("what the week is beats how close the race is", () => {
+  /*
+   * Nearness came first and swallowed the last month of a block: her peak week — 22.3 km, the
+   * biggest she will ever have run — got "only 2 weeks till our Hyrox" instead of the line written
+   * for exactly that moment, and race week got "only 0 weeks", which is not a sentence.
+   */
+  assert.equal(occasionOf({ phase: "specific", peak: true }, 2), "peak");
+  assert.equal(occasionOf({ phase: "taper", taper: true }, 0), "taper",
+    "race week needs the taper line, not a countdown to itself");
+  assert.equal(occasionOf({ phase: "base", deload: true }, 3), "deload");
+  assert.equal(occasionOf({ phase: "build", benchmark: true }, 3), "benchmark");
+  /* The countdown survives where it is the only thing true about the week. */
+  assert.equal(occasionOf({ phase: "build" }, 3), "race_close");
+  assert.equal(occasionOf({ phase: "build" }, 9), "build", "nine weeks out is not a countdown");
+});
+
+test("one week is not 1 weeks", () => {
+  assert.match(weeklyLine("race_close", { weeks: 1 })!, /Only 1 week till/);
+  assert.match(weeklyLine("race_close", { weeks: 3 })!, /Only 3 weeks till/);
+});
