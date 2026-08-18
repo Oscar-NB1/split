@@ -1,3 +1,4 @@
+import { isRunSport } from "./bounds";
 import { sql } from "./db";
 
 export type StravaActivity = {
@@ -126,10 +127,37 @@ export function pickClosest<T extends { planned_minutes: number | null }>(
 }
 
 /**
+ * Whether an activity could be this session at all.
+ *
+ * Duration is a weaker signal than the sport, and matching on duration alone produced two
+ * confident wrong answers in one week: a 39-minute Strava "Workout" landed on a 40-minute
+ * run/walk session because it was one minute closer than the 45-minute strength session it
+ * plainly was, and the next day a 36-minute WeightTraining was logged as her key run and the
+ * session marked done. Neither activity had a metre of distance on it.
+ *
+ * `bounds.ts` already refuses to take a running record from a ride — "only the sport is
+ * wrong" — and this is the same rule applied one layer earlier, where it decides what the
+ * session is rather than what the record is.
+ *
+ * Only the certain-no cases are ruled out. A Hyrox session gets logged as a Run, a Workout or
+ * a Crossfit depending on the day, so nothing is claimed about those. Where the gate leaves no
+ * candidate the activity stays unmatched, which is what already happens when nothing was
+ * planned, and is the honest answer.
+ */
+export function couldBe(kind: string, sport: string | null | undefined): boolean {
+  const run = isRunSport(sport);
+  const ride = /ride|cycl|spin|handcycle/i.test(sport ?? "");
+  if (kind === "quality_run" || kind === "easy_run" || kind === "long_run") return run;
+  if (kind === "spin") return ride;
+  if (kind === "strength") return !run && !ride;
+  return true;
+}
+
+/**
  * Pair an activity with the session that was planned for that day.
- * Deliberately dumb: same athlete, same local date, still open, closest
- * duration wins. A human can re-pair it in the UI; guessing harder than
- * this produces confident wrong answers.
+ * Deliberately dumb: same athlete, same local date, still open, the sport has to be
+ * possible, and then closest duration wins. A human can re-pair it in the UI; guessing
+ * harder than this produces confident wrong answers.
  */
 export async function matchToPlan(
   userId: string,
@@ -137,8 +165,8 @@ export async function matchToPlan(
   localDate: string,
   a: StravaActivity,
 ) {
-  const candidates = await sql<{ id: string; planned_minutes: number | null }[]>`
-    select id, planned_minutes
+  const open = await sql<{ id: string; kind: string; planned_minutes: number | null }[]>`
+    select id, kind, planned_minutes
     from planned_sessions
     where user_id = ${userId}
       and planned_date = ${localDate}
@@ -146,6 +174,11 @@ export async function matchToPlan(
       and kind <> 'rest'
       and activity_id is null
   `;
+  /*
+   * The sport gate runs before the duration tiebreak, not after it: filtering afterwards
+   * would still let the wrong session win and then discard the right one.
+   */
+  const candidates = open.filter((c) => couldBe(c.kind, a.sport_type ?? a.type));
   if (candidates.length === 0) return;
 
   const actual = Math.round(a.moving_time / 60);
