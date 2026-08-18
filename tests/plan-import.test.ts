@@ -113,3 +113,60 @@ test("a half simulation is read, and is not called a full one", () => {
   assert.match(w.sessions[0].target, /half simulation/);
   assert.doesNotMatch(w.sessions[0].target, /full simulation/);
 });
+
+/*
+ * An adjusted week names the run by what it is and how far, because the distance is the thing
+ * being changed: "Easy 6 km" against "Bucharest. 5:30-5:50/km, nothing faster." His illness week
+ * is written that way throughout, and it used to read as five days of no session at all.
+ */
+const ADJUSTED = [
+  "Week 1 · 17–23 Aug  —  Adjusted — illness + travel",
+  "Base · 29 km",
+  "Day", "Session", "Detail",
+  "Tue 18",
+  "Off",
+  "You are ill and nine days off. Today buys you nothing.",
+  "Thu 20",
+  "Easy 6 km",
+  "Bucharest. 5:30–5:50/km, nothing faster.",
+  "Sat 22",
+  "Easy 9 km + 6 × 20 s strides",
+  "Home. The strides are the first reminder of what fast feels like.",
+  "Sun 23",
+  "Long run 12 km",
+  "Easy throughout, 5:15–5:30/km.",
+].join("\n");
+
+test("a run states its distance in its name when the week has been adjusted", () => {
+  const [w] = parsePlan(ADJUSTED).weeks;
+  assert.deepEqual(parsePlan(ADJUSTED).problems, []);
+  const byDay = new Map(w.sessions.map((s) => [s.day, s]));
+  assert.equal(byDay.get(1), undefined, "Tuesday is Off, and Off is not a session");
+  assert.equal(byDay.get(3)!.kind, "easy_run");
+  assert.equal(byDay.get(3)!.target, "- 6km Z2 @ 5:30-5:50/km");
+  assert.equal(byDay.get(6)!.target, "- 12km Z2 @ 5:15-5:30/km", "and the long run's too");
+  assert.equal(byDay.get(6)!.km, 12);
+});
+
+test("strides named beside the distance are still part of the run", () => {
+  const [w] = parsePlan(ADJUSTED).weeks;
+  const sat = w.sessions.find((s) => s.day === 5)!;
+  assert.match(sat.target, /- 9km Z2/);
+  assert.match(sat.target, /- 20s Z5 stride/);
+  assert.equal(sat.km, 9, "the strides sit inside the stated distance, not on top of it");
+});
+
+test("the detail still wins where both state a distance", () => {
+  /* Her runs put it in the detail, and that is the author's total. */
+  const doc = [
+    "Week 2 · 24–30 Aug",
+    "Base · 3 km",
+    "Day", "Session", "Detail",
+    "Thu",
+    "Easy run",
+    "3.0 km @ 7:15–7:45/km · the genuinely easy day",
+  ].join("\n");
+  const [w] = parsePlan(doc).weeks;
+  assert.equal(w.sessions[0].target, "- 3km Z2 @ 7:15-7:45/km");
+  assert.equal(w.sessions[0].km, 3);
+});

@@ -484,7 +484,12 @@ function kindOf(name: string): { kind: string; hard: boolean } | null {
   }
   if (/^strength/.test(n)) return { kind: "strength", hard: false };
   if (/long run/.test(n)) return { kind: "long_run", hard: false };
-  if (/easy run|shakeout/.test(n)) return { kind: "easy_run", hard: false };
+  /*
+   * "Easy 6 km" as much as "Easy run": an adjusted week names the run by what it is and how far,
+   * because the distance is the thing being changed. His illness week is written that way
+   * throughout, and matching only "easy run" read five of its six days as no session at all.
+   */
+  if (/easy run|shakeout|^easy\b/.test(n)) return { kind: "easy_run", hard: false };
   /*
    * A studio spin class, twice a week, fixed to its days. Somebody else runs it and it is not
    * the plan's to prescribe — the same treatment his kickboxing gets.
@@ -525,7 +530,16 @@ function sessionsFrom(
      * detail. Reading the two joined finds it either way, and neither document had to change.
      */
     if (k.kind === "quality_run") built = quality(`${detail} · ${name}`, name);
-    else if (k.kind === "long_run" || k.kind === "easy_run") built = run(detail, name);
+    /*
+     * The two joined here as well, and for the same reason.
+     *
+     * A run states its distance in the detail — "10 km @ 5:25-5:45" — except in a week that was
+     * adjusted, where the name carries it and the detail says only how to run it: "Long run 12 km"
+     * against "Easy throughout, 5:15-5:30/km". Reading the detail alone found no distance and the
+     * day came back unreadable. The detail still leads, so where both state one the author's total
+     * wins.
+     */
+    else if (k.kind === "long_run" || k.kind === "easy_run") built = run(`${detail} · ${name}`, name);
     else if (k.kind === "hyrox") built = hyroxClass(detail, name);
     else if (k.kind === "strength") built = strength(detail);
     else if (k.kind === "race") built = { target: "", minutes: 90, km: 0, note: clean(detail) };
