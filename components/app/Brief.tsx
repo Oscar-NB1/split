@@ -207,6 +207,19 @@ const say = (sec: number, mode: string) =>
     ? `${(3600 / sec).toFixed(1)} kph`
     : `${Math.floor(sec / 60)}:${String(Math.round(sec) % 60).padStart(2, "0")} /km`;
 
+/**
+ * A band between two paces, written in the order the mode reads it.
+ *
+ * Slower is a bigger number in minutes per kilometre and a smaller one in km/h, so a
+ * band built as "easy, to easier still" comes out descending on a treadmill — 11.3 kph
+ * to 10.3 kph, which reads as a mistake rather than a range. Same rule the prescribed
+ * ranges already follow; this is for the ones derived from the session's pace.
+ */
+const band = (fastSec: number, slowSec: number, mode: string) =>
+  mode === "Treadmill"
+    ? `${say(slowSec, mode)} to ${say(fastSec, mode)}`
+    : `${say(fastSec, mode)} to ${say(slowSec, mode)}`;
+
 type Item = {
   main: string; sub: string; work: boolean;
   /**
@@ -273,7 +286,7 @@ function groupsFor(
             ? `${sayPace(it.pace, mode)}${isWarm ? " — no faster" : " or slower"}`
             : prescribed
               ? isWarm
-                ? `${say(prescribed + 60, mode)} to ${say(prescribed + 90, mode)} — no faster`
+                ? `${band(prescribed + 60, prescribed + 90, mode)} — no faster`
                 : `${say(prescribed + 90, mode)} or slower`
               : isWarm ? "Conversational" : "or slower",
           work: false,
@@ -489,7 +502,15 @@ export default function Brief({
               {s.planned_minutes} min
             </span>
             <span style={{ fontSize: 11, color: "var(--ink-55)" }}>
-              {pace ? `at ${say(pace, "Outdoor")} prescribed` : ""}
+              {/*
+                * In the units of the mode, like every other pace on the screen.
+                *
+                * This one was pinned to Outdoor, so switching to Treadmill converted every
+                * step of the session to a belt speed and left the prescribed pace at the top
+                * in minutes per kilometre — the one number an athlete reads first, and the
+                * only one still asking them to do the arithmetic.
+                */}
+              {pace ? `at ${say(pace, active)} prescribed` : ""}
             </span>
           </div>
         )}
@@ -769,8 +790,16 @@ export default function Brief({
           </button>
         )}
         <div style={{ fontSize: 11, textAlign: "center", color: "var(--ink-40)", lineHeight: 1.5 }}>
+          {/*
+            * The watch is set in minutes per kilometre whatever you run on, so that number
+            * stays as it is — with the belt equivalent beside it in treadmill mode, which is
+            * the number you actually have to dial in. The card above says the same thing
+            * about the alarm; this is the line that says what was pushed.
+            */}
           {pace
-            ? `Watch alert set at ${say(pace - 3, "Outdoor")}. If rep 1 is the fastest, the session logs as failed.`
+            ? `Watch alert set at ${say(pace - 3, "Outdoor")}${
+              active === "Treadmill" ? ` — ${say(pace - 3, active)} on the belt` : ""
+            }. If rep 1 is the fastest, the session logs as failed.`
             : "Logged against the plan, not against feel."}
         </div>
       </div>
