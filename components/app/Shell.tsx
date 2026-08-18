@@ -187,7 +187,22 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
    * anything else to the brief.
    */
   const openSession = (s: Session) => {
-    if (s.status === "unplanned" && s.activity_id) return openActivity(s.activity_id);
+    /*
+     * "A finished one to its activity" only ever fired for an unplanned session.
+     *
+     * Everything else with a recorded run behind it still opened the brief — the screen you
+     * read before you go out, with the warm-up and the prescription on it, and no sign of the
+     * session you have just done. The status the matcher writes is `done` or `adjusted`; only
+     * a session picked up off the calendar with nothing planned for it is `unplanned`, so the
+     * one case handled here was the one case that rarely happens.
+     *
+     * Strength stays with the set logger whatever its status: the sets are the record of a
+     * lifting session, and an activity from a watch says only that 45 minutes happened.
+     */
+    if (s.kind !== "strength" && s.activity_id
+      && (s.status === "done" || s.status === "adjusted" || s.status === "unplanned")) {
+      return openActivity(s.activity_id);
+    }
     setSessionId(s.id);
     setView(s.kind === "strength" ? "strength" : "brief");
   };
