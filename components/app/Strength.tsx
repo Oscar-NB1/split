@@ -53,6 +53,8 @@ export default function Strength({
    * gets their sets.
    */
   const [warmOpen, setWarmOpen] = useState(false);
+  /** Locks the skip while it is in flight, so a double tap is not two writes. */
+  const [busy, setBusy] = useState(false);
 
   if (err) return <div className="pad"><div className="errbox" role="alert">{err}</div></div>;
   if (!d) return <div className="pad"><p className="empty">Loading…</p></div>;
@@ -315,12 +317,32 @@ export default function Strength({
       <Rpe d={d} send={send} reload={load} />
       <Thread comments={d.comments} meId={meId} send={send} reload={load} />
 
-      <div className="pad">
+      <div className="pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <button className="btn-primary" onClick={async () => {
           await send({ action: "complete", done: s.status !== "done" });
           await load(); onChanged();
         }}>
           {s.status === "done" ? "Mark not done" : "Finish session"}
+        </button>
+        {/*
+          * Skipping, which the run screen has always had and this one never did.
+          *
+          * A strength session is the one most likely to go — it is the first thing that comes
+          * off a week that ran out of days — and without this the only ways to record that were
+          * to leave it sitting open forever or to mark it done, which puts a session nobody did
+          * into the load the next one is calculated from.
+          *
+          * Same call as the brief's: skipped carries no debt, so nothing rolls into next week.
+          */}
+        <button className="btn-ghost" disabled={busy || s.status === "skipped"}
+          style={{ color: s.status === "skipped" ? "var(--ink-40)" : "#C07A3E" }}
+          onClick={async () => {
+            setBusy(true);
+            await send({ action: "skip", reason: "no_time" });
+            setBusy(false);
+            await load(); onChanged();
+          }}>
+          {s.status === "skipped" ? "Skipped" : "Skip session"}
         </button>
       </div>
     </div>
