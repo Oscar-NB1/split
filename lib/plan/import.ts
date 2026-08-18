@@ -158,10 +158,21 @@ function quality(
    * back unreadable. It is its own shape because the walk is part of the rep, not a rest between
    * reps — and it is the whole reason the session is doable at all.
    */
+  /*
+   * The slash before the walk is the one that separates the two halves of the rep, and it is no
+   * longer the first slash in the bracket: the document now states the pace in there as well, so
+   * "3 min run @ 7:00-7:30/km · 8.0-8.6 km/h / 1 min walk" put two of them in front of it. Anything
+   * up to the closing bracket may sit between, and the walk is whichever slash a duration follows.
+   */
   const runwalk =
-    /(\d+)\s*[×x]\s*\(\s*(\d+(?:\.\d+)?)\s*min[^/]*\/\s*(\d+(?:\.\d+)?)\s*min/i.exec(detail);
+    /(\d+)\s*[×x]\s*\(\s*(\d+(?:\.\d+)?)\s*min[^)]*?\/\s*(\d+(?:\.\d+)?)\s*min/i.exec(detail);
   const reps = /(\d+)\s*[×x]\s*(\d+(?:\.\d+)?)\s*(km|m|min)\b/i.exec(detail);
-  const pace = paceOf(detail.split("·").find((p) => /@/.test(p)) ?? "");
+  /*
+   * Normalised before the pace is read out of it, because a word processor writes a band with an
+   * en dash and `paceOf` matches a hyphen: "7:00–7:30" came back as 7:00 alone, which is the fast
+   * end of the band prescribed as the target for every rep.
+   */
+  const pace = paceOf(clean(detail).split("·").find((p) => /@/.test(p)) ?? "");
   /*
    * The rest comes from the segment that talks about rest.
    *
@@ -169,9 +180,18 @@ function quality(
    * prescribed a 480-second walk between reps — eight minutes of standing around inside a
    * threshold session, from a document that says three.
    */
-  const rest = restOf(
-    detail.split("·").find((seg) => /rest|recovery|walk|standing|jog/i.test(seg)) ?? "",
-  );
+  /*
+   * And it is the segment that states one, not merely the first that mentions one.
+   *
+   * Week 6 says "full recovery - this is where speed starts" in its prose and "90 s walk" in its
+   * name. Taking the first segment with a rest word in it found the prose, read no duration out of
+   * it, and dropped the recovery from the prescription — six 400s at race pace with nothing
+   * between them, pushed to her watch that way.
+   */
+  const rest = detail
+    .split("·")
+    .map((seg) => (/rest|recovery|walk|standing|jog/i.test(seg) ? restOf(seg) : null))
+    .find(Boolean) ?? null;
 
   let workKm = 0;
   const work: string[] = [];
@@ -216,7 +236,19 @@ function quality(
   let over = 0;
   /* A warm-up and a short cool-down is about a mile and a half. Below that there is no room. */
   const FLOOR = 1.5;
-  if (!total) {
+  if (runwalk) {
+    /*
+     * A run/walk session gets no warm-up floor, because it is already a warm-up.
+     *
+     * The stated total is the running in the blocks and nothing else — "2.5 km total" against
+     * eighteen minutes of running is the same number — and the minute of walking between them is
+     * the recovery. Forcing a kilometre and a half in front of it turned her first session from
+     * the 2.5 km the document states into 4, in a week whose whole point is that it is small.
+     * Whatever rounding the author left becomes a jog in front; where there is none, the session
+     * is exactly its blocks.
+     */
+    spare = Math.max(0, spare);
+  } else if (!total) {
     /* Nothing to overshoot: the session is whatever the work plus a warm-up comes to. */
     spare = FLOOR;
   } else if (spare < FLOOR) {
@@ -225,15 +257,24 @@ function quality(
   }
   /* The warm-up is never shorter than the cool-down: 2 km in and 3 km out of a time trial is
      the wrong way round, and a cool-down is the part you shorten when you are short of room. */
-  const warm = km1(Math.min(3, Math.max(0.5, spare * 0.6)));
-  const cool = km1(spare - warm);
-  const lines = [`- ${doseKm(warm)} Z2 warm up`];
+  const warm = runwalk
+    ? (spare >= 0.4 ? km1(Math.min(1.5, spare)) : 0)
+    : km1(Math.min(3, Math.max(0.5, spare * 0.6)));
+  const cool = runwalk ? 0 : km1(spare - warm);
+  const lines = warm > 0 ? [`- ${doseKm(warm)} Z2 warm up`] : [];
   lines.push(...work);
   if (cool >= 0.4) lines.push(`- ${doseKm(cool)} Z1 cool down`);
-  else lines[0] = `- ${doseKm(km1(warm + cool))} Z2 warm up`;
+  else if (warm > 0 && cool > 0) lines[0] = `- ${doseKm(km1(warm + cool))} Z2 warm up`;
 
   const workS = pace ? workKm * paceSeconds(pace) : workKm * 270;
-  const restS = reps && rest ? Number(reps[1]) * rest.seconds : 0;
+  /*
+   * The walking is part of a run/walk session's clock. Eighteen minutes of running in six blocks
+   * is a twenty-four minute session, and the six minutes spent walking are the only reason the
+   * eighteen are possible — a duration that leaves them out is wrong about what the day costs.
+   */
+  const restS = runwalk
+    ? Number(runwalk[1]) * Number(runwalk[3]) * 60
+    : reps && rest ? Number(reps[1]) * rest.seconds : 0;
   return {
     target: lines.join("\n"),
     km: km1(total ? km + over : workKm + spare),
@@ -351,7 +392,10 @@ function hyroxClass(detail: string, name: string): { target: string; km: number;
   const minutes = hard ? 70 : 60;
   /* With no distance stated, every clause is a cue — there is no leading dose to skip. */
   const cues = (m ? detail.split("·").slice(1) : detail.split("·")).map(clean).filter(Boolean);
-  const what = /sim/i.test(name) ? "full simulation" : "Hyrox class";
+  /* Named as the document names it: a half simulation is not a full one. */
+  const what = /half\s*sim/i.test(name) ? "half simulation"
+    : /sim/i.test(name) ? "full simulation"
+    : "Hyrox class";
   const lines = km > 0
     ? [`- ${doseKm(km)} ${zone} running inside the class${pace ? ` @ ${pace[1]}/km` : ""}`]
     /*
@@ -419,14 +463,23 @@ function kindOf(name: string): { kind: string; hard: boolean } | null {
   if (/^rest$|^off$|^—$|^-$/.test(n)) return null;
   /* "RACE — Hyrox mixed doubles" as much as "RACE" or "Race day": the word leads the cell. */
   if (/b-race|^race\b|race day/.test(n)) return { kind: "race", hard: true };
-  if (/full sim/.test(n)) return { kind: "hyrox", hard: true };
+  /*
+   * A simulation, whole or part. Her peak week rehearses running off a station as a "HALF SIM" —
+   * four 500 m runs alternating with the stations — which an exact match on "full sim" read as no
+   * session at all, and it is the one day in her block that rehearses the race.
+   */
+  if (/(full|half|part)\s*sim/.test(n)) return { kind: "hyrox", hard: true };
   if (/hyrox class/.test(n)) return { kind: "hyrox", hard: /hard/i.test(n) };
   /*
    * "KEY RUN" and "TEST" are what her plan calls the session the week turns on. Named by
    * importance rather than by content, which is not how this app names things — but it is her
    * coach's word for it, and an import does not rename sessions.
+   *
+   * "Run/walk build" is the same session under the name the first four weeks give it, once the
+   * document started putting the pace in there too. Named for what it does rather than for what
+   * it is worth, and it is still the day the week is built around.
    */
-  if (/^quality|openers|^key run|^test\b|time trial/.test(n)) {
+  if (/^quality|openers|^key run|^test\b|time trial|^run\/walk/.test(n)) {
     return { kind: "quality_run", hard: true };
   }
   if (/^strength/.test(n)) return { kind: "strength", hard: false };
