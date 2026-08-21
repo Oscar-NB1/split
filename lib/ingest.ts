@@ -170,7 +170,17 @@ export async function matchToPlan(
     from planned_sessions
     where user_id = ${userId}
       and planned_date = ${localDate}
-      and status in ('planned')
+      /*
+       * Marked done by hand counts as open, as long as nothing is attached.
+       *
+       * This read status in ('planned') only, so a session the athlete had already ticked off
+       * was invisible to the matcher — and ticking it off is the first thing you do when
+       * you finish, minutes before the watch syncs. The activity then had nowhere to go and
+       * the session stayed a bare prescription: it happened to her twice in four days, once
+       * on the 2 km time trial the whole block calibrates from. A session with no activity
+       * behind it is waiting for one, whatever its status says.
+       */
+      and status in ('planned', 'done')
       and kind <> 'rest'
       and activity_id is null
   `;

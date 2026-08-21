@@ -42,6 +42,17 @@ export type SessionDetail = {
     progression: { verdict: string; why: string } | null;
     note: string | null;
   }[];
+  /**
+   * Recorded workouts this session could be.
+   *
+   * Sent only when nothing is attached. The button here used to say "Link Strava" and do
+   * nothing at all; these are the athlete's own unattached activities either side of the
+   * day, so it can offer them instead of naming a service.
+   */
+  pairable?: {
+    id: string; name: string | null; sport_type: string | null; local_date: string;
+    moving_seconds: number | null; distance_m: number | null; avg_hr: number | null;
+  }[];
   /** so the screen can ask for a bodyweight rather than showing empty boxes */
   needs_bodyweight?: boolean;
   sets: SetRow[];
@@ -418,6 +429,7 @@ export default function Brief({
 }) {
   const { d, err, load, send } = useSession(id);
   const [warmOpen, setWarmOpen] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [mode, setMode] = useState("Outdoor");
   const [sent, setSent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -431,6 +443,7 @@ export default function Brief({
   const noteLines = s.coach_note?.split("\n").filter(Boolean) ?? [];
   const why = noteLines[0];
   const pace = prescribedPace(s.title);
+  const pairable = d.pairable ?? [];
   /*
    * A Hyrox session's toggle is self-workout against class, not outdoor against
    * treadmill: nobody does compromised running on a treadmill, and everybody has to
@@ -591,8 +604,18 @@ export default function Brief({
           <circle cx="12" cy="4.5" r="2" /><path d="M8 21l2.5-5 3.5-2-1-4" />
           <path d="M6 11l3-2h4l4 3" /><path d="M15 21l-1.5-4" />
         </Action>
-        <Action label={s.activity_id ? "Open activity" : "Link Strava"} active={!!s.activity_id}
-          onClick={() => s.activity_id && openActivity(s.activity_id)}>
+        {/*
+          * Attached: open it. Not attached: offer the workouts it could be.
+          *
+          * This said "Link Strava" and its handler was `s.activity_id && openActivity(...)`
+          * — dead in precisely the case the label promised, and the label named a service
+          * rather than the thing you wanted, which is this session pointing at that workout.
+          */}
+        <Action label={s.activity_id ? "Open activity" : pairable.length ? "Link a workout" : "Nothing to link"}
+          active={!!s.activity_id}
+          onClick={() => (s.activity_id
+            ? openActivity(s.activity_id)
+            : pairable.length && setPicking(true))}>
           <path d="M10 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1 1" />
           <path d="M14 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1-1" />
         </Action>
@@ -602,6 +625,51 @@ export default function Brief({
       </div>
 
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
+
+      {/*
+        * Which workout this was.
+        *
+        * Listed rather than searched: there are never many, and the athlete recognises
+        * their own run by its time and distance faster than by any label we could write.
+        * A day either side, because an evening session syncs after midnight.
+        */}
+      {picking && (
+        <div style={{ margin: "14px 18px 0", padding: "14px 16px", background: "var(--paper)",
+          border: "1px solid var(--line)", borderRadius: "var(--r-card)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline",
+            marginBottom: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+              textTransform: "uppercase", color: INK55 }}>Which workout was this?</span>
+            <button onClick={() => setPicking(false)}
+              style={{ fontSize: 11, fontWeight: 700, color: INK55 }}>Close</button>
+          </div>
+          {pairable.map((a) => {
+            const mins = Math.round(Number(a.moving_seconds ?? 0) / 60);
+            const km = Number(a.distance_m ?? 0) / 1000;
+            return (
+              <button key={a.id} onClick={async () => {
+                await send({ action: "pair", activity_id: a.id });
+                setPicking(false);
+                await load();
+                onChanged();
+              }} style={{ display: "flex", flexDirection: "column", alignItems: "flex-start",
+                gap: 2, width: "100%", textAlign: "left", padding: "9px 0",
+                borderTop: "1px solid var(--line)", color: "var(--ink)" }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{a.name || a.sport_type || "Workout"}</span>
+                <span style={{ fontSize: 11, color: INK55 }}>
+                  {[
+                    fmt(a.local_date, { weekday: "short", day: "numeric", month: "short" }),
+                    a.sport_type,
+                    mins ? `${mins} min` : null,
+                    km >= 0.1 ? `${km.toFixed(2)} km` : null,
+                    a.avg_hr ? `${Math.round(Number(a.avg_hr))} bpm` : null,
+                  ].filter(Boolean).join(" · ")}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/*
         * A race session leads to the race builder.

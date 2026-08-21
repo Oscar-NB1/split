@@ -16,6 +16,7 @@ import { nextLoad } from "@/lib/plan/progression";
 import { sayRpe } from "@/lib/plan/strength";
 import { notify } from "@/lib/notify";
 import { afterLine } from "@/lib/coach-copy";
+import { effortPoints, statusFor, type StravaActivity } from "@/lib/ingest";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -186,7 +187,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     }
   }
 
-  const [sets, feedback, comments, activity] = await Promise.all([
+  const [sets, feedback, comments, activity, pairable] = await Promise.all([
     sql`
       select id, exercise, ord, set_no, prescribed_load, prescribed_reps,
              load_kg, reps, done, note
@@ -201,6 +202,28 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     s.activity_id
       ? sql`select id, name, moving_seconds, distance_m, avg_hr from activities where id = ${s.activity_id}`
       : Promise.resolve([]),
+    /*
+     * What this session could be, when nothing is attached to it.
+     *
+     * The screen has always had a button here labelled "Link Strava" whose click handler
+     * was `s.activity_id && openActivity(...)` — dead in exactly the case the label
+     * described. Nothing in the app could attach a recorded workout to a session it had
+     * missed, and a session marked done by hand before the watch synced stayed empty
+     * forever. These are the athlete's own unattached activities either side of the day,
+     * newest first; a day either way because a late-evening session syncs after midnight
+     * and a morning one is sometimes yesterday's date on the watch.
+     */
+    s.activity_id
+      ? Promise.resolve([])
+      : sql`
+          select a.id, a.name, a.sport_type, a.local_date::text as local_date,
+                 a.moving_seconds, a.distance_m, a.avg_hr
+            from activities a
+           where a.user_id = ${s.user_id}
+             and a.local_date between ${s.planned_date}::date - 1 and ${s.planned_date}::date + 1
+             and not exists (select 1 from planned_sessions p where p.activity_id = a.id)
+           order by a.start_time desc
+      `,
   ]);
 
   const steps = isStrength ? [] : parseSteps(s.target);
@@ -254,6 +277,8 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     feedback: feedback[0] ?? null,
     comments,
     activity: activity[0] ?? null,
+    /** recorded workouts this session could be, for the pairing picker */
+    pairable,
   });
 });
 
@@ -270,12 +295,104 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
   if (!isUuid(id)) throw notFound("No such session.");
   const body = await req.json();
 
-  const [s] = await sql<{ id: string; user_id: string; kind: string }[]>`
-    select id, user_id, kind from planned_sessions where id = ${id}
+  const [s] = await sql<{
+    id: string; user_id: string; kind: string;
+    planned_minutes: number | null; activity_id: string | null;
+  }[]>`
+    select id, user_id, kind, planned_minutes, activity_id
+      from planned_sessions where id = ${id}
   `;
   if (!s) throw notFound("No such session.");
 
   switch (body?.action) {
+    /*
+     * ------------------------------------------------- this workout was this session
+     *
+     * The matcher pairs on ingest and gets it right most days. What it cannot do is
+     * reach a session that was already closed: it only considers sessions still open,
+     * so tapping "Mark it done" before the watch syncs orphans the activity for good.
+     * It happened to her twice in four days — a 2 km time trial and a Hyrox class, both
+     * recorded, both showing an empty prescription.
+     *
+     * So the pairing is something an athlete can do by hand, from the session, choosing
+     * from their own unattached workouts. Same fields the matcher writes, so a session
+     * paired here is indistinguishable from one paired automatically — and the change log
+     * says which it was.
+     */
+    case "pair": {
+      const activityId = String(body.activity_id ?? "");
+      if (!isUuid(activityId)) throw badRequest("Which workout?");
+      if (s.activity_id) throw badRequest("Something is already attached to this session.");
+
+      /*
+       * Theirs, and not already spoken for. Both checks are the same check really — an
+       * activity id is guessable, and pairing somebody else's run to your session would
+       * write their minutes into your week.
+       */
+      const [a] = await sql<{
+        id: string; moving_seconds: number | null; distance_m: number | null;
+        avg_hr: number | null; sport_type: string | null; taken: boolean;
+      }[]>`
+        select a.id, a.moving_seconds, a.distance_m, a.avg_hr, a.sport_type,
+               exists (select 1 from planned_sessions p where p.activity_id = a.id) as taken
+          from activities a
+         where a.id = ${activityId} and a.user_id = ${s.user_id}
+      `;
+      if (!a) throw notFound("No such workout.");
+      if (a.taken) throw badRequest("That workout is already on another session.");
+
+      const actual = Math.round(Number(a.moving_seconds ?? 0) / 60);
+      /*
+       * Scored by the same function the ingest uses, from the columns it scored on: the
+       * sport decides the weighting, the duration the size, the heart rate the bump. A
+       * second scoring rule here would drift from that one within a month.
+       */
+      const points = effortPoints({
+        sport_type: a.sport_type ?? "",
+        type: a.sport_type ?? "",
+        distance: Number(a.distance_m ?? 0),
+        moving_time: Number(a.moving_seconds ?? 0),
+        average_heartrate: a.avg_hr == null ? undefined : Number(a.avg_hr),
+      } as StravaActivity);
+
+      await sql`
+        update planned_sessions
+           set status         = ${statusFor(actual, s.planned_minutes)},
+               activity_id    = ${activityId},
+               actual_minutes = ${actual},
+               effort_points  = ${points},
+               updated_at     = now()
+         where id = ${id}
+      `;
+      await sql`
+        insert into session_changes (session_id, actor_id, action, reason)
+        values (${id}, ${me.id}, 'completed', 'paired by hand')
+      `;
+      return NextResponse.json({ ok: true });
+    }
+
+    /*
+     * And the way back out, because a wrong pairing is worse than none: it leaves the
+     * session looking finished and the real workout unattached. Everything the pairing
+     * wrote comes off, including the status — a session with nothing behind it is not done.
+     */
+    case "unpair": {
+      await sql`
+        update planned_sessions
+           set status         = 'planned',
+               activity_id    = null,
+               actual_minutes = null,
+               effort_points  = null,
+               updated_at     = now()
+         where id = ${id}
+      `;
+      await sql`
+        insert into session_changes (session_id, actor_id, action, reason)
+        values (${id}, ${me.id}, 'unpaired', 'detached by hand')
+      `;
+      return NextResponse.json({ ok: true });
+    }
+
     // ---------------------------------------------------------------- a set
     case "set": {
       const { set_id, load_kg, reps, done } = body;
