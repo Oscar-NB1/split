@@ -627,6 +627,46 @@ export default function Brief({
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
 
       {/*
+        * What is attached, and the way to say it is wrong.
+        *
+        * The matcher is deliberately dumb — same athlete, same day, sport not impossible,
+        * closest duration — and on a day with one session planned it will pair whatever
+        * turned up. A Hyrox class is logged as a Run, a Workout or a Crossfit depending on
+        * the day, so nothing is ruled out for it, which is right and also means a weights
+        * session can land on it. Saying so has to be one tap: until now the only way out
+        * was for somebody to edit the database.
+        */}
+      {s.activity_id && d.activity && (
+        <div style={{ margin: "14px 18px 0", padding: "12px 16px", background: "var(--paper)",
+          border: "1px solid var(--line)", borderRadius: "var(--r-card)",
+          display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+              textTransform: "uppercase", color: INK55 }}>Logged against this</span>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{d.activity.name}</span>
+            <span style={{ fontSize: 11, color: INK55 }}>
+              {[
+                d.activity.moving_seconds ? `${Math.round(d.activity.moving_seconds / 60)} min` : null,
+                Number(d.activity.distance_m) >= 100
+                  ? `${(Number(d.activity.distance_m) / 1000).toFixed(2)} km` : null,
+                d.activity.avg_hr ? `${Math.round(Number(d.activity.avg_hr))} bpm` : null,
+              ].filter(Boolean).join(" · ")}
+            </span>
+          </span>
+          {/* The workout stays; it goes back to being a session nobody planned. */}
+          <button onClick={async () => {
+            await send({ action: "unpair" });
+            await load();
+            onChanged();
+          }} style={{ flex: "none", fontSize: 11, fontWeight: 700, letterSpacing: ".04em",
+            textTransform: "uppercase", padding: "8px 12px", borderRadius: "var(--r-pill)",
+            border: "1px solid var(--line)", background: "var(--off)", color: "var(--ink)" }}>
+            Not this one
+          </button>
+        </div>
+      )}
+
+      {/*
         * Which workout this was.
         *
         * Listed rather than searched: there are never many, and the athlete recognises

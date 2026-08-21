@@ -1215,3 +1215,17 @@ alter table rewards add column if not exists title text;
 -- flag says which athlete gets them. Off by default and off for everybody else, because somebody
 -- else's partner calling them bebezinho is not a warm surprise.
 alter table users add column if not exists coach_voice boolean not null default false;
+
+-- A workout a human has detached from a session (2026-08-21).
+--
+-- Unpairing on its own was not enough: the matcher runs on every Strava sync, and it pairs an
+-- activity with any open session of that day whose sport is not impossible. Her Friday Hyrox
+-- class was paired with a weights session — nothing rules that out, because a Hyrox class is
+-- logged as a Run, a Workout or a Crossfit depending on the day — and detaching it by hand only
+-- bought an hour: the next cron run put it straight back.
+--
+-- So a detachment is remembered on the activity. The matcher skips it from then on, and the
+-- workout keeps its place in the week as a session nobody planned, which is what it was. Pairing
+-- it by hand still works and deliberately ignores this: choosing it is a human saying where it
+-- goes, which is the opposite of a guess.
+alter table activities add column if not exists unpaired_at timestamptz;

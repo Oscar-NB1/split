@@ -165,6 +165,17 @@ export async function matchToPlan(
   localDate: string,
   a: StravaActivity,
 ) {
+  /*
+   * Never re-pair what a human has detached.
+   *
+   * Unpairing alone bought an hour: this runs on every sync, so the next cron put her weights
+   * session straight back on the Hyrox class it had wrongly been paired with. A detachment is
+   * a person saying this workout is not that session, and it outlives the sync that caused it.
+   */
+  const [rejected] = await sql<{ unpaired_at: Date | null }[]>`
+    select unpaired_at from activities where id = ${activityId}
+  `;
+  if (rejected?.unpaired_at) return;
   const open = await sql<{ id: string; kind: string; planned_minutes: number | null }[]>`
     select id, kind, planned_minutes
     from planned_sessions

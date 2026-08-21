@@ -386,6 +386,14 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
                updated_at     = now()
          where id = ${id}
       `;
+      /*
+       * Remembered on the activity, so the next sync does not undo this. Without it the
+       * matcher pairs it again within the hour — same day, same open session, sport not
+       * impossible — and the athlete's correction lasts until the next cron tick.
+       */
+      if (s.activity_id) {
+        await sql`update activities set unpaired_at = now() where id = ${s.activity_id}`;
+      }
       await sql`
         insert into session_changes (session_id, actor_id, action, reason)
         values (${id}, ${me.id}, 'unpaired', 'detached by hand')
