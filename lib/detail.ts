@@ -32,10 +32,37 @@ type Split = {
   pace_zone?: number;
 };
 
+
+/**
+ * How far wrong the watch was, on a treadmill.
+ *
+ * Indoors there is no GPS, so an activity carries two distances that need not agree: the one
+ * on the summary — the treadmill's, or the athlete's correction of it — and the one the watch
+ * worked out from wrist movement, which is what the splits and the laps are built from. An
+ * uncalibrated watch can be badly out: hers read 2,636 m for a run the treadmill had at
+ * 4,216, a factor of 1.6, which turned a 2 km time trial at 5:26/km into splits reading
+ * 8:41 and would have had the calibration engine measure her against them.
+ *
+ * The summary wins, because somebody stood on the machine and read the number off it. So the
+ * splits are scaled onto it rather than stored in a unit of their own — the shape of the
+ * session is the watch's and the distance is the treadmill's. Only for `trainer` activities,
+ * and only when the two disagree by more than a couple of per cent: a GPS run has one
+ * distance and rounding is not a correction.
+ */
+export function trainerScale(detail: unknown): number {
+  const d = detail as { trainer?: boolean; distance?: number; splits_metric?: Split[] } | null;
+  if (!d?.trainer || !d.distance || d.distance <= 0) return 1;
+  const streamed = (d.splits_metric ?? []).reduce((n, s) => n + (s.distance ?? 0), 0);
+  if (streamed <= 0) return 1;
+  const ratio = d.distance / streamed;
+  return Math.abs(ratio - 1) > 0.02 ? ratio : 1;
+}
+
 /** Persist `splits_metric` from an already-fetched detailed activity. No API call. */
 export async function saveSplits(activityId: string, detail: unknown): Promise<number> {
   const splits = (detail as { splits_metric?: Split[] })?.splits_metric;
   if (!Array.isArray(splits) || splits.length === 0) return 0;
+  const k = trainerScale(detail);
 
   for (const s of splits) {
     await sql`
@@ -43,8 +70,9 @@ export async function saveSplits(activityId: string, detail: unknown): Promise<n
         activity_id, split, distance_m, moving_seconds, elapsed_seconds,
         avg_speed_ms, avg_hr, elevation_diff_m, pace_zone
       ) values (
-        ${activityId}, ${s.split}, ${s.distance ?? null}, ${s.moving_time ?? null},
-        ${s.elapsed_time ?? null}, ${s.average_speed ?? null},
+        ${activityId}, ${s.split}, ${s.distance == null ? null : s.distance * k},
+        ${s.moving_time ?? null},
+        ${s.elapsed_time ?? null}, ${s.average_speed == null ? null : s.average_speed * k},
         ${s.average_heartrate ?? null}, ${s.elevation_difference ?? null},
         ${s.pace_zone ?? null}
       )
@@ -87,6 +115,9 @@ type Lap = {
 export async function saveLaps(activityId: string, detail: unknown): Promise<number> {
   const laps = (detail as { laps?: Lap[] })?.laps;
   if (!Array.isArray(laps) || laps.length === 0) return 0;
+  // Same treadmill correction as the splits: the interval structure is the watch's, the
+  // distance is the treadmill's, and calibration reads these laps.
+  const k = trainerScale(detail);
 
   // Strava numbers laps from 1 but the field is occasionally absent on old
   // activities; fall back to array order rather than dropping the lap.
@@ -99,9 +130,11 @@ export async function saveLaps(activityId: string, detail: unknown): Promise<num
         start_index, avg_speed_ms, max_speed_ms, avg_hr, max_hr, avg_cadence,
         elevation_diff_m, station_key
       ) values (
-        ${activityId}, ${l.lap_index ?? i}, ${l.name ?? null}, ${l.distance ?? null},
+        ${activityId}, ${l.lap_index ?? i}, ${l.name ?? null},
+        ${l.distance == null ? null : l.distance * k},
         ${l.moving_time ?? null}, ${l.elapsed_time ?? null}, ${l.start_index ?? null},
-        ${l.average_speed ?? null}, ${l.max_speed ?? null},
+        ${l.average_speed == null ? null : l.average_speed * k},
+        ${l.max_speed == null ? null : l.max_speed * k},
         ${l.average_heartrate ?? null}, ${l.max_heartrate ?? null},
         ${l.average_cadence ?? null}, ${l.total_elevation_gain ?? null},
         ${stationOf(l.name)}
