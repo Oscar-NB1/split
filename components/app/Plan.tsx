@@ -26,9 +26,16 @@ type Tab = "Block" | "Form" | "Volume";
  * would hide exactly the thing worth seeing.
  */
 export default function Plan({
-  data, monday, goStrategy, openSession,
+  data, monday, uid, goStrategy, openSession,
 }: {
   data: WeekData | null; monday: string;
+  /*
+   * Whose block this is. `/api/week` is household-scoped — it returns every athlete's
+   * sessions for the week and leaves the filtering to the screen — so without this the
+   * week card listed three people's training under one athlete's header. Week and Program
+   * both already did this; only this screen did not.
+   */
+  uid: string;
   goStrategy: () => void; openSession: (s: Session) => void;
 }) {
   const [tab, setTab] = useState<Tab>("Block");
@@ -198,7 +205,8 @@ export default function Plan({
              */
             const rows = isNow && data
               ? data.sessions
-                  .filter((s) => s.planned_date >= w.start && s.planned_date < WEEKS[i + 1]?.start)
+                  .filter((s) => s.user_id === uid
+                    && s.planned_date >= w.start && s.planned_date < WEEKS[i + 1]?.start)
                   .slice()
                   .sort((a, b) => a.planned_date.localeCompare(b.planned_date)
                     || Number(a.slot === "PM") - Number(b.slot === "PM"))

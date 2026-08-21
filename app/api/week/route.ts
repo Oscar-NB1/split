@@ -3,23 +3,61 @@ import { sql } from "@/lib/db";
 import { requireUser } from "@/lib/session";
 import { blockFor } from "@/lib/block-db";
 import { challengeScores, metricForWeek, METRICS, streakFor, weekStart } from "@/lib/scoring";
-import { route } from "@/lib/http";
+import { notFound, route } from "@/lib/http";
 import { addDays, mondayOf, today } from "@/lib/dates";
 import { isDateString } from "@/lib/plan";
 import { classifySegments, type LapRow } from "@/lib/analysis";
 import { prescribedPace } from "@/lib/signals";
+import { canCoach } from "@/lib/coaching";
 
 /** Everything one week's screen needs, in a single round trip. */
 export const GET = route(async (req: NextRequest) => {
   const me = await requireUser();
   // snapped to a Monday: a mid-week date used to give this week's challenge
   // metric over a Wednesday-to-Wednesday scoring window
-  const asked = new URL(req.url).searchParams.get("week");
+  const params = new URL(req.url).searchParams;
+  const asked = params.get("week");
   const ws = mondayOf(isDateString(asked) ? asked! : today());
   const end = addDays(ws, 7);
 
+  /*
+   * Whose week this is: mine, or an athlete I coach.
+   *
+   * Coaching used to be a client-side filter over a payload that carried everyone — which
+   * showed the coach's own block above the athlete's sessions, and put a third athlete's
+   * training in both. An `athlete` parameter is an access-control question, so it goes
+   * through the same `canCoach` as every other route that accepts one.
+   */
+  const askedAthlete = params.get("athlete");
+  if (askedAthlete && !(await canCoach(me.id, askedAthlete))) {
+    throw notFound("That athlete is not yours to open.");
+  }
+  const subject = askedAthlete ?? me.id;
+
+  /*
+   * The people this athlete may see at all: themselves, anyone they coach, and anyone they
+   * have an accepted connection with. This query used to be `select … from users` with no
+   * predicate, so every screen received every registered athlete's sessions — harmless while
+   * the app had two accounts living in one house, and a leak the moment a stranger signed up.
+   */
+  const visible = await sql<{ id: string }[]>`
+      select ${subject}::uuid as id
+    union
+      select athlete_id from coaching where coach_id = ${subject}
+    union
+      select case when requester_id = ${subject} then addressee_id else requester_id end
+        from connections
+       where status = 'accepted'
+         and (requester_id = ${subject} or addressee_id = ${subject})
+  `;
+  /*
+   * Coaching is one athlete at a time. Opening hers means hers only — the coach's own
+   * training in the same list is what made week 1 read as twenty-one sessions.
+   */
+  const ids = askedAthlete ? [subject] : visible.map((v) => v.id);
+
   const users = await sql<{ id: string; display_name: string }[]>`
-    select id, display_name from users order by created_at
+    select id, display_name from users where id = any(${ids}) order by created_at
   `;
 
   const sessions = await sql`
@@ -33,7 +71,8 @@ export const GET = route(async (req: NextRequest) => {
            s.significance, s.slot, s.purpose
     from planned_sessions s
     left join activities a on a.id = s.activity_id
-    where s.planned_date >= ${ws} and s.planned_date < ${end} and s.status <> 'moved'
+    where s.user_id = any(${ids})
+      and s.planned_date >= ${ws} and s.planned_date < ${end} and s.status <> 'moved'
     order by s.planned_date, s.created_at
   `;
 
@@ -47,7 +86,8 @@ export const GET = route(async (req: NextRequest) => {
            'unplanned' as status, 'strava' as source, null::int as planned_minutes,
            a.avg_hr, a.distance_m, a.id as activity_id
     from activities a
-    where a.local_date >= ${ws} and a.local_date < ${end}
+    where a.user_id = any(${ids})
+      and a.local_date >= ${ws} and a.local_date < ${end}
       and not exists (select 1 from planned_sessions p where p.activity_id = a.id)
   `;
 
@@ -113,7 +153,7 @@ export const GET = route(async (req: NextRequest) => {
     await Promise.all(users.map(async (u) => [u.id, await streakFor(u.id)])),
   );
 
-  // THIS athlete's block, not the app's.
+  // THIS athlete's block — the subject's, which in coaching mode is hers and not mine.
   //
   // Its start, race, goal, volume table and phase narrative used to be module
   // constants in lib/coach.ts, so every screen that read them showed the same
@@ -121,7 +161,7 @@ export const GET = route(async (req: NextRequest) => {
   // target as hers. Same mistake as the HR zones, which were one athlete's
   // measured maximum applied to both. Null when she has no plan, and the screens
   // have to say so rather than fall back to someone else's.
-  const block = await blockFor(me.id);
+  const block = await blockFor(subject);
 
   return NextResponse.json({
     week_start: ws,

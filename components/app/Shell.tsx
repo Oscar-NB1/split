@@ -166,13 +166,22 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
   const [data, setData] = useState<WeekData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /*
+   * Entering someone's week refetches it as theirs.
+   *
+   * The payload carries the block as well as the sessions, and the block is the half a
+   * client-side filter cannot fix: coaching mode showed her name in the header above the
+   * coach's own 15-week block. Asked for by athlete, so the server answers with one
+   * athlete's week and the access check happens once, where it belongs.
+   */
   const load = useCallback(async () => {
-    const res = await fetch(`/api/week?week=${monday}`);
+    const who = coaching ? `&athlete=${coaching}` : "";
+    const res = await fetch(`/api/week?week=${monday}${who}`);
     if (res.status === 401) { location.href = "/"; return; }
     if (!res.ok) { setError("Couldn't load this week."); return; }
     setData(await res.json());
     setError(null);
-  }, [monday]);
+  }, [monday, coaching]);
   useEffect(() => { load(); }, [load]);
 
   // The scroll position belongs to the screen, not the app: coming back from an
@@ -358,7 +367,8 @@ export default function Shell({ me, other }: { me: User; other: User | null }) {
           <Empty name={me.display_name} onBuild={() => setView("build")} />
         )}
         {view === "plan" && (block || !data) && (
-          <Plan data={data} monday={monday} goStrategy={() => setView("strategy")}
+          <Plan data={data} monday={monday} uid={coaching ?? me.id}
+            goStrategy={() => setView("strategy")}
             openSession={openSession} />
         )}
         {view === "program" && (
