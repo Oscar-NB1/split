@@ -22,9 +22,6 @@ import { rebuildWeek, type WeekSession } from "@/lib/plan/rebuild";
 
 type Ctx = { params: Promise<{ monday: string }> };
 
-/** Two a week, then it is a conversation about the plan rather than about the week. */
-const LIMIT = 2;
-
 const DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 async function weekOf(userId: string, monday: string) {
@@ -93,16 +90,16 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
   if (raw.length < 3) throw badRequest("Tell me what changed, in a sentence.");
   if (raw.length > 1000) throw badRequest("A sentence or three is plenty.");
 
-  const [{ n }] = await sql<{ n: number }[]>`
-    select count(*)::int as n from week_rebuilds
-     where user_id = ${me.id} and week_start = ${monday}
-  `;
-  if (n >= LIMIT) {
-    throw badRequest(
-      "You have rebuilt this week twice already. A third time is a conversation about the "
-      + "plan rather than about the week — move the sessions you need by hand.",
-    );
-  }
+  /*
+   * Rebuilt as often as the week needs it.
+   *
+   * This used to stop at two, on the reasoning that a third rebuild is a conversation about
+   * the block rather than the week. In practice a week goes wrong more than twice — illness
+   * then a moved class then a late finish — and the cap landed on exactly the weeks that
+   * needed the most help, leaving the athlete to move sessions by hand. Every rebuild is
+   * still recorded in `week_rebuilds` with the sentence that caused it, so the pattern is
+   * visible without being blocked.
+   */
 
   const week = await weekOf(me.id, monday);
   if (week.length === 0) throw badRequest("There is nothing in that week to rebuild.");
@@ -154,7 +151,7 @@ export const POST = route(async (req: NextRequest, ctx: Ctx) => {
     values (${me.id}, ${monday}, ${raw}, ${sql.json(proposal as never)})
     returning id
   `;
-  return NextResponse.json({ proposal_id: row.id, ...proposal, rebuilds_left: LIMIT - n - 1 });
+  return NextResponse.json({ proposal_id: row.id, ...proposal });
 });
 
 const dateFor = (monday: string, day: number) => {

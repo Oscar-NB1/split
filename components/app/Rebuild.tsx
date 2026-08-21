@@ -23,7 +23,6 @@ export type Proposal = {
   dropped: { id: string; kind: string; label: string; why: string; day: string }[];
   refusals: { what: string; why: string }[];
   parsed: { ambiguities: { quote: string; question: string; options: string[] }[] };
-  rebuilds_left: number;
 };
 
 /**
