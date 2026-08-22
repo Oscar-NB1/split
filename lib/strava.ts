@@ -112,7 +112,18 @@ export async function saveTokens(userId: string, t: TokenResponse) {
       refresh_token = excluded.refresh_token,
       expires_at    = excluded.expires_at,
       scope         = excluded.scope,
-      provider_user_id = excluded.provider_user_id,
+      /*
+       * Kept, not overwritten, when the new value is empty.
+       *
+       * Strava returns the `athlete` object on the initial authorization exchange and omits it
+       * from every refresh — so this wrote the id once and then blanked it six hours later,
+       * every time, for everybody. The webhook finds its owner by exactly this column, so the
+       * fast path was dead within a day of each athlete signing in and nothing said so: the
+       * hourly sweep kept finding the activities eventually, up to an hour late, and looked
+       * like the system working.
+       */
+      provider_user_id = coalesce(
+        nullif(excluded.provider_user_id, ''), oauth_accounts.provider_user_id),
       updated_at    = now()
   `;
 }
