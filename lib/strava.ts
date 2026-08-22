@@ -115,7 +115,7 @@ export async function saveTokens(userId: string, t: TokenResponse) {
       /*
        * Kept, not overwritten, when the new value is empty.
        *
-       * Strava returns the `athlete` object on the initial authorization exchange and omits it
+       * Strava returns the athlete object on the initial authorization exchange and omits it
        * from every refresh — so this wrote the id once and then blanked it six hours later,
        * every time, for everybody. The webhook finds its owner by exactly this column, so the
        * fast path was dead within a day of each athlete signing in and nothing said so: the
