@@ -83,22 +83,59 @@ export async function signalsFor(userId: string): Promise<Gathered> {
       skipped.push({ title: r.title, why: "no pace stated in the title" });
       continue;
     }
-    const laps = await sql<LapRow[]>`
-      select lap_index, name, distance_m, moving_seconds, elapsed_seconds,
-             avg_speed_ms, max_speed_ms, avg_hr, max_hr
-        from activity_laps where activity_id = ${r.activity_id} order by lap_index
+    /*
+     * What she read off the console wins, where she has told us.
+     *
+     * Indoors the laps are the watch guessing from wrist movement — hers was 1.6x out, which
+     * put a 2 km time trial run at 5:26/km on file at 8:41 and would have had this function
+     * slow a block that was already too slow. A reported rep is a number a person read off a
+     * machine, and it is the more reliable of the two. Turned into work laps so the rest of
+     * this reads unchanged; nothing is written back to `activity_laps`.
+     */
+    const reported = await sql<{ rep: number; distance_m: string; seconds: number }[]>`
+      select rep, distance_m, seconds from session_work
+       where session_id = ${r.id} order by rep
     `;
-    if (laps.length === 0) {
-      skipped.push({ title: r.title, why: "no laps imported" });
+    const laps = reported.length > 0 ? [] : await sql<LapRow[]>`
+          select lap_index, name, distance_m, moving_seconds, elapsed_seconds,
+                 avg_speed_ms, max_speed_ms, avg_hr, max_hr
+            from activity_laps where activity_id = ${r.activity_id} order by lap_index
+        `;
+    if (laps.length === 0 && reported.length === 0) {
+      skipped.push({ title: r.title, why: "no laps imported, and nothing reported by hand" });
       continue;
     }
     const n = (v: unknown) => (v == null ? null : Number(v));
-    const { segments } = classifySegments(laps.map((l) => ({
-      ...l,
-      distance_m: n(l.distance_m), moving_seconds: n(l.moving_seconds),
-      elapsed_seconds: n(l.elapsed_seconds), avg_speed_ms: n(l.avg_speed_ms),
-      max_speed_ms: n(l.max_speed_ms), avg_hr: n(l.avg_hr), max_hr: n(l.max_hr),
-    })));
+    /*
+     * Reported work is work, and is not put through the interval detector.
+     *
+     * `classifySegments` finds reps by looking for a speed gap across at least four laps —
+     * right for a watch file, useless here: a reported time trial is one effort, and six
+     * reported reps held at one belt speed have no gap between them at all. Everything would
+     * come back "steady", which is the label for a session with no structure. She told us what
+     * the work was; the roles are known.
+     */
+    const segments = reported.length > 0
+      ? reported.map((w) => ({
+        lap_index: w.rep,
+        name: `rep ${w.rep}`,
+        distance_m: Number(w.distance_m),
+        moving_seconds: w.seconds,
+        elapsed_seconds: w.seconds,
+        avg_speed_ms: Number(w.distance_m) / w.seconds,
+        max_speed_ms: null,
+        avg_hr: null,
+        max_hr: null,
+        start_s: 0,
+        end_s: w.seconds,
+        role: "work" as const,
+      }))
+      : classifySegments(laps.map((l) => ({
+        ...l,
+        distance_m: n(l.distance_m), moving_seconds: n(l.moving_seconds),
+        elapsed_seconds: n(l.elapsed_seconds), avg_speed_ms: n(l.avg_speed_ms),
+        max_speed_ms: n(l.max_speed_ms), avg_hr: n(l.avg_hr), max_hr: n(l.max_hr),
+      }))).segments;
     const work = statsFor(segments, ["work"]);
     // fall back to the whole session only when there is no interval structure at
     // all — a steady tempo is legitimately its own average

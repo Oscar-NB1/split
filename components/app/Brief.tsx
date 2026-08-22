@@ -53,6 +53,19 @@ export type SessionDetail = {
     id: string; name: string | null; sport_type: string | null; local_date: string;
     moving_seconds: number | null; distance_m: number | null; avg_hr: number | null;
   }[];
+  /**
+   * The gap a treadmill leaves, and the shape of the answer.
+   *
+   * `ask` is why we are asking, or null when we are not. `shape` says whether the session was
+   * one effort or several, how far each was, and what it was meant to take — enough to
+   * pre-fill, so she corrects a number rather than composing one.
+   */
+  work_report?: {
+    ask: string | null;
+    shape: { kind: "single" | "reps"; count?: number; distanceM: number;
+             targetSeconds: number | null } | null;
+    reported: { rep: number; distance_m: number; seconds: number; pace_s: number | null }[];
+  };
   /** so the screen can ask for a bodyweight rather than showing empty boxes */
   needs_bodyweight?: boolean;
   sets: SetRow[];
@@ -430,6 +443,9 @@ export default function Brief({
   const { d, err, load, send } = useSession(id);
   const [warmOpen, setWarmOpen] = useState(false);
   const [picking, setPicking] = useState(false);
+  /** minutes and seconds she read off the console, and the belt speed as the other way in */
+  const [mmss, setMmss] = useState("");
+  const [kmh, setKmh] = useState("");
   const [mode, setMode] = useState("Outdoor");
   const [sent, setSent] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -444,6 +460,7 @@ export default function Brief({
   const why = noteLines[0];
   const pace = prescribedPace(s.title);
   const pairable = d.pairable ?? [];
+  const wr = d.work_report;
   /*
    * A Hyrox session's toggle is self-workout against class, not outdoor against
    * treadmill: nobody does compromised running on a treadmill, and everybody has to
@@ -625,6 +642,118 @@ export default function Brief({
       </div>
 
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
+
+      {/*
+        * The number only she has.
+        *
+        * A treadmill syncs one total distance and no structure, so the pace of the part that
+        * mattered is not in the file: her 2 km time trial sat inside a 4.2 km session whose only
+        * laps were automatic mile splits, and the watch's distance was 1.6x out on top of that.
+        * Asked as a time for one effort and as a belt speed for reps, because those are the two
+        * numbers a treadmill actually shows you — and pre-filled with the target, so the work is
+        * correcting a number rather than composing one.
+        */}
+      {wr?.ask && wr.shape && (() => {
+        const shape = wr.shape;
+        const target = shape.targetSeconds;
+        const asTime = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+        const single = shape.kind === "single";
+        const label = single
+          ? (shape.distanceM >= 1000 ? `${shape.distanceM / 1000} km` : `${shape.distanceM} m`)
+          : `${shape.count} × ${shape.distanceM} m`;
+        const parsed = (() => {
+          const m = mmss.match(/^(\d{1,3})[:.](\d{1,2})$/);
+          if (m) return Number(m[1]) * 60 + Number(m[2]);
+          const secs = Number(mmss);
+          return Number.isFinite(secs) && secs > 0 ? Math.round(secs) : null;
+        })();
+        const fromSpeed = (() => {
+          const v = Number(kmh);
+          return Number.isFinite(v) && v > 0
+            ? Math.round((shape.distanceM / 1000) * (3600 / v)) : null;
+        })();
+        const each = single ? parsed : (parsed ?? fromSpeed);
+        const send_ = async () => {
+          if (!each) return;
+          const n = single ? 1 : (shape.count ?? 1);
+          await send({
+            action: "report_work",
+            reps: Array.from({ length: n }, () => ({ distance_m: shape.distanceM, seconds: each })),
+          });
+          setMmss(""); setKmh("");
+          await load(); onChanged();
+        };
+        return (
+          <div style={{ margin: "14px 18px 0", padding: "14px 16px", background: "var(--off)",
+            border: "1px solid var(--line)", borderRadius: "var(--r-card)" }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+              textTransform: "uppercase", color: INK55 }}>What did the clock say?</div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-70)", margin: "6px 0 12px" }}>
+              We logged the run, but {wr.ask} — so we cannot see your {label}.
+              {target ? ` Target was ${asTime(target)}${single ? "" : " a rep"}.` : ""}
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <input value={mmss} onChange={(e) => setMmss(e.target.value)}
+                inputMode="numeric" placeholder={target ? asTime(target) : "mm:ss"}
+                aria-label={single ? "Your time" : "Time per rep"}
+                style={{ width: 96, padding: "10px 12px", fontSize: 15, fontWeight: 700,
+                  borderRadius: 10, border: "1px solid var(--line)", background: "var(--paper)",
+                  color: "var(--ink)" }} />
+              {!single && (
+                <>
+                  <span style={{ fontSize: 11, color: INK55 }}>or belt</span>
+                  <input value={kmh} onChange={(e) => setKmh(e.target.value)}
+                    inputMode="decimal" placeholder="km/h" aria-label="Belt speed"
+                    style={{ width: 78, padding: "10px 12px", fontSize: 15, fontWeight: 700,
+                      borderRadius: 10, border: "1px solid var(--line)",
+                      background: "var(--paper)", color: "var(--ink)" }} />
+                </>
+              )}
+              <button disabled={!each} onClick={send_}
+                style={{ padding: "10px 16px", fontSize: 11, fontWeight: 800,
+                  letterSpacing: ".06em", textTransform: "uppercase",
+                  borderRadius: "var(--r-pill)", background: each ? "var(--lime)" : "var(--off)",
+                  color: each ? "var(--on-lime)" : INK55 }}>Save</button>
+            </div>
+            {each && (
+              <div style={{ fontSize: 11, color: INK55, marginTop: 8 }}>
+                {asTime(each)} for {shape.distanceM >= 1000
+                  ? `${shape.distanceM / 1000} km` : `${shape.distanceM} m`}
+                {" is "}
+                {asTime(Math.round(each / (shape.distanceM / 1000)))}/km
+                {!single && shape.count ? ` — ${shape.count} of them` : ""}
+              </div>
+            )}
+            <button onClick={async () => {
+              await send({ action: "decline_work_report" });
+              await load();
+            }} style={{ marginTop: 10, fontSize: 11, fontWeight: 600, color: INK55 }}>
+              Not a treadmill — don't ask again
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* Answered: what she told us, and what it means, kept where the ask was. */}
+      {wr && wr.reported.length > 0 && (
+        <div style={{ margin: "14px 18px 0", padding: "12px 16px", background: "var(--paper)",
+          border: "1px solid var(--line)", borderRadius: "var(--r-card)" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+            textTransform: "uppercase", color: INK55 }}>Your numbers</div>
+          {wr.reported.map((w) => (
+            <div key={w.rep} style={{ fontSize: 13, marginTop: 4 }}>
+              {wr.reported.length > 1 ? `Rep ${w.rep}: ` : ""}
+              <b>{Math.floor(w.seconds / 60)}:{String(w.seconds % 60).padStart(2, "0")}</b>
+              {" for "}
+              {w.distance_m >= 1000 ? `${w.distance_m / 1000} km` : `${w.distance_m} m`}
+              {w.pace_s ? ` — ${Math.floor(w.pace_s / 60)}:${String(w.pace_s % 60).padStart(2, "0")}/km` : ""}
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: INK55, marginTop: 6 }}>
+            Told to us rather than measured, and used ahead of the watch.
+          </div>
+        </div>
+      )}
 
       {/*
         * What is attached, and the way to say it is wrong.

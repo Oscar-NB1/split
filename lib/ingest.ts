@@ -1,5 +1,7 @@
 import { isRunSport } from "./bounds";
 import { sql } from "./db";
+import { isTreadmill, needsWorkReport, workShapeOf } from "./treadmill";
+import { notify } from "./notify";
 
 export type StravaActivity = {
   id: number;
@@ -219,6 +221,20 @@ export async function matchToPlan(
     insert into session_changes (session_id, actor_id, action, reason)
     values (${best.id}, ${userId}, 'completed', ${status === "adjusted" ? "short of plan" : null})
   `;
+
+  /*
+   * Ask her now, while she is still standing on the machine.
+   *
+   * A treadmill syncs one total distance and no structure, so the pace of the only part that
+   * mattered — the time trial, the reps — is not in the file and never will be. She is the only
+   * person who has that number, and she has it for about a minute. A card on the session screen
+   * is no use to somebody who has already put their phone down, so this is a push.
+   *
+   * Only where there is a genuine gap: a session with stated work, paired with a run whose laps
+   * cannot describe it. `needsWorkReport` decides, the same function the screen uses, so the
+   * notification and the card can never disagree about whether there is anything to ask.
+   */
+  await askForWork(userId, best.id, activityId, a);
 }
 
 /**
@@ -244,4 +260,55 @@ export async function unpairActivity(provider: string, providerActivityId: strin
     returning s.id
   `;
   return rows.length;
+}
+
+/**
+ * The push that goes out when a paired workout cannot tell us what the work was.
+ *
+ * Best-effort by construction: a notification that fails must never cost the pairing that
+ * caused it, so this swallows its own errors the way every other notify caller here does.
+ */
+async function askForWork(
+  userId: string, sessionId: string, activityId: string, a: StravaActivity,
+) {
+  try {
+    const [s] = await sql<{
+      title: string; target: string | null; declined: string | null;
+    }[]>`
+      select title, target, work_report_declined_at as declined
+        from planned_sessions where id = ${sessionId}
+    `;
+    if (!s) return;
+
+    const [counts] = await sql<{ laps: string; lap_sum: string | null; reported: string }[]>`
+      select (select count(*) from activity_laps l where l.activity_id = ${activityId}) as laps,
+             (select sum(l.distance_m) from activity_laps l where l.activity_id = ${activityId}) as lap_sum,
+             (select count(*) from session_work w where w.session_id = ${sessionId}) as reported
+    `;
+
+    const shape = workShapeOf(s.title, s.target);
+    const ask = needsWorkReport({
+      shape,
+      treadmill: isTreadmill(a.sport_type ?? a.type, (a as { trainer?: unknown }).trainer),
+      lapCount: Number(counts?.laps ?? 0),
+      summaryM: a.distance,
+      lapSumM: counts?.lap_sum == null ? null : Number(counts.lap_sum),
+      alreadyReported: Number(counts?.reported ?? 0) > 0,
+      declined: Boolean(s.declined),
+    });
+    if (!ask || !shape) return;
+
+    const what = shape.kind === "single"
+      ? `${shape.distanceM >= 1000 ? `${shape.distanceM / 1000} km` : `${shape.distanceM} m`} time trial`
+      : `${shape.count} × ${shape.distanceM} m`;
+    await notify(userId, "session_paired", `work:${sessionId}`, {
+      title: "What did the clock say?",
+      body: `We logged your run, but ${ask.why} — so we cannot see your ${what}. `
+        + "Tap to tell us, while you remember.",
+      url: `/?session=${sessionId}`,
+      tag: `work-${sessionId}`,
+    });
+  } catch (e) {
+    console.error("notify: work report", sessionId, e);
+  }
 }

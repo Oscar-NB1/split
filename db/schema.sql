@@ -1229,3 +1229,30 @@ alter table users add column if not exists coach_voice boolean not null default 
 -- it by hand still works and deliberately ignores this: choosing it is a human saying where it
 -- goes, which is the opposite of a guess.
 alter table activities add column if not exists unpaired_at timestamptz;
+
+-- What the athlete read off the treadmill (2026-08-22).
+--
+-- A treadmill run syncs as one total distance. Nothing in it says where the work was: her 2 km
+-- time trial sat inside a 4.2 km session whose only laps were the watch's automatic mile
+-- splits, and `classifySegments` needs four usable laps and a clear speed gap before it will
+-- call anything a rep. So the pace of the one part that mattered was unknowable — and the
+-- distance the watch did report was 1.6x out, because indoors it is guessing from wrist
+-- movement.
+--
+-- The number exists. It is on the console in front of her, and the moment to ask for it is
+-- while she is still standing there. Kept apart from `activity_laps` on purpose: that table
+-- means "what the watch recorded", it is rewritten on every re-sync, and mixing the two would
+-- lose track of which is which. Calibration prefers this when it exists and falls back to the
+-- laps when it does not.
+create table if not exists session_work (
+  session_id  uuid not null references planned_sessions(id) on delete cascade,
+  rep         int  not null,          -- 1-based; a time trial is rep 1 of 1
+  distance_m  numeric not null,       -- what the rep was prescribed as
+  seconds     int not null,
+  reported_by uuid references users(id),
+  reported_at timestamptz not null default now(),
+  primary key (session_id, rep)
+);
+
+-- "Not a treadmill" is an answer, and it has to stop the asking.
+alter table planned_sessions add column if not exists work_report_declined_at timestamptz;

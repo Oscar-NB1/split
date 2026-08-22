@@ -17,6 +17,7 @@ import { sayRpe } from "@/lib/plan/strength";
 import { notify } from "@/lib/notify";
 import { afterLine } from "@/lib/coach-copy";
 import { effortPoints, statusFor, type StravaActivity } from "@/lib/ingest";
+import { isTreadmill, needsWorkReport, workShapeOf, paceOfReport } from "@/lib/treadmill";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -26,6 +27,7 @@ type Row = {
   status: string; actual_minutes: number | null; skip_reason: string | null;
   effort_points: number | null; source: string; significance: string | null;
   slot: string | null; activity_id: string | null; display_name: string;
+  work_report_declined_at: string | null;
   author_name: string | null; author_avatar: string | null;
 };
 
@@ -46,7 +48,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     select p.id, p.user_id, p.planned_date::text as planned_date, p.title, p.kind,
            p.planned_minutes, p.target, p.coach_note, p.status, p.actual_minutes,
            p.skip_reason, p.effort_points, p.source, p.significance, p.slot,
-           p.activity_id, u.display_name,
+           p.activity_id, p.work_report_declined_at, u.display_name,
            /*
             * Who wrote the session, for the note it carries.
             *
@@ -187,7 +189,7 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     }
   }
 
-  const [sets, feedback, comments, activity, pairable] = await Promise.all([
+  const [sets, feedback, comments, activity, work, paired, pairable] = await Promise.all([
     sql`
       select id, exercise, ord, set_no, prescribed_load, prescribed_reps,
              load_kg, reps, done, note
@@ -201,6 +203,20 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     `,
     s.activity_id
       ? sql`select id, name, moving_seconds, distance_m, avg_hr from activities where id = ${s.activity_id}`
+      : Promise.resolve([]),
+    // What she read off the console, where she has told us.
+    sql`select rep, distance_m, seconds from session_work where session_id = ${id} order by rep`,
+    /*
+     * The paired activity's own account of itself: whether it went anywhere, and whether its
+     * laps add up to the distance on its summary. Both decide whether we have to ask her.
+     */
+    s.activity_id
+      ? sql`
+          select a.sport_type, a.raw->>'trainer' as trainer, a.distance_m,
+                 (select count(*) from activity_laps l where l.activity_id = a.id) as laps,
+                 (select sum(l.distance_m) from activity_laps l where l.activity_id = a.id) as lap_sum
+            from activities a where a.id = ${s.activity_id}
+        `
       : Promise.resolve([]),
     /*
      * What this session could be, when nothing is attached to it.
@@ -279,6 +295,35 @@ export const GET = route(async (_req: Request, { params }: Ctx) => {
     activity: activity[0] ?? null,
     /** recorded workouts this session could be, for the pairing picker */
     pairable,
+    /*
+     * The gap between what the watch could see and what the session was for, and the shape of
+     * the answer that closes it. Null when there is nothing to ask: no stated work, laps that
+     * already describe the reps, or she has told us once already.
+     */
+    work_report: (() => {
+      const shape = workShapeOf(s.title, s.target);
+      const a = (paired as unknown as { sport_type?: string; trainer?: string;
+        distance_m?: string; laps?: string; lap_sum?: string }[])[0];
+      const ask = a ? needsWorkReport({
+        shape,
+        treadmill: isTreadmill(a.sport_type ?? null, a.trainer),
+        lapCount: Number(a.laps ?? 0),
+        summaryM: a.distance_m == null ? null : Number(a.distance_m),
+        lapSumM: a.lap_sum == null ? null : Number(a.lap_sum),
+        alreadyReported: work.length > 0,
+        declined: Boolean(s.work_report_declined_at),
+      }) : null;
+      return {
+        shape,
+        ask: ask?.why ?? null,
+        reported: (work as unknown as { rep: number; distance_m: string; seconds: number }[]).map((w) => ({
+          rep: w.rep,
+          distance_m: Number(w.distance_m),
+          seconds: w.seconds,
+          pace_s: paceOfReport(Number(w.distance_m), w.seconds),
+        })),
+      };
+    })(),
   });
 });
 
@@ -305,6 +350,54 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
   if (!s) throw notFound("No such session.");
 
   switch (body?.action) {
+    /*
+     * ------------------------------------------ what the console said, since we cannot see it
+     *
+     * A treadmill syncs one total distance and no structure. She is the only one who knows what
+     * the 2 km took, or what the belt was set to for the 400s, and the moment she knows it is
+     * while she is standing on the machine. Stored apart from the laps: this is her account, not
+     * the watch's, and calibration prefers it precisely because it is the more reliable of the
+     * two indoors.
+     *
+     * Sent either as times or as a belt speed — the client converts, because the conversion is
+     * arithmetic and the unit is whichever one she is looking at.
+     */
+    case "report_work": {
+      const reps = Array.isArray(body.reps) ? body.reps : [];
+      if (reps.length === 0 || reps.length > 40) throw badRequest("How long did the work take?");
+      const rows = reps.map((r: unknown, i: number) => {
+        const o = (r ?? {}) as { distance_m?: unknown; seconds?: unknown };
+        const d = Number(o.distance_m);
+        const sec = Math.round(Number(o.seconds));
+        // A rep is at least a few seconds and at most an hour: a fat-fingered 4 becomes 4
+        // seconds for a kilometre otherwise, and that would re-pace her whole block.
+        if (!Number.isFinite(d) || d < 50 || d > 60000) throw badRequest("That distance is not right.");
+        if (!Number.isFinite(sec) || sec < 10 || sec > 3600) throw badRequest("That time is not right.");
+        return { rep: i + 1, distance_m: d, seconds: sec };
+      });
+      await sql`delete from session_work where session_id = ${id}`;
+      for (const r of rows) {
+        await sql`
+          insert into session_work (session_id, rep, distance_m, seconds, reported_by)
+          values (${id}, ${r.rep}, ${r.distance_m}, ${r.seconds}, ${me.id})
+        `;
+      }
+      await sql`
+        update planned_sessions set work_report_declined_at = null, updated_at = now()
+         where id = ${id}
+      `;
+      return NextResponse.json({ ok: true, reps: rows.length });
+    }
+
+    /* "Not a treadmill" is an answer too, and it has to stop the asking. */
+    case "decline_work_report": {
+      await sql`
+        update planned_sessions set work_report_declined_at = now(), updated_at = now()
+         where id = ${id}
+      `;
+      return NextResponse.json({ ok: true });
+    }
+
     /*
      * ------------------------------------------------- this workout was this session
      *
