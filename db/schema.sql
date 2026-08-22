@@ -1256,3 +1256,31 @@ create table if not exists session_work (
 
 -- "Not a treadmill" is an answer, and it has to stop the asking.
 alter table planned_sessions add column if not exists work_report_declined_at timestamptz;
+
+-- What she said she did (2026-08-22).
+--
+-- Strava says "WeightTraining, 111 minutes" and that is all it says. The session was a Hyrox
+-- class with stations in it, and none of that reaches the app: the kind is wrong, the effort
+-- weighting that follows from the kind is wrong, and in six weeks nobody can remember what the
+-- session actually was. A sentence spoken into a phone on the way out of the gym carries all of
+-- it.
+--
+-- Both halves are kept. `transcript` is what was said and is never rewritten — it is the
+-- evidence, and a model's reading of it is an opinion. `structured` is that opinion, in a shape
+-- the screens can render. Nothing downstream depends on either: a log is a reference, and
+-- anything it suggests (lifts worth saving as sets, a kind worth correcting) is applied only
+-- when somebody taps to accept it.
+create table if not exists session_log (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  -- any of the three: a planned session, a workout nobody planned, or just a day
+  session_id  uuid references planned_sessions(id) on delete set null,
+  activity_id uuid references activities(id) on delete set null,
+  on_date     date not null,
+  transcript  text not null,
+  structured  jsonb not null default '{}',
+  /* spoken | typed — a recording that could not be transcribed is still worth keeping */
+  source      text not null default 'typed',
+  created_at  timestamptz not null default now()
+);
+create index if not exists session_log_user_date on session_log (user_id, on_date desc);

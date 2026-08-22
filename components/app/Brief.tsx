@@ -8,6 +8,7 @@ import { classGuideFor } from "@/lib/class-guide";
 import { humanDose, prescribedKm, repeatedReps, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
+import LogVoice from "./LogVoice";
 
 export type SessionDetail = {
   session: {
@@ -642,6 +643,15 @@ export default function Brief({
       </div>
 
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
+
+      {/*
+        * And the part no watch records: what the session actually was.
+        *
+        * Placed above the thread rather than below the prescription, because it is written after
+        * the fact and read later — the same half of the screen as the feedback and the comments.
+        */}
+      <LogVoice sessionId={id} activityId={s.activity_id} onDate={s.planned_date}
+        onApplied={async () => { await load(); onChanged(); }} />
 
       {/*
         * The number only she has.

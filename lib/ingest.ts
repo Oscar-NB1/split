@@ -50,16 +50,24 @@ export function kindFor(a: StravaActivity): string {
  * Effort points. Weighted by session type so that station work is not
  * undervalued against running, which raw duration would do.
  */
+/**
+ * What an hour of each kind of session is worth.
+ *
+ * Exported because a session's kind can be corrected after the fact — a Hyrox class that Strava
+ * filed as WeightTraining is scored at 0.75 when it earned 1.7 — and the correction has to use
+ * the same table as the original or the two disagree.
+ */
+export const EFFORT_WEIGHT: Record<string, number> = {
+  run_long: 0.95,
+  run_easy: 0.8,
+  run_intervals: 1.6,
+  hyrox: 1.7,
+  strength: 0.75,
+};
+
 export function effortPoints(a: StravaActivity): number {
   const minutes = a.moving_time / 60;
-  const weight: Record<string, number> = {
-    run_long: 0.95,
-    run_easy: 0.8,
-    run_intervals: 1.6,
-    hyrox: 1.7,
-    strength: 0.75,
-  };
-  const w = weight[kindFor(a)] ?? 1;
+  const w = EFFORT_WEIGHT[kindFor(a)] ?? 1;
   const hrBump = a.average_heartrate ? Math.max(0.8, a.average_heartrate / 150) : 1;
   return Math.round(minutes * w * hrBump);
 }

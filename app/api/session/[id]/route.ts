@@ -16,7 +16,7 @@ import { nextLoad } from "@/lib/plan/progression";
 import { sayRpe } from "@/lib/plan/strength";
 import { notify } from "@/lib/notify";
 import { afterLine } from "@/lib/coach-copy";
-import { effortPoints, statusFor, type StravaActivity } from "@/lib/ingest";
+import { EFFORT_WEIGHT, effortPoints, statusFor, type StravaActivity } from "@/lib/ingest";
 import { isTreadmill, needsWorkReport, workShapeOf, paceOfReport } from "@/lib/treadmill";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -350,6 +350,74 @@ export const PATCH = route(async (req: NextRequest, { params }: Ctx) => {
   if (!s) throw notFound("No such session.");
 
   switch (body?.action) {
+    /*
+     * ------------------------------------------------- acting on what the log noticed
+     *
+     * The log itself changes nothing — it is a diary, and a sentence should not silently rewrite
+     * scored data. These two actions are the taps that turn one of its observations into a
+     * change, and they exist separately for that reason: somebody read the suggestion and
+     * agreed with it.
+     */
+    case "apply_log_kind": {
+      const to = String(body.kind ?? "");
+      if (!/^[a-z_]{3,20}$/.test(to)) throw badRequest("Which kind?");
+      /*
+       * Effort points move with the kind. A ninety-minute Hyrox class scored as weights is
+       * 0.75 of its minutes instead of 1.7 — the difference between the hardest session of the
+       * week and an easy one, in every total that reads this column.
+       */
+      const [a] = s.activity_id
+        ? await sql<{ moving_seconds: number | null; avg_hr: string | null }[]>`
+            select moving_seconds, avg_hr from activities where id = ${s.activity_id}
+          `
+        : [];
+      const minutes = Number(a?.moving_seconds ?? 0) / 60;
+      const hrBump = a?.avg_hr ? Math.max(0.8, Number(a.avg_hr) / 150) : 1;
+      const points = minutes > 0
+        ? Math.round(minutes * (EFFORT_WEIGHT[to] ?? 1) * hrBump)
+        : null;
+
+      await sql`
+        update planned_sessions
+           set kind = ${to},
+               effort_points = coalesce(${points}, effort_points),
+               updated_at = now()
+         where id = ${id}
+      `;
+      await sql`
+        insert into session_changes (session_id, actor_id, action, reason)
+        values (${id}, ${me.id}, 'created', ${`re-read as ${to} from the athlete's own account`})
+      `;
+      return NextResponse.json({ ok: true, kind: to, effort_points: points });
+    }
+
+    /* Lifts the log heard, saved as sets — which is what lets next week's loads move. */
+    case "save_log_lifts": {
+      const lifts = Array.isArray(body.lifts) ? body.lifts : [];
+      if (lifts.length === 0) throw badRequest("Which lifts?");
+      let written = 0;
+      for (const [ord, raw] of lifts.entries()) {
+        const l = (raw ?? {}) as { name?: unknown; sets?: unknown; reps?: unknown; load_kg?: unknown };
+        const name = String(l.name ?? "").trim().slice(0, 60);
+        const sets = Math.min(20, Math.max(1, Math.round(Number(l.sets) || 1)));
+        const reps = Number(l.reps) > 0 ? Math.round(Number(l.reps)) : null;
+        const load = Number(l.load_kg) > 0 && Number(l.load_kg) <= 400
+          ? Math.round(Number(l.load_kg) * 10) / 10 : null;
+        if (!name || load == null) continue;
+        for (let n = 1; n <= sets; n++) {
+          await sql`
+            insert into session_sets
+              (session_id, exercise, ord, set_no, prescribed_reps, load_kg, reps, done)
+            values (${id}, ${name}, ${ord}, ${n}, ${reps}, ${load}, ${reps}, true)
+            on conflict do nothing
+          `;
+          written++;
+        }
+      }
+      if (written === 0) throw badRequest("None of those had a weight on them.");
+      return NextResponse.json({ ok: true, sets: written });
+    }
+
     /*
      * ------------------------------------------ what the console said, since we cannot see it
      *
