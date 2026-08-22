@@ -5,6 +5,7 @@ import { hms, pace, ROLE_LABEL, type Segment } from "@/lib/analysis";
 import { kindColour, kindLabel } from "@/lib/coach";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
+import LogVoice from "./LogVoice";
 
 const TEAL = "#0A8FB0", NAVY_D = "#0E2740", NAVY = "#12314D";
 const INK40 = "var(--ink-40)", INK55 = "var(--ink-55)";
@@ -92,6 +93,17 @@ export default function Activity({ id, meId }: { id: string; meId: string }) {
         <div style={{ fontFamily: "var(--display)", fontSize: 25, fontWeight: 700,
           lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 7 }}>{a.name ?? "Activity"}</div>
       </div>
+
+      {/*
+        * What this workout actually was.
+        *
+        * A workout nobody planned is where the gap is widest: Strava says "WeightTraining, 111
+        * minutes" and there is no session card to carry the rest. Same component as the session
+        * screen, without a session to attach to — so it logs against the activity and the day.
+        */}
+      {a.user_id === meId && (
+        <LogVoice activityId={a.id} onDate={a.local_date} />
+      )}
 
       {/*
         * Two payloads, an hour apart.

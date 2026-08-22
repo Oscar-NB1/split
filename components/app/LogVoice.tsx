@@ -224,8 +224,12 @@ export default function LogVoice({
             </div>
           )}
 
-          {/* Offered, not done. Each one is a change to something that gets counted. */}
-          {saved.suggestions.map((sg, i) => (
+          {/*
+            * Offered, not done. Each one is a change to something that gets counted — and each
+            * one needs a session to change, so on a workout nobody planned they are not shown at
+            * all rather than shown inert.
+            */}
+          {sessionId && saved.suggestions.map((sg, i) => (
             <button key={i} onClick={() => apply(sg)} disabled={Boolean(busy) || !sessionId}
               style={{ marginTop: 10, width: "100%", textAlign: "left", padding: "10px 12px",
                 borderRadius: 10, border: "1px dashed var(--line)", background: "var(--off)",

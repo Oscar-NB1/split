@@ -5,6 +5,7 @@ import { kindColour, kindLabel } from "@/lib/coach";
 import type { Forecast } from "@/lib/weather";
 import { warmupFor } from "@/lib/warmup";
 import { classGuideFor } from "@/lib/class-guide";
+import { testGuideFor } from "@/lib/test-guide";
 import { humanDose, prescribedKm, repeatedReps, type StepGroup } from "@/lib/prescription";
 import { prescribedPace } from "@/lib/signals";
 import Thread from "./Thread";
@@ -468,6 +469,8 @@ export default function Brief({
    * choose between writing it and booking it.
    */
   const guide = classGuideFor(s.kind, s.title);
+  /* A test explains itself: the target, how to run it, and permission to be slower. */
+  const test = testGuideFor(s.title, s.target);
   const MODES = guide ? ["Self-workout", "Class"] : ["Outdoor", "Treadmill"];
   /*
    * A mode that belongs to the other kind of session shows neither button as
@@ -508,7 +511,7 @@ export default function Brief({
           */}
         <div style={{ fontFamily: "var(--display)", fontSize: 27, fontWeight: 700,
           lineHeight: 1.1, letterSpacing: "-.02em", marginTop: 8 }}>
-          {s.purpose || s.title}
+          {s.purpose || test?.purpose || s.title}
         </div>
         <div style={{ fontSize: 13, color: "var(--ink-55)", marginTop: 6 }}>
           {/* The kind, in the app's words. It said "Hyrox" for anything that was
@@ -643,6 +646,38 @@ export default function Brief({
       </div>
 
       {warmOpen && <WarmupCard kind={s.kind} title={s.title} onHide={() => setWarmOpen(false)} />}
+
+      {/*
+        * What a test is for, and how to run one.
+        *
+        * Generated rather than written per session, so every time trial in every block says the
+        * same things: the target that follows from the pace the plan already states, how to pace
+        * it, and — last, because it is the part athletes most need to hear — that a slower number
+        * is still a result. Shown under the session's own note where there is one, since the
+        * author's words come first.
+        */}
+      {test && (
+        <div style={{ margin: "14px 18px 0", padding: "14px 16px", background: "var(--off)",
+          border: "1px solid var(--line)", borderRadius: "var(--r-card)" }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".12em",
+            textTransform: "uppercase", color: INK55 }}>How to run this</div>
+          <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--ink-70)", marginTop: 6 }}>
+            {test.why}
+          </div>
+          <ul style={{ margin: "10px 0 0", paddingLeft: 18, display: "flex",
+            flexDirection: "column", gap: 5 }}>
+            {test.strategy.map((line, i) => (
+              <li key={i} style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--ink-70)" }}>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 10, paddingLeft: 12,
+            borderLeft: "2px solid var(--teal)", color: "var(--ink)" }}>
+            {test.reassurance}
+          </div>
+        </div>
+      )}
 
       {/*
         * And the part no watch records: what the session actually was.
